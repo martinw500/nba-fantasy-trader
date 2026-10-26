@@ -6,3 +6,4 @@ __pycache__/
 .impeccable/mocks/
 .impeccable/config.local.json
 .venv/
+.playwright-mcp/
