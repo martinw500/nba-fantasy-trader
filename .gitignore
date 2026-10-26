@@ -1,3 +1,7 @@
 .env
 data/
 __pycache__/
+.impeccable/review/
+.impeccable/build/
+.impeccable/mocks/
+.impeccable/config.local.json

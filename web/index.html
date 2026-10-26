@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fantasy GM</title>
+<style>
+:root {
+  --bg: oklch(97.4% 0.004 260);
+  --panel: oklch(100% 0 0);
+  --panel-2: oklch(98.6% 0.003 260);
+  --line: oklch(91.5% 0.006 260);
+  --line-strong: oklch(85% 0.008 260);
+  --text: oklch(23% 0.016 260);
+  --muted: oklch(49% 0.016 260);
+  --faint: oklch(62% 0.012 260);
+  --accent: oklch(51% 0.19 268);
+  --accent-hover: oklch(46% 0.19 268);
+  --accent-soft: oklch(95.5% 0.028 268);
+  --accent-ink: oklch(40% 0.17 268);
+  --pos: oklch(66% 0.15 152);
+  --neg: oklch(63% 0.19 24);
+  --pos-ink: oklch(42% 0.12 152);
+  --neg-ink: oklch(47% 0.17 24);
+  --warn-soft: oklch(95% 0.05 85);
+  --warn-ink: oklch(45% 0.1 70);
+  --shadow: 0 1px 2px oklch(30% 0.02 260 / 0.06), 0 4px 12px oklch(30% 0.02 260 / 0.05);
+  --radius: 8px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(17.5% 0.008 260);
+    --panel: oklch(21% 0.009 260);
+    --panel-2: oklch(23.5% 0.01 260);
+    --line: oklch(29% 0.01 260);
+    --line-strong: oklch(36% 0.012 260);
+    --text: oklch(93% 0.006 260);
+    --muted: oklch(72% 0.012 260);
+    --faint: oklch(60% 0.012 260);
+    --accent: oklch(66% 0.17 268);
+    --accent-hover: oklch(72% 0.15 268);
+    --accent-soft: oklch(30% 0.06 268);
+    --accent-ink: oklch(82% 0.1 268);
+    --pos: oklch(62% 0.14 152);
+    --neg: oklch(60% 0.17 24);
+    --pos-ink: oklch(80% 0.12 152);
+    --neg-ink: oklch(78% 0.13 24);
+    --warn-soft: oklch(30% 0.05 80);
+    --warn-ink: oklch(85% 0.09 80);
+    --shadow: 0 1px 2px oklch(0% 0 0 / 0.3), 0 6px 16px oklch(0% 0 0 / 0.25);
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--accent-soft); color: var(--accent-ink); }
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--accent-ink); text-underline-offset: 3px; }
+svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* shell */
+.app { display: grid; grid-template-columns: 216px 1fr; min-height: 100%; }
+.side { background: var(--panel-2); border-right: 1px solid var(--line); padding: 16px 10px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 2px; }
+.brand { display: flex; align-items: center; gap: 9px; padding: 4px 10px 18px; font-weight: 650; font-size: 15px; }
+.brand-mark { width: 24px; height: 24px; border-radius: 7px; background: var(--accent); color: white; display: grid; place-items: center; }
+.brand-mark svg { width: 15px; height: 15px; stroke-width: 2; }
+.nav { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; border: 0; background: none; text-align: left; color: var(--muted); cursor: pointer; font-weight: 500; transition: background .15s, color .15s; }
+.nav:hover { background: var(--line); color: var(--text); }
+.nav[aria-current="page"] { background: var(--accent-soft); color: var(--accent-ink); }
+.side-foot { margin-top: auto; padding: 10px; color: var(--faint); font-size: 12px; }
+
+.main { min-width: 0; display: flex; flex-direction: column; }
+.top { position: sticky; top: 0; z-index: 5; background: color-mix(in oklch, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); padding: 10px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.league { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.league b { font-size: 15px; font-weight: 650; white-space: nowrap; }
+.league span { color: var(--muted); font-size: 12px; }
+.punts { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-left: auto; }
+.punts > span { color: var(--muted); font-size: 12px; margin-right: 4px; }
+.chip { border: 1px solid var(--line-strong); background: var(--panel); border-radius: 999px; padding: 2px 9px; font-size: 12px; font-weight: 550; cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
+.chip:hover { border-color: var(--faint); }
+.chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+.btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); background: var(--panel); border-radius: 6px; padding: 6px 12px; font-weight: 550; cursor: pointer; transition: background .15s, border-color .15s; white-space: nowrap; }
+.btn:hover { background: var(--panel-2); border-color: var(--faint); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.ghost { border-color: transparent; background: none; color: var(--muted); }
+.btn.ghost:hover { color: var(--text); background: var(--line); }
+.btn svg { width: 15px; height: 15px; }
+.btn.busy svg { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.content { padding: 24px; display: flex; flex-direction: column; gap: 20px; max-width: 1360px; width: 100%; }
+.content > *, .grid2 > * { min-width: 0; }
+h1 { font-size: 22px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 15px; font-weight: 650; margin: 0; }
+.sub { color: var(--muted); margin: 4px 0 0; }
+.head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.panel-h { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.panel-h p { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
+.panel-b { padding: 16px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.notice { padding: 9px 14px; border-radius: var(--radius); background: var(--warn-soft); color: var(--warn-ink); font-size: 13px; }
+.notice code { font-size: 12px; }
+.muted { color: var(--muted); }
+.small { font-size: 12.5px; }
+
+/* category strip */
+.cats { display: grid; grid-template-columns: repeat(var(--n, 9), minmax(0, 1fr)); }
+.cat { padding: 12px 10px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; transition: opacity .2s; }
+.cat:last-child { border-right: 0; }
+.cat .lbl { font-size: 12px; color: var(--muted); font-weight: 600; }
+.cat .rk { font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
+.cat .rk small { font-size: 12px; color: var(--faint); font-weight: 500; }
+.cat .tot { font-size: 12px; }
+.bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.bar i { display: block; height: 100%; border-radius: 2px; }
+.cat.punted { opacity: .38; }
+.cat.punted .lbl { text-decoration: line-through; }
+
+/* tables */
+.tw { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; background: var(--panel); position: sticky; top: 0; }
+th.n, td.n { text-align: right; }
+td { padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+table.wrap td:first-child { white-space: normal; }
+tbody tr { transition: background .12s; }
+tbody tr:hover { background: var(--panel-2); }
+td.z { text-align: center; font-size: 12.5px; min-width: 50px; position: relative; transition: opacity .2s, filter .2s; }
+td.z::before { content: ""; position: absolute; inset: 2px; border-radius: 4px; background: var(--c, transparent); z-index: 0; }
+td.z span { position: relative; }
+.punted-col { opacity: .3; filter: grayscale(1); }
+th.punted-col { text-decoration: line-through; }
+.pname { font-weight: 550; }
+.tag { display: inline-block; font-size: 11px; font-weight: 650; padding: 0 5px; border-radius: 4px; background: var(--line); color: var(--muted); margin-left: 6px; vertical-align: 1px; }
+.tag.out { background: color-mix(in oklch, var(--neg) 18%, transparent); color: var(--neg-ink); }
+.val { font-weight: 650; }
+.pos { color: var(--pos-ink); }
+.neg { color: var(--neg-ink); }
+.rowbtn { border: 0; background: none; padding: 0; cursor: pointer; text-align: left; font-weight: 550; }
+.rowbtn:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; }
+
+/* matchups */
+.vs { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0; }
+.vs-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.vs-row .rec { font-weight: 650; }
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 7px; vertical-align: 1px; }
+
+/* trade */
+.picker { display: flex; flex-direction: column; gap: 10px; }
+.plist { display: flex; flex-direction: column; max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.pitem { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.pitem:last-child { border-bottom: 0; }
+.pitem:hover { background: var(--panel-2); }
+.pitem input { accent-color: var(--accent); margin: 0; }
+.pitem.on { background: var(--accent-soft); }
+select { border: 1px solid var(--line-strong); background: var(--panel); border-radius: 6px; padding: 6px 10px; }
+.verdict { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.big { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
+.pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-weight: 650; font-size: 12.5px; text-transform: capitalize; }
+.pill.accept { background: color-mix(in oklch, var(--pos) 20%, transparent); color: var(--pos-ink); }
+.pill.decline { background: color-mix(in oklch, var(--neg) 18%, transparent); color: var(--neg-ink); }
+.pill.toss-up { background: var(--line); color: var(--muted); }
+.side-by { display: grid; grid-template-columns: repeat(3, auto); gap: 4px 24px; }
+.side-by dt { color: var(--muted); font-size: 12px; }
+.side-by dd { margin: 0; font-weight: 650; font-size: 16px; }
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: var(--panel); padding: 6px 12px; cursor: pointer; font-weight: 550; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line-strong); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); }
+.toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* chat */
+.chat { display: grid; grid-template-rows: 1fr auto; height: calc(100vh - 170px); min-height: 420px; }
+.msgs { overflow: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.msg { max-width: 76ch; white-space: pre-wrap; line-height: 1.55; }
+.msg.user { align-self: flex-end; background: var(--accent-soft); color: var(--accent-ink); padding: 8px 13px; border-radius: 12px 12px 4px 12px; }
+.msg.ai { align-self: flex-start; }
+.msg.ai.thinking { color: var(--muted); }
+.compose { border-top: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.compose form { display: flex; gap: 8px; }
+.compose textarea { flex: 1; resize: none; border: 1px solid var(--line-strong); border-radius: 8px; padding: 9px 12px; background: var(--panel); min-height: 42px; max-height: 160px; }
+.compose textarea::placeholder { color: var(--faint); }
+.sugs { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* states */
+.empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+.empty b { display: block; color: var(--text); margin-bottom: 4px; }
+.skel { height: 14px; border-radius: 4px; background: var(--line); margin: 12px 16px; animation: pulse 1.2s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: .45; } to { opacity: 1; } }
+.err { padding: 14px 16px; color: var(--neg-ink); }
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; box-shadow: var(--shadow); z-index: 20; }
+
+@media (max-width: 980px) {
+  .grid2 { grid-template-columns: 1fr; }
+  .cats { grid-template-columns: repeat(5, 1fr); }
+  .cat:nth-child(5) { border-right: 0; }
+}
+@media (max-width: 760px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { position: static; height: auto; flex-direction: row; overflow-x: auto; padding: 8px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .brand, .side-foot { display: none; }
+  .nav span { white-space: nowrap; }
+  .top, .content { padding-left: 16px; padding-right: 16px; }
+  .punts { margin-left: 0; width: 100%; }
+  .grid2[style] { grid-template-columns: 1fr !important; }
+  .chat { height: calc(100vh - 120px); }
+  .cats { grid-template-columns: repeat(3, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-team" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M15.5 4.8a3.5 3.5 0 0 1 0 6.4M17.5 14.8c2.2.6 3.6 2.4 4 5.2"/></symbol>
+  <symbol id="i-league" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M3.5 9.5h17M3.5 14.5h17M9 4v16"/></symbol>
+  <symbol id="i-trade" viewBox="0 0 24 24"><path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/></symbol>
+  <symbol id="i-wire" viewBox="0 0 24 24"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.6-3.6 3.2-5.5 6.5-5.5 1.3 0 2.5.3 3.5.8M18 14v6M15 17h6"/></symbol>
+  <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3 16.5l5.5-5.5 4 4L21 6.5"/><path d="M15.5 6.5H21V12"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5.5h16v10.5H9.5L5 20v-4H4z"/><path d="M8.5 10.5h7"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/></symbol>
+  <symbol id="i-ball" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5v17M6 6c2.5 2 3.5 4 3.5 6s-1 4-3.5 6M18 6c-2.5 2-3.5 4-3.5 6s1 4 3.5 6"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12l16-7-6 15-2.5-6.5z"/></symbol>
+</svg>
+<div class="app">
+  <nav class="side" aria-label="Sections">
+    <div class="brand"><span class="brand-mark"><svg class="i"><use href="#i-ball"/></svg></span>Fantasy GM</div>
+    <button class="nav" data-view="team"><svg class="i"><use href="#i-team"/></svg><span>My team</span></button>
+    <button class="nav" data-view="league"><svg class="i"><use href="#i-league"/></svg><span>League</span></button>
+    <button class="nav" data-view="trades"><svg class="i"><use href="#i-trade"/></svg><span>Trades</span></button>
+    <button class="nav" data-view="waivers"><svg class="i"><use href="#i-wire"/></svg><span>Waivers</span></button>
+    <button class="nav" data-view="movers"><svg class="i"><use href="#i-trend"/></svg><span>Hot &amp; cold</span></button>
+    <button class="nav" data-view="gm"><svg class="i"><use href="#i-chat"/></svg><span>AI GM</span></button>
+    <div class="side-foot" id="fetched"></div>
+  </nav>
+  <div class="main">
+    <header class="top">
+      <div class="league" id="league"><b>Loading…</b><span>&nbsp;</span></div>
+      <div class="punts" id="punts"></div>
+      <button class="btn" id="refresh" title="Re-pull rosters and free agents"><svg class="i"><use href="#i-refresh"/></svg>Refresh</button>
+    </header>
+    <main class="content" id="view"><div class="panel"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div></main>
+  </div>
+</div>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem("gm." + k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("gm." + k, JSON.stringify(v)); } catch {} },
+};
+const S = {
+  view: location.hash.slice(1) || store.get("view", "team"),
+  punt: new URLSearchParams(location.search).get("punt")?.split(",").filter(Boolean) ?? store.get("punt", []),  // ?punt=FT%25,TOV bookmarks a build state: null, error: null,
+  league: { team: null, data: null },
+  trade: { give: new Set(), get: new Set(), team: null, roster: null, result: null, busy: false },
+  ideas: { mode: "fair", team: "", list: null, busy: false },
+  chat: store.get("chat", []), chatBusy: false,
+};
+const OUT = new Set(["O", "INJ", "IL", "IL+", "NA", "SUSP"]);
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, punt: S.punt }) } : undefined);
+  const data = await r.json().catch(() => ({ error: `Server returned ${r.status}` }));
+  if (!r.ok || data.error) throw new Error(data.error || `Request failed (${r.status})`);
+  return data;
+}
+function toast(msg) {
+  const t = document.createElement("div"); t.className = "toast"; t.textContent = msg;
+  document.body.append(t); setTimeout(() => t.remove(), 3200);
+}
+
+async function loadState() {
+  try {
+    S.state = await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")));
+    S.error = null;
+  } catch (e) { S.error = e.message; }
+  render();
+}
+
+// ---------- formatting ----------
+const isPoints = () => S.state?.mode === "points";
+const sign = v => (v > 0 ? "+" : "") + Number(v).toFixed(2);
+const tone = v => v > 0.05 ? "pos" : v < -0.05 ? "neg" : "";
+function heat(v) {
+  const a = Math.min(Math.abs(v) / 2.5, 1) * 0.5;
+  const c = v >= 0 ? "var(--pos)" : "var(--neg)";
+  return `color-mix(in oklch, ${c} ${Math.round(a * 100)}%, transparent)`;
+}
+const punted = c => S.punt.includes(c);
+const LABEL = { FG3M: "3PM", TOV: "TO" };
+const lab = c => LABEL[c] || c;
+const statusTag = p => p.status ? `<span class="tag ${OUT.has(p.status) ? "out" : ""}">${esc(p.status)}</span>` : "";
+const gpNote = p => p.gp < 3 ? ` title="Only ${p.gp} games this season"` : "";
+
+function playerTable(players, { extra = [], empty = "No players." } = {}) {
+  if (!players?.length) return `<div class="empty">${empty}</div>`;
+  const cats = S.state.cats;
+  const head = `<tr><th>Player</th>${extra.map(x => `<th class="n">${x.h}</th>`).join("")}<th class="n">GP</th>
+    <th class="n" title="Rest-of-season value on your build">Value</th><th class="n" title="How this season looks so far (what Yahoo ranks show)">Now</th>
+    ${isPoints() ? `<th class="n">FP/G</th>` : cats.map(c => `<th class="n z ${punted(c) ? "punted-col" : ""}" style="text-align:center">${lab(c)}</th>`).join("")}</tr>`;
+  const rows = players.map(p => `<tr>
+    <td><span class="pname">${esc(p.name)}</span>${statusTag(p)}${p.pos ? ` <span class="muted small">${esc(p.pos)}</span>` : ""}</td>
+    ${extra.map(x => `<td class="n">${x.v(p)}</td>`).join("")}
+    <td class="n muted"${gpNote(p)}>${p.gp}</td>
+    <td class="n val">${Number(p.value).toFixed(isPoints() ? 1 : 2)}</td>
+    <td class="n ${tone(p.value_now - p.value)}">${Number(p.value_now).toFixed(isPoints() ? 1 : 2)}</td>
+    ${isPoints() ? `<td class="n">${p.fp.toFixed(1)}</td>` : cats.map(c => `<td class="z ${punted(c) ? "punted-col" : ""}" style="--c:${heat(p.z[c])}"><span>${p.z[c].toFixed(1)}</span></td>`).join("")}
+  </tr>`).join("");
+  return `<div class="tw"><table><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+}
+
+// ---------- views ----------
+function viewTeam() {
+  const st = S.state, prof = st.profile, n = st.teams.length;
+  let strip = "", vs = "";
+  if (prof) {
+    const ranks = prof.ranks[st.me], tot = prof.totals[st.me];
+    strip = `<div class="panel"><div class="panel-h"><div><h2>Category ranks</h2><p>Where your roster's per-game production ranks in the league (1 = best).</p></div>
+      ${prof.punt_suggestions.length && !prof.punt_suggestions.every(punted) ? `<button class="btn" data-act="apply-punt">Punt ${prof.punt_suggestions.map(lab).join(" + ")}</button>` : ""}</div>
+      <div class="cats" style="--n:${st.cats.length}">${st.cats.map(c => {
+        const r = ranks[c], good = 1 - (r - 1) / Math.max(n - 1, 1);
+        return `<div class="cat ${punted(c) ? "punted" : ""}"><span class="lbl">${lab(c)}</span>
+          <span class="rk">${r}<small> / ${n}</small></span>
+          <span class="tot ${tone(tot[c])}">${sign(tot[c])}</span>
+          <div class="bar"><i style="width:${Math.round(good * 100)}%;background:${good > .6 ? "var(--pos)" : good < .35 ? "var(--neg)" : "var(--faint)"}"></i></div></div>`;
+      }).join("")}</div></div>`;
+    const rows = Object.entries(prof.vs).sort((a, b) => (b[1].win - b[1].loss) - (a[1].win - a[1].loss));
+    const w = rows.filter(([, r]) => r.win > r.loss).length, l = rows.filter(([, r]) => r.win < r.loss).length;
+    vs = `<div class="panel"><div class="panel-h"><div><h2>Head-to-head vs every team</h2>
+      <p>Categories you'd win on a typical week. You'd beat ${w} of ${rows.length} teams${l ? `, lose to ${l}` : ""}.</p></div></div>
+      <div class="vs">${rows.map(([t, r]) => `<div class="vs-row"><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">
+        <span class="dot" style="background:${r.win > r.loss ? "var(--pos)" : r.win < r.loss ? "var(--neg)" : "var(--faint)"}"></span>${esc(t)}</button>
+        <span class="rec">${r.win}–${r.loss}</span></div>`).join("")}</div></div>`;
+  }
+  const moves = st.waivers.moves.slice(0, 3), sells = st.movers.sell_high.slice(0, 3);
+  const todo = (moves.length || sells.length) ? `<div class="panel"><div class="panel-h"><div><h2>Worth doing now</h2><p>Top waiver upgrades and sell-high candidates on your build.</p></div></div>
+    <div class="tw"><table class="wrap"><tbody>
+      ${moves.map(m => `<tr><td>Add <b>${esc(m.add)}</b>, drop ${esc(m.drop)}</td><td class="n pos val">${sign(m.gain)}</td><td class="n"><button class="btn ghost" data-go="waivers">Waivers</button></td></tr>`).join("")}
+      ${sells.map(p => `<tr><td>Sell high on <b>${esc(p.name)}</b>: playing ${sign(p.gap)} above real value</td><td class="n muted">${p.gp} GP</td><td class="n"><button class="btn ghost" data-act="shop" data-name="${esc(p.name)}">Find a buyer</button></td></tr>`).join("")}
+    </tbody></table></div></div>` : "";
+  return `<div class="head"><div><h1>${esc(st.me)}</h1><p class="sub">${st.roster.length} players · values are per game, rest of season${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}</p></div></div>
+    ${strip}${todo}
+    <div class="panel"><div class="panel-h"><div><h2>Roster</h2><p>Category cells are z-scores vs a typical rostered player. Green helps you, red hurts.</p></div></div>${playerTable(st.roster)}</div>
+    ${vs}`;
+}
+
+function viewLeague() {
+  const st = S.state, team = S.league.team || st.teams.find(t => t !== st.me);
+  const prof = st.profile;
+  const list = `<div class="tw"><table><thead><tr><th>Team</th>${prof ? `<th>Weak spots</th><th class="n">You vs them</th>` : ""}</tr></thead><tbody>
+    ${st.teams.filter(t => t !== st.me).map(t => `<tr${t === team ? ` style="background:var(--accent-soft)"` : ""}>
+      <td><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button></td>
+      ${prof ? `<td class="muted">${prof.builds[t].map(lab).join(", ") || "—"}</td><td class="n">${prof.vs[t].win}–${prof.vs[t].loss}</td>` : ""}</tr>`).join("")}
+    </tbody></table></div>`;
+  const d = S.league.data;
+  const roster = !d || d.team !== team ? `<div class="skel"></div><div class="skel"></div>` : playerTable(d.roster);
+  if ((!d || d.team !== team) && S.league.loading !== team) openTeam(team, false);
+  return `<div class="head"><div><h1>League</h1><p class="sub">Every roster, valued on your build. Weak spots are the categories a team ranks bottom-40% in, so they value those less.</p></div></div>
+    <div class="grid2" style="grid-template-columns: minmax(260px, 340px) 1fr">
+      <div class="panel" style="align-self:start">${list}</div>
+      <div class="panel"><div class="panel-h"><div><h2>${esc(team)}</h2><p>${d && d.team === team && d.build.length ? `Weak in ${d.build.map(lab).join(", ")}` : "&nbsp;"}</p></div>
+        <button class="btn" data-act="trade-with" data-team="${esc(team)}"><svg class="i"><use href="#i-trade"/></svg>Trade with them</button></div>${roster}</div>
+    </div>`;
+}
+async function openTeam(team, go = true) {
+  S.league.team = team; S.league.loading = team;
+  if (go) setView("league");
+  try { S.league.data = await api("/api/team", { team }); } catch (e) { toast(e.message); }
+  S.league.loading = null;
+  if (S.view === "league") render();
+}
+
+function viewTrades() {
+  const st = S.state, T = S.trade, others = st.teams.filter(t => t !== st.me);
+  if (!T.team) T.team = others[0];
+  if ((!T.roster || T.roster.team !== T.team) && T.loading !== T.team) loadTradeRoster();
+  const item = (p, set) => `<label class="pitem ${set.has(p.name) ? "on" : ""}"><input type="checkbox" data-pick="${set === T.give ? "give" : "get"}" value="${esc(p.name)}" ${set.has(p.name) ? "checked" : ""}>
+    <span>${esc(p.name)}${statusTag(p)}</span><span class="muted small">${Number(p.value).toFixed(isPoints() ? 1 : 2)}</span></label>`;
+  const theirs = T.roster && T.roster.team === T.team ? T.roster.roster.map(p => item(p, T.get)).join("") : `<div class="skel"></div><div class="skel"></div>`;
+  const ready = T.give.size + T.get.size > 0;
+  return `<div class="head"><div><h1>Trades</h1><p class="sub">Build a trade to test it, or let the finder search every team.</p></div></div>
+    <div class="grid2">
+      <div class="panel picker"><div class="panel-h"><div><h2>You give</h2><p>${T.give.size ? [...T.give].map(esc).join(", ") : "Pick players from your roster"}</p></div></div>
+        <div class="panel-b" style="padding-top:0"><div class="plist" style="margin-top:12px">${st.roster.map(p => item(p, T.give)).join("")}</div></div></div>
+      <div class="panel picker"><div class="panel-h"><div><h2>You get</h2><p>${T.get.size ? [...T.get].map(esc).join(", ") : "Pick players from their roster"}</p></div>
+        <select id="trade-team" aria-label="Trade partner">${others.map(t => `<option ${t === T.team ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
+        <div class="panel-b" style="padding-top:0"><div class="plist" style="margin-top:12px">${theirs}</div></div></div>
+    </div>
+    <div class="toolbar"><button class="btn primary" data-act="evaluate" ${ready && !T.busy ? "" : "disabled"}>${T.busy ? "Evaluating…" : "Evaluate trade"}</button>
+      ${ready ? `<button class="btn ghost" data-act="clear-trade">Clear</button>` : ""}</div>
+    ${T.result ? tradeResult(T.result) : ""}
+    ${ideasPanel()}`;
+}
+function tradeResult(r) {
+  const cats = Object.entries(r.cats);
+  return `<div class="panel"><div class="panel-h"><div class="verdict">
+      <span class="pill ${r.verdict}">${r.verdict}</span>
+      <dl class="side-by"><dt>You</dt><dt>${esc(r.other_team || "Them")}${r.their_build?.length ? ` (weak ${r.their_build.map(lab).join("/")})` : ""}</dt><dt title="How it looks to them on this season's numbers">How it looks to them</dt>
+        <dd class="${tone(r.net)}">${sign(r.net)}</dd><dd class="${tone(r.their_net)}">${sign(r.their_net)}</dd><dd class="${tone(r.their_view)}">${sign(r.their_view)}</dd></dl></div>
+      <button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div>
+    ${isPoints() ? "" : `<div class="cats" style="--n:${cats.length}">${cats.map(([c, v]) => `<div class="cat ${punted(c) ? "punted" : ""}"><span class="lbl">${lab(c)}</span><span class="rk ${tone(v)}" style="font-size:17px">${sign(v)}</span>
+      <div class="bar"><i style="width:${Math.min(Math.abs(v) / 3, 1) * 100}%;background:${v >= 0 ? "var(--pos)" : "var(--neg)"}"></i></div></div>`).join("")}</div>`}
+    <div class="panel-b small muted" style="border-top:1px solid var(--line)">Uneven trades include the cost of dropping (or the gain of picking up) a waiver-level player. ${r.their_view > 0.3 && r.their_net < 0 ? "They'd likely see this as a win on hype alone." : ""}</div></div>`;
+}
+function ideasPanel() {
+  const I = S.ideas, st = S.state;
+  const list = I.busy ? `<div class="skel"></div><div class="skel"></div><div class="skel"></div>` : !I.list ? `<div class="empty"><b>Search every roster</b>Fair finds deals that help both sides through category fit. Finesse finds deals where they look like the winner on hot starts but you gain more.</div>`
+    : !I.list.length ? `<div class="empty"><b>No deals cleared the bar</b>Try the other mode, a different punt, or all teams.</div>`
+    : `<div class="tw"><table><thead><tr><th>Team</th><th>You give</th><th>You get</th><th class="n">You</th><th class="n">Them</th><th class="n" title="On this season's numbers">Looks to them</th><th></th></tr></thead><tbody>
+      ${I.list.map((x, i) => `<tr><td>${esc(x.team)}</td><td>${x.give.map(esc).join(", ")}</td><td>${x.get.map(esc).join(", ")}</td>
+        <td class="n val ${tone(x.net)}">${sign(x.net)}</td><td class="n ${tone(x.their_net)}">${sign(x.their_net)}</td><td class="n ${tone(x.their_view)}">${sign(x.their_view)}</td>
+        <td class="n"><button class="btn ghost" data-act="load-idea" data-i="${i}">Load</button></td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="panel"><div class="panel-h"><div><h2>Trade finder</h2><p>1-for-1 up to 2-for-2 with your top 10 and theirs.</p></div>
+    <div class="toolbar"><div class="seg" role="group" aria-label="Mode">${["fair", "finesse"].map(m => `<button data-mode="${m}" aria-pressed="${I.mode === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div>
+      <select id="ideas-team" aria-label="Limit to team"><option value="">All teams</option>${st.teams.filter(t => t !== st.me).map(t => `<option ${I.team === t ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+      <button class="btn primary" data-act="find" ${I.busy ? "disabled" : ""}>Find trades</button></div></div>${list}</div>`;
+}
+async function loadTradeRoster() {
+  const team = S.trade.team; S.trade.loading = team;
+  try { const d = await api("/api/team", { team }); if (S.trade.team === team) { S.trade.roster = d; if (S.view === "trades") render(); } }
+  catch (e) { toast(e.message); }
+  S.trade.loading = null;
+}
+
+function viewWaivers() {
+  const w = S.state.waivers;
+  const moves = w.moves.length ? `<div class="tw"><table><thead><tr><th>Add</th><th>Drop</th><th class="n">Gain</th></tr></thead><tbody>
+    ${w.moves.map(m => `<tr><td class="pname">${esc(m.add)}</td><td>${esc(m.drop)}</td><td class="n pos val">${sign(m.gain)}</td></tr>`).join("")}</tbody></table></div>`
+    : `<div class="empty"><b>No clear upgrades</b>Nobody on waivers beats your weakest healthy player by enough to bother.</div>`;
+  return `<div class="head"><div><h1>Waivers</h1><p class="sub">Free agents ranked on your build. Injured players on your roster are never suggested as drops.</p></div></div>
+    <div class="grid2"><div class="panel"><div class="panel-h"><div><h2>Suggested moves</h2><p>Add/drop pairs worth at least +0.3.</p></div></div>${moves}</div>
+      <div class="panel"><div class="panel-h"><div><h2>Drop candidates</h2><p>Your three weakest healthy players.</p></div></div>${playerTable(w.drop_candidates)}</div></div>
+    <div class="panel"><div class="panel-h"><div><h2>Best available</h2><p>Top ${w.free_agents.length} free agents.</p></div></div>${playerTable(w.free_agents, { empty: "No free agent data. Refresh from Yahoo." })}</div>`;
+}
+
+function viewMovers() {
+  const m = S.state.movers, gap = { h: "Gap", v: p => `<span class="${tone(p.gap)} val">${sign(p.gap)}</span>` };
+  const owner = { h: "Team", v: p => esc(p.team) };
+  return `<div class="head"><div><h1>Hot &amp; cold</h1><p class="sub">Gap = how this season looks minus rest-of-season value. ${esc(m.note || "")}</p></div></div>
+    <div class="panel"><div class="panel-h"><div><h2>Sell high</h2><p>Your players beating their real value. Other managers see the hot start.</p></div></div>
+      ${playerTable(m.sell_high, { extra: [gap], empty: "<b>Nobody's running hot</b>None of your players are far above their real value yet." })}</div>
+    <div class="panel"><div class="panel-h"><div><h2>Buy low</h2><p>Good players on other teams starting cold.</p></div></div>
+      ${playerTable(m.buy_low, { extra: [owner, gap], empty: "<b>No slumping studs</b>Check back after a few more games." })}</div>`;
+}
+
+const SUGS = ["Who should I drop and pick up?", "Find me a fair trade that helps my weakest category", "Should I punt anything? Why?", "Who are my best sell-high candidates?"];
+function viewGM() {
+  const msgs = S.chat.length ? S.chat.map(m => `<div class="msg ${m.role}">${esc(m.text)}</div>`).join("") + (S.chatBusy ? `<div class="msg ai thinking">Thinking it through…</div>` : "")
+    : `<div class="empty" style="margin:auto"><b>Ask your GM anything</b>It runs the same numbers as the rest of the app (trades, waivers, punts, hot &amp; cold) and explains them. ${S.punt.length ? `It knows you're punting ${S.punt.map(lab).join(", ")}.` : ""}</div>`;
+  return `<div class="head"><div><h1>AI GM</h1><p class="sub">Every number it quotes comes from the model, not guesswork.</p></div>
+      ${S.chat.length ? `<button class="btn ghost" data-act="reset-chat">New conversation</button>` : ""}</div>
+    <div class="panel chat"><div class="msgs" id="msgs">${msgs}</div>
+      <div class="compose"><div class="sugs">${SUGS.map(s => `<button class="chip" data-sug="${esc(s)}">${esc(s)}</button>`).join("")}</div>
+        <form id="chat-form"><textarea id="chat-in" rows="1" placeholder="e.g. Is Jokić for Wembanyama + Suggs good for me?" ${S.chatBusy ? "disabled" : ""}></textarea>
+        <button class="btn primary" ${S.chatBusy ? "disabled" : ""} aria-label="Send"><svg class="i"><use href="#i-send"/></svg>Send</button></form></div></div>`;
+}
+async function ask(text) {
+  if (!text.trim() || S.chatBusy) return;
+  S.chat.push({ role: "user", text }); S.chatBusy = true; render();
+  try { const r = await api("/api/chat", { message: text }); S.chat.push({ role: "ai", text: r.reply }); }
+  catch (e) { S.chat.push({ role: "ai", text: "Error: " + e.message }); }
+  S.chatBusy = false; store.set("chat", S.chat.slice(-40)); render();
+}
+
+// ---------- shell ----------
+function renderShell() {
+  const st = S.state;
+  document.querySelectorAll(".nav").forEach(b => b.dataset.view === S.view ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
+  if (!st) return;
+  $("#league").innerHTML = `<b>${esc(st.league)}</b><span>${st.mode === "points" ? "Points" : st.cats.length + "-cat"} · ${st.teams.length} teams${st.demo ? " · demo data" : ""}</span>`;
+  $("#fetched").textContent = st.fetched ? "Rosters as of " + st.fetched : "";
+  $("#punts").innerHTML = st.mode === "points" ? "" : `<span>Punt</span>${st.cats.map(c => `<button class="chip" data-punt="${c}" aria-pressed="${punted(c)}" title="${punted(c) ? "Stop punting" : "Punt"} ${lab(c)}">${lab(c)}</button>`).join("")}`;
+}
+function render() {
+  renderShell();
+  const v = $("#view");
+  if (S.error && !S.state) { v.innerHTML = `<div class="panel err">Couldn't load your league: ${esc(S.error)}. Is <code>python app.py</code> running?</div>`; return; }
+  if (!S.state) return;
+  const demo = S.state.demo && S.view === "team" ? `<div class="notice">This is a demo league drafted from real stats. Connect your Yahoo league with <code>python yahoo.py</code> (see README) to see your real team.</div>` : "";
+  v.innerHTML = demo + ({ team: viewTeam, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, gm: viewGM }[S.view] || viewTeam)();
+  const m = $("#msgs"); if (m) m.scrollTop = m.scrollHeight;
+}
+function setView(v) { S.view = v; store.set("view", v); history.replaceState(null, "", "#" + v); render(); window.scrollTo(0, 0); }
+
+document.addEventListener("click", async e => {
+  const t = e.target.closest("button, [data-pick]"); if (!t) return;
+  if (t.dataset.view) return setView(t.dataset.view);
+  if (t.dataset.go) return setView(t.dataset.go);
+  if (t.dataset.punt) {
+    const c = t.dataset.punt;
+    S.punt = punted(c) ? S.punt.filter(x => x !== c) : [...S.punt, c];
+    store.set("punt", S.punt); S.trade.result = null; S.ideas.list = null; S.league.data = null; S.trade.roster = null;
+    return loadState();
+  }
+  if (t.dataset.mode) { S.ideas.mode = t.dataset.mode; S.ideas.list = null; return render(); }
+  if (t.dataset.sug) return ask(t.dataset.sug);
+  const act = t.dataset.act;
+  if (act === "apply-punt") { S.punt = [...new Set([...S.punt, ...S.state.profile.punt_suggestions])]; store.set("punt", S.punt); return loadState(); }
+  if (act === "open-team") return openTeam(t.dataset.team);
+  if (act === "trade-with") { S.trade.team = t.dataset.team; S.trade.get.clear(); S.trade.result = null; return setView("trades"); }
+  if (act === "shop") { S.trade.give = new Set([t.dataset.name]); S.trade.get.clear(); S.trade.result = null; return setView("trades"); }
+  if (act === "clear-trade") { S.trade.give.clear(); S.trade.get.clear(); S.trade.result = null; return render(); }
+  if (act === "evaluate") {
+    S.trade.busy = true; render();
+    try { S.trade.result = await api("/api/trade", { give: [...S.trade.give], get: [...S.trade.get] }); } catch (err) { toast(err.message); }
+    S.trade.busy = false; return render();
+  }
+  if (act === "find") {
+    S.ideas.busy = true; render();
+    try { S.ideas.list = await api("/api/ideas", { mode: S.ideas.mode, team: S.ideas.team }); } catch (err) { toast(err.message); S.ideas.list = null; }
+    S.ideas.busy = false; return render();
+  }
+  if (act === "load-idea") {
+    const x = S.ideas.list[+t.dataset.i];
+    Object.assign(S.trade, { team: x.team, give: new Set(x.give), get: new Set(x.get), result: null });
+    render(); $("[data-act=evaluate]")?.click(); window.scrollTo({ top: 0, behavior: "smooth" }); return;
+  }
+  if (act === "pitch") {
+    const r = S.trade.result;
+    setView("gm");
+    return ask(`Evaluate this trade and write a short casual pitch I can send to ${r.other_team}: I give ${r.give.map(p => p.name).join(", ")}, I get ${r.get.map(p => p.name).join(", ")}.`);
+  }
+  if (act === "reset-chat") { S.chat = []; store.set("chat", []); try { await api("/api/chat", { reset: true }); } catch {} return render(); }
+});
+document.addEventListener("change", e => {
+  const t = e.target;
+  if (t.dataset.pick) { const set = S.trade[t.dataset.pick]; t.checked ? set.add(t.value) : set.delete(t.value); S.trade.result = null; return render(); }
+  if (t.id === "trade-team") { S.trade.team = t.value; S.trade.get.clear(); S.trade.result = null; return render(); }
+  if (t.id === "ideas-team") { S.ideas.team = t.value; S.ideas.list = null; return render(); }
+});
+document.addEventListener("submit", e => {
+  if (e.target.id !== "chat-form") return;
+  e.preventDefault(); const i = $("#chat-in"); const text = i.value; i.value = ""; ask(text);
+});
+document.addEventListener("keydown", e => {
+  if (e.target.id === "chat-in" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chat-form").requestSubmit(); }
+});
+$("#refresh").addEventListener("click", async e => {
+  const b = e.currentTarget; b.classList.add("busy"); b.disabled = true;
+  try { S.state = await api("/api/refresh", {}); S.league.data = null; S.trade.roster = null; S.ideas.list = null; toast("League refreshed"); } catch (err) { toast("Refresh failed: " + err.message); }
+  b.classList.remove("busy"); b.disabled = false; render();
+});
+render();
+loadState();
+</script>
+</body>
+</html>

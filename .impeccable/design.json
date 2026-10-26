@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-26T01:10:00",
+  "title": "Design System: Fantasy GM",
+  "extensions": {
+    "colorMeta": {
+      "accent": { "role": "primary", "displayName": "Indigo", "canonical": "oklch(51% 0.19 268)", "tonalRamp": ["oklch(20% 0.08 268)", "oklch(30% 0.12 268)", "oklch(40% 0.17 268)", "oklch(51% 0.19 268)", "oklch(62% 0.16 268)", "oklch(74% 0.11 268)", "oklch(86% 0.06 268)", "oklch(95.5% 0.028 268)"] },
+      "bg": { "role": "neutral", "displayName": "Cool ground", "canonical": "oklch(97.4% 0.004 260)", "tonalRamp": ["oklch(17.5% 0.008 260)", "oklch(23% 0.016 260)", "oklch(36% 0.012 260)", "oklch(49% 0.016 260)", "oklch(62% 0.012 260)", "oklch(85% 0.008 260)", "oklch(91.5% 0.006 260)", "oklch(97.4% 0.004 260)"] },
+      "pos": { "role": "data", "displayName": "Gain", "canonical": "oklch(66% 0.15 152)", "tonalRamp": ["oklch(25% 0.06 152)", "oklch(35% 0.09 152)", "oklch(42% 0.12 152)", "oklch(55% 0.14 152)", "oklch(66% 0.15 152)", "oklch(76% 0.12 152)", "oklch(86% 0.07 152)", "oklch(95% 0.03 152)"] },
+      "neg": { "role": "data", "displayName": "Loss", "canonical": "oklch(63% 0.19 24)", "tonalRamp": ["oklch(25% 0.08 24)", "oklch(36% 0.12 24)", "oklch(47% 0.17 24)", "oklch(55% 0.18 24)", "oklch(63% 0.19 24)", "oklch(74% 0.13 24)", "oklch(85% 0.07 24)", "oklch(95% 0.03 24)"] }
+    },
+    "typographyMeta": {
+      "body": { "displayName": "Body", "purpose": "All UI text; tabular numerals page-wide." },
+      "stat": { "displayName": "Stat", "purpose": "Category rank numbers in the strip." }
+    },
+    "shadows": [
+      { "name": "panel", "value": "0 1px 2px oklch(30% 0.02 260 / 0.06), 0 4px 12px oklch(30% 0.02 260 / 0.05)", "purpose": "The only elevation: panels and toasts." }
+    ],
+    "motion": [
+      { "name": "state", "value": "150ms ease", "purpose": "Hover, pressed, and punt dimming. Disabled under prefers-reduced-motion." }
+    ],
+    "breakpoints": [
+      { "name": "two-col", "value": "980px" },
+      { "name": "phone", "value": "760px" }
+    ]
+  },
+  "components": [
+    { "name": "Button", "kind": "button", "refersTo": "button", "description": "Default action.", "html": "<button class=\"ds-btn\">Refresh</button>", "css": ".ds-btn{border:1px solid var(--line-strong,#d4d6db);background:var(--panel,#fff);border-radius:6px;padding:6px 12px;font-weight:550;cursor:pointer;transition:background .15s,border-color .15s}.ds-btn:hover{background:var(--panel-2,#f8f9fa)}.ds-btn:focus-visible{outline:2px solid var(--accent,#4f46e5);outline-offset:2px}" },
+    { "name": "Primary Button", "kind": "button", "refersTo": "button-primary", "description": "The one main action in a panel.", "html": "<button class=\"ds-btn-primary\">Evaluate trade</button>", "css": ".ds-btn-primary{border:1px solid var(--accent,#4f46e5);background:var(--accent,#4f46e5);color:#fff;border-radius:6px;padding:6px 12px;font-weight:550;cursor:pointer;transition:background .15s}.ds-btn-primary:hover{background:var(--accent-hover,#4338ca)}.ds-btn-primary:focus-visible{outline:2px solid var(--accent,#4f46e5);outline-offset:2px}" },
+    { "name": "Punt Chip", "kind": "chip", "refersTo": "chip", "description": "Toggle a punted category.", "html": "<button class=\"ds-chip\">FT%</button><button class=\"ds-chip\" aria-pressed=\"true\">TO</button>", "css": ".ds-chip{border:1px solid var(--line-strong,#d4d6db);background:var(--panel,#fff);border-radius:999px;padding:2px 9px;font-size:12px;font-weight:550;cursor:pointer;margin-right:4px}.ds-chip:hover{border-color:var(--faint,#8b8f99)}.ds-chip[aria-pressed=true]{background:var(--text,#1f2430);color:var(--bg,#f6f7f9);border-color:var(--text,#1f2430);text-decoration:line-through}" },
+    { "name": "Z-score Cell", "kind": "custom", "refersTo": "panel", "description": "Signature heat cell; strength follows |z|.", "html": "<table class=\"ds-z\"><tr><td style=\"--c:color-mix(in oklch, oklch(66% 0.15 152) 40%, transparent)\"><span>2.2</span></td><td style=\"--c:color-mix(in oklch, oklch(63% 0.19 24) 28%, transparent)\"><span>-1.4</span></td><td class=\"off\"><span>0.7</span></td></tr></table>", "css": ".ds-z td{position:relative;text-align:center;min-width:50px;padding:6px 10px;font-variant-numeric:tabular-nums}.ds-z td::before{content:\"\";position:absolute;inset:2px;border-radius:4px;background:var(--c,transparent)}.ds-z td span{position:relative}.ds-z td.off{opacity:.3;filter:grayscale(1)}" }
+  ],
+  "narrative": {
+    "northStar": "The quiet stat desk",
+    "overview": "A working tool for one fantasy manager on a laptop. It is the category standard played straight: the density of Basketball Monster, the calm of Linear, the friendliness of Sleeper. Chrome stays neutral and out of the way so the numbers carry the color.",
+    "keyCharacteristics": ["Cool grey ground, white panels, hairline borders.", "One indigo accent, used only for actions, the current nav item and selection.", "Green/red diverging z-score cells are the main color on screen.", "Punting a category greys that column out in every table at once (the signature move).", "Light and dark themes follow the OS, from the same tokens."],
+    "rules": [
+      { "name": "The Numbers Own the Color Rule", "body": "Chrome is neutral; saturated color appears only where it encodes a number's sign and size, or a primary action.", "section": "colors" },
+      { "name": "The Dark Mirror Rule", "body": "Dark mode redefines the same token names under prefers-color-scheme: dark. Components never branch on theme.", "section": "colors" },
+      { "name": "The No Eyebrow Rule", "body": "No kicker labels above headings. A heading plus a one-line muted description is the whole pattern.", "section": "typography" }
+    ],
+    "dos": ["Do show the reason with every verdict: per-category deltas next to the net number.", "Do show both sides of a trade (you, them, how it looks to them).", "Do use empty states that explain what the panel will show and how to fill it.", "Do keep transitions at 120–200ms and only on state changes."],
+    "donts": ["Don't add KPI tile grids or hero metrics.", "Don't use the accent for decoration, status or data.", "Don't use emoji or Unicode glyphs as icons; draw them in the sprite.", "Don't open a modal for anything; everything is inline."]
+  }
+}

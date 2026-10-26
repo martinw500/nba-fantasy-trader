@@ -1,4 +1,5 @@
 pandas
 nba_api
 yfpy
+python-dotenv
 anthropic
