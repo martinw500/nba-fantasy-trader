@@ -34,6 +34,35 @@ That opens http://localhost:8765 with a **demo league**: 12 fake teams drafted f
 
 Add `ANTHROPIC_API_KEY=sk-ant-...` to `.env` (key from https://console.anthropic.com) and restart. Everything except the chat works without it.
 
+## Moving to a new computer
+
+The code lives on GitHub (`martinw500/nba-fantasy-trader`). Two things are deliberately **not** in git: `.env` (your keys) and `data/` (cached stats + your league snapshot).
+
+**Before you leave the old computer:**
+```
+git add -A
+git commit -m "Add roadmap"
+git push
+```
+Also copy `.env` somewhere private (password manager, or a USB stick) if you created one. Never commit it.
+
+**On the new computer:**
+1. Install [Python 3.11+](https://www.python.org/downloads/) (built on 3.13; tick "Add to PATH"), [Git](https://git-scm.com/), and Claude Code / VS Code.
+   - Optional: [Node.js](https://nodejs.org/) (only the design-taste-frontend skill's scripts use it) and Chrome (for Claude's screenshot checks).
+2. Get the code and install packages:
+   ```
+   git clone https://github.com/martinw500/nba-fantasy-trader.git
+   cd nba-fantasy-trader
+   pip install -r requirements.txt
+   python test_model.py      # should print: ok
+   ```
+3. Put your `.env` back in the folder, or redo "Connect your Yahoo league" above.
+4. `python yahoo.py` to pull your league, or skip it to use the demo.
+5. `python app.py`. NBA stats download on their own the first time (`data/` is rebuilt automatically).
+6. In Claude Code: open the folder and accept the prompt to install the project's plugins. Run `/mcp` → context7 → authenticate if you want it. The project skills (`/gm`, humanizer, impeccable, design-taste-frontend) come with the repo.
+
+Then see [ROADMAP.md](ROADMAP.md) for what's next.
+
 ## Workflows
 
 ### "Who do I pick up / drop?"
@@ -143,5 +172,6 @@ Open the folder in Claude Code. These skills and plugins are set up for this pro
 | `yahoo.py` | Pulls your league from Yahoo (`python yahoo.py`) or builds the demo (`python yahoo.py demo`) |
 | `ai.py` | AI GM: Claude with tools that call `model.py` |
 | `test_model.py` | Self-check, no network: `python test_model.py` |
+| `ROADMAP.md` | What's untested and what to build next |
 | `PRODUCT.md`, `DESIGN.md` | Product and design decisions (used by impeccable) |
 | `data/` | Cached NBA stats + your league snapshot (gitignored; delete to refetch) |

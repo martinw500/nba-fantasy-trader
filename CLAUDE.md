@@ -1,6 +1,6 @@
 # nba-fantasy-trader (Fantasy GM)
 
-Local Yahoo NBA fantasy GM app. Python 3.13 + pandas backend, one-file vanilla HTML/JS UI. User-facing docs and every workflow: README.md.
+Local Yahoo NBA fantasy GM app. Python 3.13 + pandas backend, one-file vanilla HTML/JS UI. User-facing docs and every workflow: README.md. **What's untested and what to build next: ROADMAP.md.** Read it before starting new work and tick items off as they're done.
 
 ## Files
 - `model.py`: the engine (`League` class) plus a JSON CLI. All numbers come from here: UI, AI chat and the `/gm` skill.
