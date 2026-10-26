@@ -20,9 +20,27 @@ colors:
   neg-ink: "oklch(47% 0.17 24)"
   warn-soft: "oklch(95% 0.05 85)"
   warn-ink: "oklch(45% 0.1 70)"
+  bg-dark: "oklch(17.5% 0.008 260)"
+  panel-dark: "oklch(21% 0.009 260)"
+  panel-2-dark: "oklch(23.5% 0.01 260)"
+  line-dark: "oklch(29% 0.01 260)"
+  line-strong-dark: "oklch(36% 0.012 260)"
+  text-dark: "oklch(93% 0.006 260)"
+  muted-dark: "oklch(72% 0.012 260)"
+  faint-dark: "oklch(60% 0.012 260)"
+  accent-dark: "oklch(66% 0.17 268)"
+  accent-hover-dark: "oklch(72% 0.15 268)"
+  accent-soft-dark: "oklch(30% 0.06 268)"
+  accent-ink-dark: "oklch(82% 0.1 268)"
+  pos-dark: "oklch(62% 0.14 152)"
+  neg-dark: "oklch(60% 0.17 24)"
+  pos-ink-dark: "oklch(80% 0.12 152)"
+  neg-ink-dark: "oklch(78% 0.13 24)"
+  warn-soft-dark: "oklch(30% 0.05 80)"
+  warn-ink-dark: "oklch(85% 0.09 80)"
 typography:
   body:
-    fontFamily: "Segoe UI Variable Text, Segoe UI, system-ui, -apple-system, Helvetica Neue, sans-serif"
+    fontFamily: '"Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif'
     fontSize: "14px"
     fontWeight: 400
     lineHeight: 1.45
@@ -44,10 +62,30 @@ typography:
     fontSize: "20px"
     fontWeight: 650
     letterSpacing: "-0.01em"
+  stat-lg:
+    fontFamily: "{typography.body.fontFamily}"
+    fontSize: "28px"
+    fontWeight: 700
+    letterSpacing: "-0.02em"
+  stat-sm:
+    fontFamily: "{typography.body.fontFamily}"
+    fontSize: "16px"
+    fontWeight: 650
+  small:
+    fontFamily: "{typography.body.fontFamily}"
+    fontSize: "13px"
+    fontWeight: 400
+  tag:
+    fontFamily: "{typography.body.fontFamily}"
+    fontSize: "11px"
+    fontWeight: 650
 rounded:
+  bar: "2px"
   cell: "4px"
   control: "6px"
   panel: "8px"
+  mark: "7px"
+  bubble: "12px"
   pill: "999px"
 spacing:
   xs: "4px"
@@ -133,7 +171,8 @@ One system sans for everything (Segoe UI Variable on Windows), tabular numerals 
 - **h2** 15px / 650: panel titles.
 - **body** 14px / 400.
 - **label** 12px / 600, muted: table headers, category labels, panel descriptions (12.5px).
-- **stat** 20px / 650: category rank in the strip. Trade net is 28px / 700, the one large number on screen.
+- **small** 13px: notices, toasts. **tag** 11px / 650: injury/status tags.
+- **stat** 20px / 650: category rank in the strip. **stat-sm** 16px / 650: the you/them/looks-to-them numbers. **stat-lg** 28px / 700: reserved for one large number per screen.
 
 ### Named Rules
 **The No Eyebrow Rule.** No kicker labels above headings. A heading plus a one-line muted description is the whole pattern.
@@ -151,7 +190,7 @@ Flat with one soft lift: panels use `0 1px 2px` plus `0 4px 12px` at 5–6% alph
 
 ## Shapes
 
-Radii step 4 / 6 / 8 / pill: z-score cells 4px, controls 6px, panels 8px, chips and verdict pills fully round.
+Radii step 2 / 4 / 6 / 8 / 12 / pill: rank bars 2px, z-score cells and tags 4px, controls 6px, the brand mark 7px, panels 8px, chat bubbles 12px, chips and verdict pills fully round.
 
 ## Components
 
