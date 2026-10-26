@@ -364,9 +364,50 @@ class League:
         tk, td, ta = self._after(other, get, give)
         ov = {self.me: self.vec(mk), other: self.vec(tk)}
         b, a = self.outlook(self.me, punt=punt), self.outlook(self.me, ov, punt)
-        tb, tw = self.outlooks[other]["win"], self.outlook(other, ov)["win"]
+        to = self.outlook(other, ov)
+        tb, tw = self.outlooks[other]["win"], to["win"]
         sb, sa = self.standings(), self.standings(ov)
         net = 100 * (a["win"] - b["win"])
+        pct1 = lambda x: round(100 * x, 1)
+        total = lambda v, c: (round(100 * v[RAW.index(c[:2] + "M")] / v[RAW.index(c[:2] + "A")], 1) if c in ("FG%", "FT%")
+                              else round(float(v[RAW.index(c)]), 1))
+        side = lambda v0, v1, o0, o1, c: {"total": [total(v0, c), total(v1, c)], "odds": [pct1(o0[c]), pct1(o1[c])]}
+        cats_detail = {c: {"you": side(self.vecs[self.me], ov[self.me], b["odds"], a["odds"], c),
+                           "them": side(self.vecs[other], ov[other], self.outlooks[other]["odds"], to["odds"], c)}
+                       for c in self.cats}
+        roster = lambda keys, inn, dropped, added: (
+            sorted(({**self.player(k, punt), "move": "in" if k in inn else "add" if k in added else ""} for k in keys),
+                   key=lambda p: -p["value"]) + [{**self.player(k, punt), "move": "drop"} for k in dropped])
+        mine_d = sa[self.me]["win"] - sb[self.me]["win"]
+        rival = {t for t in sa if t != self.me and (t == other or sb[t]["rank"] <= 4)
+                 and sa[t]["win"] - sb[t]["win"] > mine_d}
+        flags = []
+        for k in get:
+            p, why = self.player(k), []
+            if p["status"] in OUT:
+                why.append(f"listed {p['status']}")
+            if p["avail"] < 0.7:
+                why.append(f"expected to play {round(100 * p['avail'])}% of games")
+            if p["gp"] < 10:
+                why.append(f"only {p['gp']} games this season")
+            if why:
+                flags.append(f"{p['name']}: {', '.join(why)}.")
+            if p["value_now"] - p["value"] > 0.5:
+                flags.append(f"{p['name']} is playing {p['value_now'] - p['value']:.1f} above his real value: "
+                             "you'd be buying at peak hype.")
+        posset = lambda keys: {x for k in keys for x in self.meta.get(k, {}).get("pos", "").split(",") if x}
+        if lost := sorted(posset(self.rosters[self.me]) - posset(mk)):
+            flags.append(f"Leaves you with no {', '.join(lost)}.")
+        flags += [f"{t} gains more than you ({100 * (sa[t]['win'] - sb[t]['win']):+.1f}% vs {100 * mine_d:+.1f}%)"
+                  + (", and they're your trade partner." if t == other else f", and they're projected {sb[t]['rank']}.")
+                  for t in sorted(rival, key=lambda t: sb[t]["rank"])]
+        out.update({
+            "cats_detail": cats_detail,
+            "vs": {t: [pct1(b["vs"][t]), pct1(a["vs"][t])] for t in b["vs"]},
+            "standings": {t: {"rank": [sb[t]["rank"], sa[t]["rank"]], "win": [pct1(sb[t]["win"]), pct1(sa[t]["win"])],
+                              "rival": t in rival} for t in sb},
+            "roster_after": {"you": roster(mk, get, md, ma), "them": roster(tk, give, td, ta)},
+            "flags": flags, "build_after": self._weak(self.outlook(self.me, ov)["odds"])})
         out.update({
             "unit": "win%", "value_net": out["net"], "net": round(net, 1), "their_net": round(100 * (tw - tb), 1),
             "win": round(100 * b["win"], 1), "win_after": round(100 * a["win"], 1),
@@ -554,9 +595,10 @@ class League:
 
     def build(self, team):
         """Categories a team is effectively punting: up to 2 it wins under 30% of the time across the league."""
-        if self.mode == "points":
-            return []
-        odds = self.outlooks[team]["odds"]
+        return [] if self.mode == "points" else self._weak(self.outlooks[team]["odds"])
+
+    @staticmethod
+    def _weak(odds):
         return [c for c in sorted(odds, key=odds.get)[:2] if odds[c] < 0.3]
 
     def profile(self):

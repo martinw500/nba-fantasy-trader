@@ -83,7 +83,13 @@ Built as planned, plus:
   - the drop choice picks the lowest win-% cost
 - An open size-3 search on the demo league takes under ~5s.
 
-### T2. "What changes" breakdown
+### T2. "What changes" breakdown ✅ done Oct 26 (branch `trade-lab`)
+
+Built as planned, plus:
+- `cats_detail`, `vs` and `standings` use win-% numbers (0–100), like `win` / `win_after`. Standings rows carry `rival: true` for the flagged teams.
+- Toggling a punt chip now re-runs the evaluated trade instead of clearing it.
+- The category table replaces the old odds strip on a 9-cat result.
+- Known limits: early in the season every incoming player trips the "GP < 10" flag. On phones the 5-number verdict row is cramped (T3's `/impeccable polish` should fix it). The position check is untested until a real Yahoo pull, since the demo has no `pos`.
 
 **Why:** today a result shows only your category odds deltas. You can't see their side, totals, who you now beat, or whether you just made a rival better.
 
@@ -207,7 +213,7 @@ Built as planned, plus:
 ## Model accuracy
 
 - [ ] **Calibrate the randomness settings** (`GAMES_WEEK`, `DISPERSION`, `SCHED_CV`, `PCT_NOISE`, `FILL`, `STATUS_AVAIL` at the top of `model.py`). They're educated guesses. Best method: pull last season's weekly scoreboards for a real league (`get_league_scoreboard_by_week`), predict each category with `cat_probs` from each team's totals, and tune the settings until predicted win rates match actual ones.
-- [ ] **Positions and daily lineup slots.** Trades and adds ignore positions (e.g. you could end up with 6 centers). Yahoo's `roster_positions` is in the settings. Minimum version: warn when a trade leaves a position empty. Full version: a games-played penalty when more players have games than slots.
+- [ ] **Positions and daily lineup slots.** Trades and adds ignore positions (e.g. you could end up with 6 centers). Yahoo's `roster_positions` is in the settings. Minimum version: warn when a trade leaves a position empty *(done in Trade lab T2, untested on real `pos` data)*. Full version: a games-played penalty when more players have games than slots.
 - [ ] **Drop choice in trades** uses the lowest z-score. Better: drop whoever costs the least win %. *(Part of Trade lab T1.)*
 - [ ] **Trade finder depth** is your top 10 vs their top 10, up to 2-for-2. 3-for-1 consolidation trades aren't searched. *(Part of Trade lab T1.)*
 - [ ] **Hot & cold** uses a fixed hype weight (`HYPE = 5`). Could compare against Yahoo's actual rank (`sort=AR`) instead.

@@ -74,6 +74,15 @@ def test_all():
     assert r["unit"] == "win%" and r["win_after"] > r["win"] and r["their_win_after"] < r["their_win"]
     r = lg.trade(["Player 198"], ["Player 151", "Player 155"])
     assert len(r["you_drop"]) == 1 and len(r["they_add"]) == 1
+    # breakdown: both sides per category, every opponent, both rosters with moves marked, flags
+    assert set(r["cats_detail"]) == set(model.CATS) and 30 < r["cats_detail"]["FG%"]["you"]["total"][0] < 70
+    assert set(r["vs"]) == {"Them"} and set(r["standings"]) == {"Me", "Them"}
+    moves = {p["name"]: p["move"] for p in r["roster_after"]["you"]}
+    assert moves[r["you_drop"][0]] == "drop" and "Player 198" not in moves
+    assert {p["name"] for p in r["roster_after"]["them"] if p["move"] == "add"} == set(r["they_add"])
+    assert any("only 5 games" in f for f in r["flags"])  # synthetic season is 5 games old
+    bad = lg.trade(["Player 198"], ["Player 151"])
+    assert bad["standings"]["Them"]["rival"] and any("trade partner" in f for f in bad["flags"])
 
     # injuries: an "INJ" tag lowers a player's expected weekly contribution
     lg.meta["player 199"] = {**lg.meta["player 199"], "status": "INJ"}

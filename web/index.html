@@ -142,7 +142,8 @@ td.z { text-align: center; font-size: 12.5px; min-width: 50px; position: relativ
 td.z::before { content: ""; position: absolute; inset: 2px; border-radius: 4px; background: var(--c, transparent); z-index: 0; }
 td.z span { position: relative; }
 .punted-col { opacity: .3; filter: grayscale(1); }
-th.punted-col { text-decoration: line-through; }
+th.punted-col, tr.punted-col td:first-child { text-decoration: line-through; }
+.flags { margin: 0; padding: 12px 16px 12px 34px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
 .pname { font-weight: 550; }
 .tag { display: inline-block; font-size: 11px; font-weight: 650; padding: 0 5px; border-radius: 4px; background: var(--line); color: var(--muted); margin-left: 6px; vertical-align: 1px; }
 .tag.out { background: color-mix(in oklch, var(--neg) 18%, transparent); color: var(--neg-ink); }
@@ -424,25 +425,57 @@ function tradeResult(r) {
       <div class="bar"><i style="width:${Math.min(Math.abs(v) / 3, 1) * 100}%;background:${v >= 0 ? "var(--pos)" : "var(--neg)"}"></i></div></div>`).join("")}</div>`}
     <div class="panel-b small muted" style="border-top:1px solid var(--line)">Uneven trades include the cost of dropping (or the gain of picking up) a waiver-level player. ${r.their_view > 0.3 && r.their_net < 0 ? "They'd likely see this as a win on hype alone." : ""}</div></div>`;
 }
+const ACCEPT = { "Likely yes": "accept", "Maybe": "toss-up", "Long shot": "decline" };
+const ba = ([b, a], f = String) => `<span class="muted">${f(b)} →</span> ${f(a)}`;
+const MOVE = { in: "via trade", add: "free agent", drop: "dropped" };
 function tradeResultOdds(r) {
   const them = esc(r.other_team || "Them");
   const moves = [r.you_drop.length && `You drop ${r.you_drop.map(esc).join(", ")} to make room.`,
     r.you_add.length && `You pick up ${r.you_add.map(esc).join(", ")} with the open spot.`,
     r.they_drop.length && `${them} drops ${r.they_drop.map(esc).join(", ")}.`,
     r.they_add.length && `${them} picks up ${r.they_add.map(esc).join(", ")}.`].filter(Boolean).join(" ");
+  const tot = c => v => c.endsWith("%") ? v.toFixed(1) + "%" : v.toFixed(1);
+  const odds = o => `<td class="n">${ba(o, v => Math.round(v) + "%")}</td><td class="n val ${tone(o[1] - o[0])}">${delta(o[1] - o[0], "win%")}</td>`;
+  const cats = `<div class="tw"><table><thead><tr><th>Category</th><th class="n" title="Expected weekly total">You: total</th><th class="n" title="Chance you win it, averaged over every opponent">Your odds</th><th></th>
+      <th class="n">${them}: total</th><th class="n">Their odds</th><th></th></tr></thead><tbody>
+    ${Object.entries(r.cats_detail).map(([c, d]) => `<tr class="${punted(c) ? "punted-col" : ""}"><td class="pname">${lab(c)}</td>
+      <td class="n">${ba(d.you.total, tot(c))}</td>${odds(d.you.odds)}<td class="n">${ba(d.them.total, tot(c))}</td>${odds(d.them.odds)}</tr>`).join("")}</tbody></table></div>`;
+  const h2h = Object.entries(r.vs).sort((x, y) => (y[1][1] - y[1][0]) - (x[1][1] - x[1][0]));
+  const flip = ([b, a]) => b < 50 && a >= 50 ? ` <span class="tag">now favoured</span>` : b >= 50 && a < 50 ? ` <span class="tag out">now underdog</span>` : "";
+  const st = Object.entries(r.standings).filter(([t, s]) => t === S.state.me || s.rival || s.rank[0] !== s.rank[1] || Math.abs(s.win[1] - s.win[0]) >= 0.5)
+    .sort((x, y) => x[1].rank[1] - y[1].rank[1]);
+  const hint = r.build_after.filter(c => !punted(c));
+  const sides = [...r.give.map(p => ({ ...p, side: "You give" })), ...r.get.map(p => ({ ...p, side: "You get" }))];
+  const moveCol = { h: "Move", v: p => p.move ? `<span class="tag ${p.move === "drop" ? "out" : ""}">${MOVE[p.move]}</span>` : "" };
   return `<div class="panel"><div class="panel-h"><div class="verdict">
       <span class="pill ${r.verdict}">${r.verdict}</span>
-      <dl class="side-by" style="grid-template-columns:repeat(4,auto)">
-        <dt title="Chance to win a typical week vs the league">Your win odds</dt><dt>${them}</dt><dt title="On this season's hot and cold starts, what Yahoo's ranks show them">How it looks to them</dt><dt>Projected finish</dt>
+      <dl class="side-by" style="grid-template-columns:repeat(5,auto)">
+        <dt title="Chance to win a typical week vs the league">Your win odds</dt><dt>${them}</dt><dt title="On this season's hot and cold starts, what Yahoo's ranks show them">How it looks to them</dt><dt>Projected finish</dt><dt title="Mostly how it looks to them, a little how it really helps them">Will they say yes</dt>
         <dd><span class="${tone(r.net)}">${delta(r.net, "win%")}</span> <span class="muted small">${r.win}% → ${r.win_after}%</span></dd>
         <dd><span class="${tone(r.their_net)}">${delta(r.their_net, "win%")}</span> <span class="muted small">${r.their_win}% → ${r.their_win_after}%</span></dd>
         <dd class="${tone(r.their_view)}">${r.their_view > 0.3 ? "Looks good" : r.their_view < -0.3 ? "Looks bad" : "Looks even"} <span class="muted small">${sign(r.their_view)}</span></dd>
-        <dd>${ord(r.rank)} → ${ord(r.rank_after)}</dd></dl></div>
+        <dd>${ord(r.rank)} → ${ord(r.rank_after)}</dd><dd><span class="pill ${ACCEPT[r.accept]}" style="text-transform:none">${r.accept}</span></dd></dl></div>
       <button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div>
-    <div class="cats" style="--n:${Object.keys(r.odds).length}">${Object.entries(r.odds).map(([c, v]) => `<div class="cat ${punted(c) ? "punted" : ""}"><span class="lbl">${lab(c)} odds</span><span class="rk ${tone(v)}" style="font-size:17px">${delta(v, "win%")}</span>
-      <div class="bar"><i style="width:${Math.min(Math.abs(v) / 20, 1) * 100}%;background:${v >= 0 ? "var(--pos)" : "var(--neg)"}"></i></div></div>`).join("")}</div>
+    ${cats}
     <div class="panel-b small muted" style="border-top:1px solid var(--line)">Win odds = chance to win a typical week against the league, with both rosters updated. ${moves}
-      ${r.their_view > 0.3 && r.their_net < 0 ? "They'd likely see this as a win on hype alone." : ""}</div></div>`;
+      ${r.their_view > 0.3 && r.their_net < 0 ? "They'd likely see this as a win on hype alone." : ""}
+      ${hint.length ? `After this you'd win ${hint.map(lab).join(" and ")} under 30% of weeks: worth thinking about punting ${hint.length > 1 ? "them" : "it"}.` : ""}</div></div>
+    <div class="grid2">
+      <div class="panel"><div class="panel-h"><div><h2>Head-to-head</h2><p>Your chance to beat each team in a week, before → after. Biggest gains first.</p></div></div>
+        <div class="vs">${h2h.map(([t, o]) => `<div class="vs-row"><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button>
+          <span>${ba(o, v => Math.round(v) + "%")} <span class="small ${tone(o[1] - o[0])}">${delta(o[1] - o[0], "win%")}</span>${flip(o)}</span></div>`).join("")}</div></div>
+      <div class="panel" style="align-self:start"><div class="panel-h"><div><h2>Standings movers</h2><p>Teams whose projected finish or win odds move. Flagged: your partner or a top-4 team gaining more than you.</p></div></div>
+        <div class="tw"><table><thead><tr><th class="n">#</th><th>Team</th><th class="n">Win odds</th><th class="n"></th></tr></thead><tbody>
+        ${st.map(([t, s]) => `<tr${t === S.state.me ? ` style="background:var(--accent-soft)"` : ""}><td class="n">${ba(s.rank)}</td><td>${esc(t)}${t === S.state.me ? ` <span class="tag">you</span>` : ""}${s.rival ? ` <span class="tag out">gains more than you</span>` : ""}</td>
+          <td class="n">${ba(s.win, v => v.toFixed(1) + "%")}</td><td class="n val ${tone(s.win[1] - s.win[0])}">${delta(s.win[1] - s.win[0], "win%")}</td></tr>`).join("")}</tbody></table></div></div>
+    </div>
+    <div class="panel"><div class="panel-h"><div><h2>Players in the deal</h2><p>${r.flags.length ? `${r.flags.length} thing${r.flags.length > 1 ? "s" : ""} to check before you send it.` : "Nothing flagged: no injuries, small samples, hype or risky movers."}</p></div></div>
+      ${r.flags.length ? `<ul class="flags">${r.flags.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}
+      ${playerTable(sides, { extra: [{ h: "Side", v: p => `<span class="muted">${p.side}</span>` }] })}</div>
+    <div class="grid2">
+      <div class="panel"><div class="panel-h"><div><h2>Your roster after</h2><p>Sorted by value. Dropped players are listed last.</p></div></div>${playerTable(r.roster_after.you, { extra: [moveCol] })}</div>
+      <div class="panel"><div class="panel-h"><div><h2>${them} after</h2><p>What they'd be working with.</p></div></div>${playerTable(r.roster_after.them, { extra: [moveCol] })}</div>
+    </div>`;
 }
 function ideasPanel() {
   const I = S.ideas, st = S.state;
@@ -456,6 +489,11 @@ function ideasPanel() {
     <div class="toolbar"><div class="seg" role="group" aria-label="Mode">${["fair", "finesse"].map(m => `<button data-mode="${m}" aria-pressed="${I.mode === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div>
       <select id="ideas-team" aria-label="Limit to team"><option value="">All teams</option>${st.teams.filter(t => t !== st.me).map(t => `<option ${I.team === t ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
       <button class="btn primary" data-act="find" ${I.busy ? "disabled" : ""}>Find trades</button></div></div>${list}</div>`;
+}
+async function evaluate() {
+  S.trade.busy = true; render();
+  try { S.trade.result = await api("/api/trade", { give: [...S.trade.give], get: [...S.trade.get] }); } catch (err) { toast(err.message); }
+  S.trade.busy = false; render();
 }
 async function loadTradeRoster() {
   const team = S.trade.team; S.trade.loading = team;
@@ -532,8 +570,10 @@ document.addEventListener("click", async e => {
   if (t.dataset.punt) {
     const c = t.dataset.punt;
     S.punt = punted(c) ? S.punt.filter(x => x !== c) : [...S.punt, c];
+    const re = S.trade.result;
     store.set("punt", S.punt); S.trade.result = null; S.ideas.list = null; S.league.data = null; S.trade.roster = null;
-    return loadState();
+    await loadState();
+    return re && evaluate();
   }
   if (t.dataset.mode) { S.ideas.mode = t.dataset.mode; S.ideas.list = null; return render(); }
   if (t.dataset.sug) return ask(t.dataset.sug);
@@ -543,11 +583,7 @@ document.addEventListener("click", async e => {
   if (act === "trade-with") { S.trade.team = t.dataset.team; S.trade.get.clear(); S.trade.result = null; return setView("trades"); }
   if (act === "shop") { S.trade.give = new Set([t.dataset.name]); S.trade.get.clear(); S.trade.result = null; return setView("trades"); }
   if (act === "clear-trade") { S.trade.give.clear(); S.trade.get.clear(); S.trade.result = null; return render(); }
-  if (act === "evaluate") {
-    S.trade.busy = true; render();
-    try { S.trade.result = await api("/api/trade", { give: [...S.trade.give], get: [...S.trade.get] }); } catch (err) { toast(err.message); }
-    S.trade.busy = false; return render();
-  }
+  if (act === "evaluate") return evaluate();
   if (act === "find") {
     S.ideas.busy = true; render();
     try { S.ideas.list = await api("/api/ideas", { mode: S.ideas.mode, team: S.ideas.team }); } catch (err) { toast(err.message); S.ideas.list = null; }
