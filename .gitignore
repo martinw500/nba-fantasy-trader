@@ -5,3 +5,4 @@ __pycache__/
 .impeccable/build/
 .impeccable/mocks/
 .impeccable/config.local.json
+.venv/

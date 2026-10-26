@@ -10,6 +10,7 @@ Local Yahoo NBA fantasy GM app. Python 3.13 + pandas backend, one-file vanilla H
 - `web/index.html`: the whole UI. State in `S`, views are `view*()` functions returning HTML strings, event delegation via `data-act` / `data-view` / `data-punt`.
 
 ## Commands
+Python lives in `.venv` (Homebrew Python blocks global pip): use `.venv/bin/python` or `source .venv/bin/activate`.
 - `python test_model.py`: self-check, synthetic data, no network. Run it after touching `model.py`.
 - `python app.py --no-browser`: run the app without opening a tab. `#view` and `?punt=FT%25,TOV` deep-link a view and build.
 - `python model.py {team|trade|ideas|waivers|movers|roster} [--punt ...]`: prints JSON.

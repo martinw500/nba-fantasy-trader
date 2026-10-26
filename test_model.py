@@ -31,6 +31,7 @@ def test_all():
     lg, base, cur = league()
     assert lg.find("nikola jokic") == "nikola jokic" and lg.p.at["nikola jokic", "PLAYER_NAME"] == "Nikola Jokić"
     assert lg.find("Player 19 jr") == "player 19"
+    assert lg.find("Jokic") == "nikola jokic"
 
     # ROS: 5 games of 40 PTS barely moves a 20-PTS baseline (k=20 -> 20% weight); rookies start near fringe level
     ros = model.ros(base, cur)
@@ -83,6 +84,35 @@ def test_all():
         assert idea["net"] > 1 and idea["their_net"] > 0.5
     for idea in lg.ideas("finesse"):
         assert idea["net"] > 1.5 and idea["their_view"] > 0.3
+
+    # search (pinned on a target: this league's even spread makes open searches look awful to "Them"):
+    # pins always in, locks never in, tier thresholds hold, 3-player sides and every filter work
+    found = 0
+    for tier, (t0, t1, t2) in model.TIERS.items():
+        for x in lg.search(get=["Player 199"], tier=tier, limit=200):
+            found += 1
+            assert x["net"] >= t0 and x["their_net"] >= t1 and x["their_view"] >= t2, (tier, x)
+    assert found
+    hits = lg.search(get=["Player 199"], lock=["Player 198"], tier="hard", limit=200)
+    assert hits and all("Player 199" in x["get"] and "Player 198" not in x["give"] for x in hits)
+    assert any(len(x["give"]) == 3 for x in hits)
+    shop = lg.search(give=["Player 150"], get=["Player 199"], tier="hard")
+    assert shop and all("Player 150" in x["give"] for x in shop)
+    cons = lg.search(get=["Player 199"], tier="hard", shape="consolidate")
+    assert cons and all(len(x["give"]) > len(x["get"]) for x in cons)
+    assert all(x["score"] > 0 for x in lg.search(get=["Player 199"], goal="cats", goal_cats=["STL"], tier="hard"))
+    for bad in ({"get": ["Player 150"]}, {"get": ["Player 199"], "team": "Me"}, {"tier": "nope"}, {"goal": "team"}):
+        try:
+            lg.search(**bad)
+            raise AssertionError(f"accepted bad search {bad}")
+        except KeyError:
+            pass
+
+    # uneven trades drop whoever costs the least win %, two at a time if needed
+    r = lg.trade(["Player 198"], ["Player 151", "Player 155", "Player 159"])
+    keys = [k for k in lg.rosters["Me"] if k != "player 198"] + ["player 151", "player 155", "player 159"]
+    c = lg._contrib("Me", keys)
+    assert r["you_drop"] == lg.names(sorted(keys, key=c.get)[:2])
 
     w = lg.waivers()
     assert all(m["gain"] > 0.5 for m in w["moves"])

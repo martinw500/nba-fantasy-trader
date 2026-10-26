@@ -6,12 +6,14 @@ argument-hint: "[question, e.g. who should I drop?]"
 
 Answer the user's fantasy question with numbers from this repo's engine. Never invent values.
 
+0. Run Python as `.venv/bin/python` (or activate `.venv` first).
 1. Data: if `data/league.json` is older than ~12 hours or the user says rosters changed, refresh it:
    `python yahoo.py` (needs `.env` with YAHOO_* keys; if it fails, say so and fall back to the existing snapshot, or `python yahoo.py demo` if none exists).
 2. Run what the question needs (all print JSON; add `--punt "FT%,TOV"` when the user punts):
    - `python model.py team` — category ranks, H2H vs each team, punt suggestions, roster values
    - `python model.py trade --give "A, B" --get "C"` — evaluate a specific trade
    - `python model.py ideas --mode fair|finesse [--team "Name"]` — trade finder
+   - `python model.py search --get "Target" | --give "Mine" [--lock "A, B"] [--tier easy|fair|finesse|hard] [--goal cats --cats "STL,AST" | --goal team --vs "Name"] [--size 3] [--healthy] [--shape consolidate|depth]` — targeted search: offers for a player, buyers for yours, deals that fix categories or beat one team. Each result has `accept` (Likely yes / Maybe / Long shot)
    - `python model.py waivers` — best free agents + add/drop moves
    - `python model.py movers` — sell high / buy low
    - `python model.py roster --team "Name"` — any team's roster

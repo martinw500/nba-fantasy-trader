@@ -86,7 +86,15 @@ def demo(seed=7):
         teams[names[pick if rnd % 2 == 0 else 11 - pick]].append(k)
     as_player = lambda k: {"name": line.at[k, "PLAYER_NAME"], "pos": "", "status": "",
                            "nba": line.at[k, "TEAM_ABBREVIATION"]}
-    fa = sorted(order[12 * 13:], key=lambda k: -val[k])[:100]
+    fa = sorted(order[12 * 13:], key=lambda k: -val[k])
+    # a few weeks of waiver moves: every team swaps its worst player for the best free agent while it's an upgrade,
+    # so free agents end up near 13th-man level like a real league (otherwise trades that free a roster spot look great)
+    for t in names * 3:
+        worst = min(teams[t], key=val.get)
+        if val[fa[0]] > val[worst]:
+            teams[t] = [k for k in teams[t] if k != worst] + [fa.pop(0)]
+            fa = sorted(fa + [worst], key=lambda k: -val[k])
+    fa = fa[:100]
     return save({"name": "Demo League", "demo": True, "me": "You",
                  "teams": {t: [as_player(k) for k in ks] for t, ks in teams.items()},
                  "free_agents": [as_player(k) for k in fa],

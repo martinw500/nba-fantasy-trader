@@ -12,6 +12,7 @@ CLI (prints JSON, used by Claude Code and for quick checks):
   python model.py team                      # win odds, projected standings, category odds, punt suggestions
   python model.py trade --give "A" --get "B, C"
   python model.py ideas --mode finesse      # fair | finesse
+  python model.py search --get "Wembanyama" --tier easy --lock "Jokic"   # offers for a target, see --help
   python model.py waivers
   python model.py movers                    # sell-high / buy-low
   add --punt "FT%,TOV" to any of them
@@ -48,6 +49,17 @@ SCHED_CV = 0.10                                    # week-to-week swing beyond b
 PCT_NOISE = 1.0                                    # FG%/FT% variance vs coin-flip shooting at each player's rate
 FILL = 0.5                                         # share of a sat-out player's games your bench/streamers cover
 STATUS_AVAIL = {"GTD": 0.9, "DTD": 0.9, "O": 0.7, "SUSP": 0.8, "INJ": 0.6, "IL": 0.5, "IL+": 0.4, "NA": 0.0}
+
+# Trade search difficulty: (min gain for you, min gain for them, both win %; min "looks to them" in value units).
+# ponytail: starting guesses like the knobs above; tune once real offers get accepted or turned down.
+TIERS = {"easy": (0.5, 0, 0.3), "fair": (1, 0.5, -1), "finesse": (1.5, -5, 0.3), "hard": (3, -10, -1)}
+
+
+def accept(their_net, their_view, u=1.0):
+    """How likely the other manager says yes: they mostly judge on how it looks (Yahoo ranks), a little on real fit."""
+    if their_view > 0.3 * u and their_net > -1:
+        return "Likely yes"
+    return "Long shot" if their_view < -0.5 * u else "Maybe"
 
 
 def norm(name):
@@ -194,6 +206,8 @@ class League:
         k = norm(name)
         if k in self.p.index:
             return k
+        if len(last := [x for x in self.p.index if x.endswith(" " + k)]) == 1:  # "Jokic", "Gilgeous-Alexander"
+            return last[0]
         close = difflib.get_close_matches(k, self.p.index, n=1, cutoff=0.8)
         if close:
             return close[0]
@@ -246,6 +260,23 @@ class League:
     def vecs(self):
         return {t: self.vec(ks) for t, ks in self.rosters.items()}
 
+    @functools.cached_property
+    def rows(self):
+        """Weekly vector per player, as a dict of arrays for fast summing in loops."""
+        return dict(zip(self.week.index, self.week.to_numpy()))
+
+    def _contrib(self, team, keys, punt=()):
+        """Each player's worth to `team` in win %: what it loses without him (its own players) or gains with him (anyone
+        else). ponytail: measured on the current roster, not the post-trade one; exact would mean a pass per combo."""
+        keys, base, own = list(keys), self.vecs[team], set(self.rosters[team])
+        if not keys:
+            return {}
+        V = np.stack([base - self.rows[k] if k in own else base + self.rows[k] for k in keys])
+        _, O = self._others(team)
+        w = match_prob(self._concede(cat_probs(V[:, None], O[None], self.cats), punt)).mean(-1)
+        w0 = self.outlook(team, punt=punt)["win"]
+        return {k: float(w0 - x if k in own else x - w0) for k, x in zip(keys, w)}
+
     def _concede(self, p, punt):
         """Punted categories count as losses for you: that's what committing to a punt means."""
         idx = [self.cats.index(c) for c in punt if c in self.cats]
@@ -280,14 +311,15 @@ class League:
         order = sorted(wins, key=lambda t: -wins[t])
         return {t: {"win": round(wins[t], 3), "rank": i + 1} for i, t in enumerate(order)}
 
-    def _after(self, team, out, inn):
-        """Roster after a trade at its current size: an extra player means dropping the weakest one (incoming
-        included), an open spot gets the best free agent."""
+    def _after(self, team, out, inn, punt=()):
+        """Roster after a trade at its current size: extra players mean dropping whoever costs the least win %
+        (incoming included), open spots get the best free agents."""
         keys = [k for k in self.rosters[team] if k not in out] + list(inn)
         n = len(keys) - len(self.rosters[team])
         dropped, added = [], []
         if n > 0:
-            dropped = self.value(keys).nsmallest(n).index.tolist()
+            c = self._contrib(team, keys, punt)
+            dropped = sorted(keys, key=c.get)[:n]
             keys = [k for k in keys if k not in dropped]
         elif n < 0 and self.fa:
             added = self.value([k for k in self.fa if k not in keys]).nlargest(-n).index.tolist()
@@ -295,17 +327,24 @@ class League:
         return keys, dropped, added
 
     # --- trades ------------------------------------------------------------
+    def names(self, keys):
+        return [self.p.at[k, "PLAYER_NAME"] for k in keys]
+
+    def _check(self, give, get):
+        """Keys for a trade's players. Every give must be yours and every get from one other team (KeyError)."""
+        give, get = [self.find(n) for n in give], [self.find(n) for n in get]
+        if not_mine := [k for k in give if k not in self.rosters[self.me]]:
+            raise KeyError(f"Not on your roster: {', '.join(self.names(not_mine))}")
+        if len({self.owner(k) for k in get}) > 1 or any(self.owner(k) in (None, "FA", self.me) for k in get):
+            raise KeyError("Players you get must all come from one other team: "
+                           + ", ".join(f"{p} ({self.owner(k) or 'no team'})" for k, p in zip(get, self.names(get))))
+        return give, get
+
     def trade(self, give, get, punt=()):
         """Evaluate a trade for you. 9-cat: change in your weekly win odds vs the league, both rosters updated
         (extra players dropped, open spots filled from waivers). Points: value net of replacement level."""
-        give = [self.find(n) for n in give]
-        get = [self.find(n) for n in get]
-        name = lambda ks: [self.p.at[k, "PLAYER_NAME"] for k in ks]
-        if not_mine := [k for k in give if k not in self.rosters[self.me]]:
-            raise KeyError(f"Not on your roster: {', '.join(name(not_mine))}")
-        if len({self.owner(k) for k in get}) > 1 or any(self.owner(k) in (None, "FA", self.me) for k in get):
-            raise KeyError("Players you get must all come from one other team: "
-                           + ", ".join(f"{p} ({self.owner(k) or 'no team'})" for k, p in zip(get, name(get))))
+        give, get = self._check(give, get)
+        name = self.names
         n = len(get) - len(give)
         rv, rz = self.replacement(punt)
         cats = (self.z.loc[get].sum() - self.z.loc[give].sum() - n * rz)
@@ -321,7 +360,7 @@ class League:
                "verdict": "accept" if mine > 0.25 * self.u else "decline" if mine < -0.25 * self.u else "toss-up"}
         if self.mode == "points" or other not in self.rosters:
             return out
-        mk, md, ma = self._after(self.me, give, get)
+        mk, md, ma = self._after(self.me, give, get, punt)
         tk, td, ta = self._after(other, get, give)
         ov = {self.me: self.vec(mk), other: self.vec(tk)}
         b, a = self.outlook(self.me, punt=punt), self.outlook(self.me, ov, punt)
@@ -335,18 +374,19 @@ class League:
             "rank": sb[self.me]["rank"], "rank_after": sa[self.me]["rank"],
             "odds": {c: round(100 * (a["odds"][c] - b["odds"][c]), 1) for c in self.cats},
             "you_drop": name(md), "you_add": name(ma), "they_drop": name(td), "they_add": name(ta),
+            "accept": accept(100 * (tw - tb), seen, self.u),
             "verdict": "accept" if net > 0.5 else "decline" if net < -0.5 else "toss-up"})
         return out
 
     def ideas(self, mode="fair", punt=(), team=None, limit=20, depth=10):
-        """Search 1-for-1, 2-for-1, 1-for-2 and 2-for-2 deals with every other team.
+        """Trade finder. 9-cat goes through search() with mode as the tier.
 
-        Points leagues (no categories to trade around, so every deal is zero-sum):
+        Points leagues search 1-for-1 up to 2-for-2 (no categories to trade around, so every deal is zero-sum):
         fair:    you gain a little, it's near even for them and doesn't look bad to them
         finesse: you gain more, they *look* like winners on hype (hot starts) but lose a little in reality
         """
         if self.mode != "points":
-            return self._ideas_matchup(mode, punt, team, limit, depth)
+            return self.search(team=team, tier=mode, punt=punt, limit=limit, depth=depth)
         vm, vc = self.value(punt=punt).to_dict(), self.value(frame="cur").to_dict()
         mine = self.value(self.rosters[self.me], punt).nlargest(depth).index.tolist()
         rv, cv = self.replacement(punt)[0], self.replacement(frame="cur")[0]
@@ -373,59 +413,130 @@ class League:
                         out.append((me, t, g, r, them, seen))
         return self._top_ideas(out, mode, limit, "value", 2)
 
-    def _ideas_matchup(self, mode, punt, team, limit, depth):
+    def search(self, give=(), get=(), lock=(), team=None, size=3, tier="fair", goal="win", goal_cats=(),
+               goal_team=None, healthy_only=False, shape=None, punt=(), limit=20, depth=10):
         """9-cat trade search scored by the matchup model, vectorized over every give/get combo per team.
 
-        fair:    both teams' weekly win odds go up (category fit), and it doesn't look like a loss to them
-        finesse: your odds go up more; they *look* like winners on hot starts while losing a little in reality
+        give / get: players every deal must include. Pinning a get fixes the team and searches both whole rosters,
+               otherwise it's your top `depth` vs theirs.
+        lock:  players never offered or asked for.
+        tier:  how likely they say yes (TIERS). easy: both gain and it looks good to them. fair: both gain.
+               finesse: they *look* like winners on hot starts but lose a little. hard: you gain big, needs a pitch.
+        goal:  "win" (weekly win odds), "cats" (your odds in goal_cats) or "team" (head-to-head vs goal_team).
+               The last two skip deals that cost you more than 1% win odds.
+        shape: "consolidate" (you send more players) or "depth" (you get more).
         """
-        u, cats = self.u, self.cats
-        vg, vc = self.value().to_dict(), self.value(frame="cur").to_dict()
+        if self.mode == "points":
+            raise KeyError("Trade search needs a category league")
+        if tier not in TIERS:
+            raise KeyError(f"Unknown tier {tier}: pick one of {', '.join(TIERS)}")
+        if goal == "cats" and not (goal_cats and set(goal_cats) <= set(self.cats)):
+            raise KeyError(f"Goal 'cats' needs categories from {', '.join(self.cats)}")
+        if goal == "team" and (goal_team not in self.rosters or goal_team == self.me):
+            raise KeyError(f"Goal 'team' needs another team: {', '.join(t for t in self.rosters if t != self.me)}")
+        give, get = self._check(give, get)
+        if max(len(give), len(get)) > size:
+            raise KeyError(f"More than {size} pinned players on one side")
+        if get:
+            if team and team != self.owner(get[0]):
+                raise KeyError(f"{self.names(get)[0]} plays for {self.owner(get[0])}, not {team}")
+            team = self.owner(get[0])
+        lock = {self.find(n) for n in lock} - set(give) - set(get)
+        u, cats, me, wide = self.u, self.cats, self.me, bool(get)
+        vg, vc, vm = self.value().to_dict(), self.value(frame="cur").to_dict(), self.value(punt=punt).to_dict()
         cv = self.replacement(frame="cur")[0]
-        best_fa = self.value(self.fa).idxmax() if self.fa else None
-        fa_vec = self.vec([best_fa]) if best_fa else np.zeros(len(RAW))
+        t0, t1, t2 = TIERS[tier]
 
-        def side(cands, roster):
-            combos = [c for r in (1, 2) for c in itertools.combinations(cands, r)]
-            weak = [min(c, key=vg.get) for c in combos]
-            rest = [k for k in roster if k not in cands]
-            worst = min(rest, key=vg.get) if rest else None
-            return (combos, np.stack([self.vec(c) for c in combos]), np.array([len(c) for c in combos]),
-                    np.stack([self.vec([k]) for k in weak]), np.array([vg[k] for k in weak]),
-                    np.array([sum(vc[k] for k in c) for c in combos]),
-                    self.vec([worst]) if worst else np.zeros(len(RAW)), vg[worst] if worst else np.inf)
+        def combos(keys, pins, v, skip=()):
+            free = sorted((k for k in keys if k not in lock and k not in pins and k not in skip), key=lambda k: -v[k])
+            free = free if wide else free[:depth]
+            return [tuple(pins) + c for s in range(max(1, len(pins)), size + 1)
+                    for c in itertools.combinations(free, s - len(pins))]
 
-        mine = self.value(self.rosters[self.me], punt).nlargest(depth).index.tolist()
-        gc, GV, gn, GW, GWv, gseen, mw, mwv = side(mine, self.rosters[self.me])
-        my_before = self.outlook(self.me, punt=punt)["win"]
+        def stack(cs):  # summed weekly vectors, player counts, summed perceived value
+            return (np.stack([sum(self.rows[k] for k in c) for c in cs]), np.array([len(c) for c in cs]),
+                    np.array([sum(vc[k] for k in c) for c in cs]))
+
+        def low2(groups, c):  # per group: the 2 players the team would miss least (padded with inf) and their vectors
+            vals, vecs = np.full((len(groups), 2), np.inf), np.zeros((len(groups), 2, len(RAW)))
+            for i, g in enumerate(groups):
+                for j, k in enumerate(sorted(g, key=c.get)[:2]):
+                    vals[i, j], vecs[i, j] = c[k], self.rows[k]
+            return vals, vecs
+
+        def drops(A, B, n):  # weekly vector of the n (0-2) cheapest of A's pair (per give combo) and B's (per get combo)
+            a, b = len(A[0]), len(B[0])
+            vals = np.concatenate([np.broadcast_to(A[0][:, None], (a, b, 2)), np.broadcast_to(B[0][None], (a, b, 2))], -1)
+            vecs = np.concatenate([np.broadcast_to(A[1][:, None], (a, b, 2, len(RAW))),
+                                   np.broadcast_to(B[1][None], (a, b, 2, len(RAW)))], 2)
+            cut = np.take_along_axis(vecs, np.argsort(vals, -1)[..., :2, None], 2)
+            return (n >= 1)[..., None] * cut[:, :, 0] + (n >= 2)[..., None] * cut[:, :, 1]
+
+        fa = np.zeros((3, len(RAW)))  # the best 0, 1 or 2 free agents, for whoever ends up with open spots
+        for i, k in enumerate(self.value(self.fa).nlargest(2).index if self.fa else []):
+            fa[i + 1:] += self.rows[k]
+
+        roster = self.rosters[me]
+        mine = combos(roster, give, vm)
+        GV, gn, gseen = stack(mine)
+        my_rest = low2([[k for k in roster if k not in c] for c in mine], self._contrib(me, roster, punt))
+        before = self.outlook(me, punt=punt)
         out = []
         for t, keys in self.rosters.items():
-            if t == self.me or (team and t != team):
+            if t == me or (team and t != team):
                 continue
-            theirs = self.value(keys).nlargest(depth).index.tolist()
-            rc, RV, rn, RW, RWv, rseen, tw, twv = side(theirs, keys)
-            n = (rn[None, :] - gn[:, None])[..., None]  # extra players you receive
-            # receiving an extra player: drop the weaker of your worst bench guy and the weakest incoming player
-            drop_me = np.where((RWv < mwv)[None, :, None], RW[None, :, :], mw)
-            drop_t = np.where((GWv < twv)[:, None, None], GW[:, None, :], tw)
-            me_after = self.vecs[self.me] - GV[:, None] + RV[None, :] - (n == 1) * drop_me + (n == -1) * fa_vec
-            them_after = self.vecs[t] - RV[None, :] + GV[:, None] - (n == -1) * drop_t + (n == 1) * fa_vec
-            _, O = self._others(self.me, t)
+            hurt = [k for k in keys if healthy_only and self.meta.get(k, {}).get("status", "") in OUT]
+            theirs = combos(keys, get, vg, hurt)
+            if not theirs:
+                continue
+            RV, rn, rseen = stack(theirs)
+            c_in = self._contrib(me, {k for c in theirs for k in c}, punt)  # what their players would add for you
+            c_t = self._contrib(t, set(keys) | {k for c in mine for k in c})
+            n = rn[None] - gn[:, None]  # extra players you receive
+            me_after = (self.vecs[me] - GV[:, None] + RV[None] - drops(my_rest, low2(theirs, c_in), n)
+                        + fa[np.clip(-n, 0, 2)])
+            them_after = (self.vecs[t] - RV[None] + GV[:, None] + fa[np.clip(n, 0, 2)]
+                          - drops(low2(mine, c_t), low2([[k for k in keys if k not in c] for c in theirs], c_t), -n))
+            names, O = self._others(me, t)
             k = len(O) + 1
             p_mt = cat_probs(me_after, them_after, cats)
-            m_o = match_prob(self._concede(cat_probs(me_after[:, :, None], O[None, None], cats), punt)).sum(-1)
-            my_after = (m_o + match_prob(self._concede(p_mt, punt))) / k
+            p_o = cat_probs(me_after[:, :, None], O[None, None], cats)  # (give combo, get combo, other team, cat)
+            m_o, m_t = match_prob(self._concede(p_o, punt)), match_prob(self._concede(p_mt, punt))
+            dme = 100 * ((m_o.sum(-1) + m_t) / k - before["win"])
             t_o = match_prob(cat_probs(them_after[:, :, None], O[None, None], cats)).sum(-1)
-            their_after = (t_o + match_prob(1 - p_mt)) / k
-            dme, dthem = 100 * (my_after - my_before), 100 * (their_after - self.outlooks[t]["win"])
-            seen = gseen[:, None] - rseen[None, :] + n[..., 0] * cv
-            if mode == "finesse":
-                ok = (dme > 1.5) & (seen > 0.3 * u) & (dthem > -5)
+            dthem = 100 * ((t_o + match_prob(1 - p_mt)) / k - self.outlooks[t]["win"])
+            seen = gseen[:, None] - rseen[None] + n * cv
+            if goal == "team":
+                h2h = m_t if goal_team == t else m_o[..., names.index(goal_team)]
+                score = 100 * (h2h - before["vs"][goal_team])
+            elif goal == "cats":
+                idx = [cats.index(c) for c in goal_cats]
+                odds = ((p_o.sum(-2) + p_mt) / k)[..., idx].mean(-1)
+                score = 100 * (odds - np.mean([before["odds"][c] for c in goal_cats]))
             else:
-                ok = (dme > 1) & (dthem > 0.5) & (seen > -u)
-            for gi, ri in np.argwhere(ok):
-                out.append((float(dme[gi, ri]), t, gc[gi], rc[ri], float(dthem[gi, ri]), float(seen[gi, ri])))
-        return self._top_ideas(out, mode, limit, "win%", 1)
+                score = dme
+            ok = (score > t0) & (dthem > t1) & (seen > t2 * u)
+            if goal != "win":
+                ok &= dme > -1
+            if shape == "consolidate":
+                ok &= n < 0
+            elif shape == "depth":
+                ok &= n > 0
+            G, R = np.nonzero(ok)
+            rank = np.minimum(score, dthem)[G, R] if tier == "fair" else score[G, R]
+            top = np.argsort(-rank)[:limit]
+            for gi, ri in zip(G[top], R[top]):
+                out.append({"team": t, "give": self.names(mine[gi]), "get": self.names(theirs[ri]),
+                            "net": round(float(dme[gi, ri]), 1), "their_net": round(float(dthem[gi, ri]), 1),
+                            "their_view": round(float(seen[gi, ri]), 2), "unit": "win%",
+                            "accept": accept(dthem[gi, ri], seen[gi, ri], u),
+                            **({"score": round(float(score[gi, ri]), 1)} if goal != "win" else {})})
+        s = lambda x: x.get("score", x["net"])
+        out.sort(key=lambda x: -min(s(x), x["their_net"]) if tier == "fair" else -s(x))
+        if not team:  # spread suggestions across teams
+            per_team = {}
+            out = [o for o in out if per_team.setdefault(o["team"], []).append(o) or len(per_team[o["team"]]) <= 3]
+        return out[:limit]
 
     def _top_ideas(self, out, mode, limit, unit, digits):
         out.sort(key=lambda x: -min(x[0], x[4]) if mode == "fair" else -x[0])
@@ -528,18 +639,28 @@ def load(path=DATA / "league.json"):
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["team", "trade", "ideas", "waivers", "movers", "roster"])
+    ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster"])
     ap.add_argument("--give", default="")
     ap.add_argument("--get", default="")
     ap.add_argument("--mode", default="fair", choices=["fair", "finesse"])
-    ap.add_argument("--team", help="limit ideas / show roster for one team")
+    ap.add_argument("--team", help="limit ideas / search / show roster for one team")
     ap.add_argument("--punt", default="", help='e.g. "FT%%,TOV"')
+    ap.add_argument("--lock", default="", help="search: players never traded")
+    ap.add_argument("--tier", default="fair", choices=list(TIERS), help="search: how likely they say yes")
+    ap.add_argument("--goal", default="win", choices=["win", "cats", "team"])
+    ap.add_argument("--cats", default="", help='search --goal cats: e.g. "STL,AST"')
+    ap.add_argument("--vs", help="search --goal team: the team to beat")
+    ap.add_argument("--size", type=int, default=3, help="search: max players per side")
+    ap.add_argument("--healthy", action="store_true", help="search: skip injured players you'd get")
+    ap.add_argument("--shape", choices=["consolidate", "depth"])
     a = ap.parse_args()
     split = lambda s: [x.strip() for x in s.split(",") if x.strip()]
     lg, punt = load(), split(a.punt)
     out = {"team": lambda: {**lg.profile(), "roster": lg.team_roster(lg.me, punt)},
            "trade": lambda: lg.trade(split(a.give), split(a.get), punt),
            "ideas": lambda: lg.ideas(a.mode, punt, a.team),
+           "search": lambda: lg.search(split(a.give), split(a.get), split(a.lock), a.team, a.size, a.tier, a.goal,
+                                       split(a.cats), a.vs, a.healthy, a.shape, punt),
            "waivers": lambda: lg.waivers(punt),
            "movers": lambda: lg.movers(punt),
            "roster": lambda: lg.team_roster(a.team or lg.me, punt)}[a.cmd]()

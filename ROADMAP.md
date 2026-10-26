@@ -2,7 +2,7 @@
 
 What works, what's untested, and what to build next, in priority order. Each task lists where the data comes from, roughly what to change, and when it counts as done.
 
-To pick this up in Claude Code: *"Read ROADMAP.md and do task 1"*, or `/feature-dev` with the task text.
+To pick this up in Claude Code: *"Read ROADMAP.md and do Trade lab T1"*, or `/feature-dev` with the task text.
 
 ---
 
@@ -38,6 +38,103 @@ When `python yahoo.py` runs against a real league for the first time, check thes
 - `roster` size: it sums roster slots excluding IL/IL+/NA. Check it matches your league.
 - `me`: comes from `is_owned_by_current_login`. If it's `None`, the wrong Yahoo account is logged in.
 - Player-name matching: Yahoo names that don't match NBA.com names are silently skipped by `League._keys()`. Print any misses on the first run and add aliases if needed.
+
+---
+
+## Trade lab (requested Oct 26, 2026, build first)
+
+Decided with Martin: real league is **H2H 9-cat**. "Difficulty" = how likely they say yes. Searches go **up to 3-for-3**. One **workbench** where the builder's checkboxes are the finder's constraints: check their player and Find = offers for him; check yours = buyers; both = complete the trade; none = open search. Points mode keeps today's `ideas()` and gets none of this.
+
+### T1. Engine: `League.search()` ✅ done Oct 26 (branch `trade-lab`)
+
+Built as planned, plus:
+- `find()` takes a unique last name ("Jokic").
+- The demo league now runs a few weeks of waiver moves. Before that, its free agents beat every team's 13th man, so any trade that freed a roster spot looked great.
+- An open size-3 search takes about 2s on the demo league.
+- Known limit: open spots are filled with the best free agents for both teams, so a trade still gets credit for a waiver pickup you could make anyway.
+
+**Why:** the finder only sees your top 10 × their top 10, at most 2-for-2, with two fixed modes. You can't target a player, lock one, or pick a difficulty.
+
+**Change (`model.py`):**
+- `search(give=(), get=(), lock=(), team=None, size=3, tier="fair", goal="win", goal_cats=(), goal_team=None, healthy_only=False, shape=None, punt=(), limit=30, depth=10)`. Same vectorized maths as `_ideas_matchup`, which it replaces. `ideas(mode)` becomes a thin wrapper (fair → `tier="fair"`, finesse → `tier="finesse"`), so the CLI, `ai.py` and `/gm` keep working.
+- Candidates: top `depth` per side, plus pinned players even outside the top 10, minus `lock`. Pinned `get` players fix the team; enforce the same one-team rule as `trade()` (KeyError).
+- Combos: 1 to `size` players per side, and every combo must contain all pinned players (filter before stacking vectors). At depth 10 and size 3 that's 175 combos per side.
+- Roster fill for uneven deals generalizes from ±1 to ±2: drop the n cheapest, or add the n best FAs. "Cheapest" = least win-% cost, precomputed once per roster (single-player removal). Use it in `trade()._after()` too. This clears the "drop choice" item under Model accuracy.
+- `TIERS` constants at the top of the file (starting guesses, tune like the calibration knobs; u = 1 in 9-cat):
+
+  | tier | you (win %) | them (win %) | looks to them |
+  |---|---|---|---|
+  | easy | > +0.5 | > 0 | > +0.3u |
+  | fair | > +1 | > +0.5 | > −u |
+  | finesse | > +1.5 | > −5 | > +0.3u |
+  | hard | > +3 | > −10 | > −u |
+
+- Every result gets an `accept` label: **Likely yes** (looks > +0.3u and them > −1), **Long shot** (looks < −0.5u), otherwise **Maybe**. The same helper labels `trade()` results.
+- `goal`: `win` (average over the league), `cats` (average odds in `goal_cats`; skip deals that lose more than 1% win odds), or `team` (head-to-head vs `goal_team`, e.g. a playoff rival). Sort by the goal; fair still sorts by min(you, them).
+- Filters: `healthy_only` skips incoming players with OUT statuses. `shape="consolidate"` (you give more players) or `"depth"` (you get more). The 3-per-team cap applies only when no `get` is pinned.
+- CLI: `python model.py search --get "Wembanyama" --tier easy --lock "Jokic"`. API: `/api/search` in `app.py` (add to `API`).
+
+**Done when:**
+- `test_model.py` covers it:
+  - a pinned player appears in every result
+  - a locked player never appears
+  - each tier's thresholds hold
+  - 3-player combos come up
+  - the drop choice picks the lowest win-% cost
+- An open size-3 search on the demo league takes under ~5s.
+
+### T2. "What changes" breakdown
+
+**Why:** today a result shows only your category odds deltas. You can't see their side, totals, who you now beat, or whether you just made a rival better.
+
+**Change:** `trade()` already calls `outlook()` for both teams; return what it throws away:
+- `cats_detail`: per category, for both teams, weekly total before → after (FG%/FT% as %) and odds before → after.
+- `vs`: your head-to-head odds vs every team, before → after.
+- `standings`: every team's rank and win %, before → after. Flag when the partner or a top-4 team gains more than you.
+- `roster_after` for both teams (drops and adds marked).
+- `flags`:
+  - incoming player injured, `avail` < 0.7, or GP < 10
+  - buying at peak hype (incoming `value_now − value` > 0.5)
+  - a position left empty, when Yahoo `pos` data exists
+- `build_after`: categories you'd win under 30% of weeks after the trade (the "consider punting" hint).
+- `accept` label (T1 helper).
+
+**UI:**
+- A category table with you and them columns, both before → after. Punted rows dimmed (signature move).
+- Head-to-head movers, then standings movers.
+- `playerTable` for the give and get sides, plus the flags.
+
+**Done when:** every section renders on the demo league, and toggling a punt chip dims the new tables.
+
+### T3. Trades workbench UI
+
+**Change (`web/index.html`, follow DESIGN.md, no modals, then `/impeccable polish`):**
+- **Toolbar:**
+  - Difficulty segmented control (Easy / Fair / Finesse / Hard)
+  - Optimize for (Win % / Categories… / Beat a team…)
+  - Max size, Healthy only, Shape
+- **Builder:**
+  - Lock toggle on every player (`store` key `locks`).
+  - "Find any player" input: a native `<datalist>` fed by the existing (unused) `/api/players`. Picking a name switches the team and checks him.
+- **Find:**
+  - Reads the checked players as pins.
+  - The panel title says what it's doing: "Offers for X", "Buyers for Y", "Complete this trade" or "Open search".
+  - Results: sortable columns, accept label, Load, Save.
+- **Improve this deal** (after Evaluate):
+  - Throw-ins: the current deal pinned, size + 1.
+  - Swaps: each player unpinned in turn.
+- **Saved trades** (`store` key `saved`): side-by-side compare (you, them, looks, rank, accept, category deltas). Re-evaluate on open, since saved numbers go stale after a refresh.
+- **Deep links:** `#trades?give=A,B&get=C`, same pattern as `?punt=`.
+- **Wiring:** "Find a buyer" (My team) and buy-low rows (Hot & cold) run a pinned search instead of just preloading the builder.
+
+**Done when:** every flow has been clicked through in a real browser, at desktop width and at 390px (iframe trick).
+
+### T4. AI GM and extras
+
+- `ai.py`: replace `trade_ideas` with `find_trades(give, get, lock, tier, goal, goal_cats, goal_team, size)`; `evaluate_trade` returns the T2 breakdown. Document `model.py search` in `.claude/skills/gm/SKILL.md`.
+- Later: playoff mode, which weights likely playoff opponents' weeks (needs task 1's schedule).
+- Later: manager tendencies from Yahoo trade history (needs task 3's transactions). This is a weak signal, since rejected offers aren't visible.
+- Not doing: 3-team trades. Yahoo doesn't support them.
 
 ---
 
@@ -111,8 +208,8 @@ When `python yahoo.py` runs against a real league for the first time, check thes
 
 - [ ] **Calibrate the randomness settings** (`GAMES_WEEK`, `DISPERSION`, `SCHED_CV`, `PCT_NOISE`, `FILL`, `STATUS_AVAIL` at the top of `model.py`). They're educated guesses. Best method: pull last season's weekly scoreboards for a real league (`get_league_scoreboard_by_week`), predict each category with `cat_probs` from each team's totals, and tune the settings until predicted win rates match actual ones.
 - [ ] **Positions and daily lineup slots.** Trades and adds ignore positions (e.g. you could end up with 6 centers). Yahoo's `roster_positions` is in the settings. Minimum version: warn when a trade leaves a position empty. Full version: a games-played penalty when more players have games than slots.
-- [ ] **Drop choice in trades** uses the lowest z-score. Better: drop whoever costs the least win %.
-- [ ] **Trade finder depth** is your top 10 vs their top 10, up to 2-for-2. 3-for-1 consolidation trades aren't searched.
+- [ ] **Drop choice in trades** uses the lowest z-score. Better: drop whoever costs the least win %. *(Part of Trade lab T1.)*
+- [ ] **Trade finder depth** is your top 10 vs their top 10, up to 2-for-2. 3-for-1 consolidation trades aren't searched. *(Part of Trade lab T1.)*
 - [ ] **Hot & cold** uses a fixed hype weight (`HYPE = 5`). Could compare against Yahoo's actual rank (`sort=AR`) instead.
 
 ## Later / maybe

@@ -32,6 +32,11 @@ def api(path, q, body):
         return lg.trade(body["give"], body["get"], punt)
     if path == "/api/ideas":
         return lg.ideas(body.get("mode", "fair"), punt, body.get("team") or None)
+    if path == "/api/search":
+        return lg.search(body.get("give", []), body.get("get", []), body.get("lock", []), body.get("team") or None,
+                         int(body.get("size", 3)), body.get("tier", "fair"), body.get("goal", "win"),
+                         body.get("cats", []), body.get("vs"), bool(body.get("healthy")), body.get("shape"), punt,
+                         limit=30)
     if path == "/api/players":
         return sorted(lg.p.PLAYER_NAME.reindex([k for ks in lg.rosters.values() for k in ks] + lg.fa).tolist())
     if path == "/api/refresh":
@@ -83,7 +88,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/players", "/api/refresh", "/api/chat"}
+API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search","/api/players", "/api/refresh", "/api/chat"}
 
 if __name__ == "__main__":
     # ponytail: localhost-only, single user; no auth because it never listens on the network
