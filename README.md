@@ -37,26 +37,30 @@ Add `ANTHROPIC_API_KEY=sk-ant-...` to `.env` (key from https://console.anthropic
 ## Workflows
 
 ### "Who do I pick up / drop?"
-**Waivers** tab. Free agents are ranked on *your* build, so punted categories don't count. **Suggested moves** pairs each good free agent with your weakest healthy player and shows the gain. Injured players are never suggested as drops. The top 3 moves also show on **My team** under "Worth doing now".
+**Waivers** tab. Every free agent is tried against every healthy player on your roster. **Suggested moves** shows the add/drop pairs that raise your weekly win odds the most. Injured players are never suggested as drops. The top 3 moves also show on **My team** under "Worth doing now".
+
+### "Where do I stand?"
+**My team** shows your projected finish and your chance of winning a typical week. It also shows your odds in each category and your head-to-head odds against every team. **League** shows projected standings for everyone.
 
 ### "Should I punt something?"
-**My team** shows where you rank in each category. When you're bottom-40% in one or two, the app suggests punting them (the **Punt …** button). You can also toggle any category with the **Punt** chips in the top bar. A punted column greys out in every table, and every value, waiver list and trade idea re-ranks without it.
+**My team** shows your odds in each category. Categories you win under 30% of weeks get a **Punt …** suggestion. You can also toggle any category with the **Punt** chips in the top bar. A punted column greys out in every table, and trades, waivers and ideas re-optimize with that category treated as a loss.
 
 Classic pairings: big men punt FT%, high-usage guards punt TO, wings punt AST.
 
 ### "Is this trade good?"
 **Trades** tab: check players under *You give*, pick their team, check players under *You get*, then **Evaluate**. You see:
-- **You**: your net change on your build. Uneven trades include the cost of dropping (or the value of picking up) a waiver-level player, so 2 scrubs for a star scores correctly.
-- **Them**: their net change on *their* build (their own weak categories count less).
-- **How it looks to them**: the deal on this season's hot and cold starts, which is what Yahoo's rankings show them. Positive means they'll probably like it.
-- Per-category changes for you.
+- **Your win odds**: before → after, with both rosters updated. If you take back more players, you drop your weakest; if you send more, you pick up the best free agent. So 2 scrubs for a star scores correctly.
+- **Them**: their win odds before → after. A trade can help both teams when the categories fit.
+- **How it looks to them**: the deal on this season's hot and cold starts, which is what Yahoo's rankings show them. "Looks good" means they'll probably accept.
+- **Projected finish**: your league rank before → after.
+- Your odds change in each category.
 
 **Ask AI GM for a pitch** writes a short message to send the other manager.
 
 ### "Find me a trade"
 **Trade finder**, bottom of the Trades tab. It searches 1-for-1 up to 2-for-2 deals with every team:
-- **Fair**: both teams gain on their own builds, and it's close to even on plain overall value. These are trades people actually accept. (Points leagues have no categories to trade around, so fair means you gain a little and it's near even for them.)
-- **Finesse**: you gain more; they *look* like the winner on hot starts but lose a little in reality. This is how sell-high works.
+- **Fair**: both teams' win odds go up (category fit), and it doesn't look like a loss to them. These are trades people actually accept. (Points leagues have no categories to trade around, so fair means you gain a little and it's near even for them.)
+- **Finesse**: your odds go up more. They *look* like the winner on hot starts but lose a little in reality. This is how sell-high works.
 
 **Load** puts an idea into the builder and evaluates it.
 
@@ -71,13 +75,36 @@ Classic pairings: big men punt FT%, high-usage guards punt TO, wings punt AST.
 
 ## How the numbers work
 
-- **Value** = rest-of-season, per game. It starts from last season (2025-26) and shifts toward this season as games pile up: this season's weight is `GP / (GP + 20)`. Rookies start from a fringe-roster line, so three hot games don't make them stars.
-- **9-cat**: z-scores against the top `teams × roster` players by minutes. FG% and FT% are weighted by volume (a 60% shooter on 2 shots barely counts). TO is inverted. Value is the sum over your non-punted categories.
-- **Points**: your league's scoring weights from Yahoo (Yahoo's defaults in demo mode).
-- **Now** is the "perceived" value: the same blend weighted much harder toward this season (`GP / (GP + 5)`), roughly what Yahoo's rankings show.
-- **Replacement level** = average of the 5 best free agents.
+**Player lines.** Every player has a rest-of-season per-game line. It starts from last season (2025-26) and shifts toward this season as games pile up: this season's weight is `GP / (GP + 20)`. Rookies start from a fringe-roster line, so three hot games don't make them stars.
 
-Not modelled yet: positions and roster slots, games per week, injuries beyond Yahoo's status tag, keeper or dynasty value.
+**Plays %.** The share of games a player is expected to suit up for. It comes from games played last season plus this season, shrunk halfway toward 85% (one bad injury year shouldn't count fully), then cut by Yahoo's injury tag (GTD 90%, O 70%, INJ 60%, IL 50%). Missed games are half-covered by a waiver-level fill-in, the way a bench player or streamer would cover them.
+
+**Value (the table columns).** z-scores against the top `teams × roster` players by minutes. FG% and FT% are weighted by volume, so a 60% shooter on 2 shots barely counts, and TO counts against you. This is the quick player-ranking view.
+
+**The 9-cat matchup model (what the advice uses).**
+1. Each team's expected weekly totals = Σ players' per-game lines × 3.4 games × their Plays %.
+2. For every pair of teams and every category: the chance team A beats team B that week. This uses the gap between their totals and realistic weekly randomness (box-score noise, schedule swings, shooting variance on actual attempts).
+3. Chance to win the matchup = chance of winning more categories than you lose (5 of 9).
+4. **Win odds** = average of that against every other team. **Projected standings** rank every team by their win odds.
+
+A trade, add or drop is judged by how much it changes your win odds, with both rosters updated: extra players get dropped, open spots get the best free agent. This is what makes it account for:
+- **Your strengths and weaknesses.** Extra rebounds barely help if you already win REB 90% of weeks, and they help a lot if you're at 50%.
+- **What everyone else has.** Odds are computed against every real roster in your league.
+- **Punting.** A category you can't win stops mattering on its own. The Punt chips make it explicit: punted categories count as automatic losses, so the advice optimizes for the other categories.
+
+**Now / How it looks to them.** The same line weighted much harder toward this season (`GP / (GP + 5)`), roughly what Yahoo's rankings show other managers. Finesse trades and sell-high use it.
+
+**Points leagues** use the league's scoring weights and per-game values (no matchup model).
+
+**Honest limits:**
+- The weekly-randomness settings are educated guesses, not fitted to real Yahoo results. Odds are directionally right, but read 55% vs 58% as "about the same".
+- Not modelled yet:
+  - positions and roster slots (daily lineup limits)
+  - each week's actual NBA schedule
+  - injury return dates
+  - keeper or dynasty value
+
+The settings live at the top of `model.py` if you want to tune them.
 
 ## Using Claude Code on this project
 

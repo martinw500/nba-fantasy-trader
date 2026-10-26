@@ -1,4 +1,5 @@
 """python test_model.py  (synthetic data, no network)"""
+import numpy as np
 import pandas as pd
 
 import model
@@ -38,7 +39,13 @@ def test_all():
 
     # trades: upgrade accepted, downgrade declined, 2 scrubs for a star declined (replacement adjustment)
     assert lg.trade(["Player 150"], ["Player 199"])["verdict"] == "accept"
-    assert lg.trade(["Player 199"], ["Player 150"])["verdict"] == "decline"
+    assert lg.trade(["Player 198"], ["Player 151"])["verdict"] == "decline"
+    for bad in ([["Player 199"], ["Player 151"]], [["Player 150"], ["Player 154"]], [["Player 150"], ["Player 120"]]):
+        try:
+            lg.trade(*bad)
+            raise AssertionError(f"accepted impossible trade {bad}")
+        except KeyError:
+            pass
     assert lg.trade(["Player 198"], ["Player 151", "Player 155"])["verdict"] == "decline"
 
     # punting a category removes it from value
@@ -49,15 +56,37 @@ def test_all():
     sells = [p["name"] for p in lg.movers()["sell_high"]]
     assert "Player 150" in sells and all(p["gap"] > 0.5 for p in lg.movers()["sell_high"])
 
+    # matchup math: symmetric, identical teams are a coin flip, better players raise your odds
+    A, B = lg.vecs["Me"], lg.vecs["Them"]
+    p_ab, p_ba = model.match_prob(model.cat_probs(A, B, model.CATS)), model.match_prob(model.cat_probs(B, A, model.CATS))
+    assert abs(p_ab + p_ba - 1) < 1e-6
+    assert abs(model.match_prob(model.cat_probs(A, A, model.CATS)) - 0.5) < 1e-9
+    assert abs(model.phi(np.array(1.96)) - 0.975) < 1e-3
+    upgraded = A - lg.vec(["player 150"]) + lg.vec(["player 199"])
+    assert model.match_prob(model.cat_probs(upgraded, B, model.CATS)) > p_ab
+    # the better roster ("Them" holds the odd-numbered, slightly better players) is favoured and ranked first
+    st = lg.standings()
+    assert st["Them"]["rank"] == 1 and st["Them"]["win"] > 0.5 > st["Me"]["win"]
+
+    # trade verdicts come from the matchup model in 9-cat and update both rosters
+    r = lg.trade(["Player 150"], ["Player 199"])
+    assert r["unit"] == "win%" and r["win_after"] > r["win"] and r["their_win_after"] < r["their_win"]
+    r = lg.trade(["Player 198"], ["Player 151", "Player 155"])
+    assert len(r["you_drop"]) == 1 and len(r["they_add"]) == 1
+
+    # injuries: an "INJ" tag lowers a player's expected weekly contribution
+    lg.meta["player 199"] = {**lg.meta["player 199"], "status": "INJ"}
+    assert lg._availability(base, cur)["player 199"] < lg.avail["player 199"]
+
     # finder honours its own rules
     for idea in lg.ideas("fair"):
-        assert idea["net"] > 0.3 and idea["their_net"] > 0.3
+        assert idea["net"] > 1 and idea["their_net"] > 0.5
     for idea in lg.ideas("finesse"):
-        assert idea["net"] > 0.6 and idea["their_view"] > 0.3
+        assert idea["net"] > 1.5 and idea["their_view"] > 0.3
 
     w = lg.waivers()
-    assert all(m["gain"] > 0.3 for m in w["moves"])
-    assert set(lg.profile()["ranks"]["Me"]) == set(model.CATS)
+    assert all(m["gain"] > 0.5 for m in w["moves"])
+    assert set(lg.profile()["odds"]) == set(model.CATS)
 
 
 if __name__ == "__main__":
