@@ -30,7 +30,8 @@ Python lives in `.venv` (Homebrew Python blocks global pip): use `.venv/bin/pyth
 ## Gotchas
 - `nba_api` names have accents (Jokić). Windows consoles need `sys.stdout.reconfigure(encoding="utf-8")`, which the CLIs already do.
 - `yahoo.py` hasn't been run against a real league yet. yfpy field access is defensive, but verify the first real pull.
-- Headless Chrome clamps windows to 504px wide. For phone screenshots, load the app in a 390px iframe.
+- Browser checks go through the Playwright MCP, which runs headless Microsoft Edge (`PLAYWRIGHT_MCP_BROWSER=msedge` in `~/.claude/settings.json`; Chrome isn't installed). If it fails to start, tell Martin instead of working around it.
+- Headless Chromium browsers clamp windows to 504px wide. For phone screenshots, load the app in a 390px iframe.
 - Project skills added mid-session don't register until Claude Code restarts.
 
 ## UI / design

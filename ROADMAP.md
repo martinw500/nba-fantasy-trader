@@ -2,7 +2,7 @@
 
 What works, what's untested, and what to build next, in priority order. Each task lists where the data comes from, roughly what to change, and when it counts as done.
 
-To pick this up in Claude Code: *"Read ROADMAP.md and do Trade lab T1"*, or `/feature-dev` with the task text.
+To pick this up in Claude Code: *"Read ROADMAP.md and do Trade lab T3"*.
 
 ---
 
@@ -228,5 +228,5 @@ Built as planned, plus:
 ## Known small issues
 
 - impeccable's design detector flags the "Segoe UI Variable" font stack (its parser misreads the name). Harmless.
-- Headless Chrome won't go below 504px wide, so phone screenshots need the 390px-iframe trick (see CLAUDE.md).
+- Headless Chromium/Edge won't go below 504px wide, so phone screenshots need the 390px-iframe trick (see CLAUDE.md).
 - The demo league's teams are random. Don't read too much into demo numbers.

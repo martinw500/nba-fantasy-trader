@@ -144,22 +144,20 @@ Open the folder in Claude Code. These skills and plugins are set up for this pro
 | **gm** skill | Ask about your league from Claude Code. Claude refreshes Yahoo data and runs the engine. | `/gm who should I drop?` |
 | **humanizer** skill | Make trade pitches and messages sound like you wrote them. | `/humanizer <text>` |
 | **impeccable** skill | Design work on the UI: critique, polish, audit, new screens. Reads `PRODUCT.md` and `DESIGN.md`. | `/impeccable critique web/index.html`, `/impeccable polish` |
-| **design-taste-frontend** skill | Second opinion on visual quality, or a public landing page if you ever share this. | `/design-taste-frontend` |
-| **feature-dev** plugin | Guided flow for a bigger feature (explore → architect → build → review). | `/feature-dev add positional limits to trades` |
-| **commit-commands** plugin | Commit, push, open a PR. | `/commit`, `/commit-push-pr` |
 | **claude-md-management** plugin | Keep `CLAUDE.md` current after a session. | `/revise-claude-md` |
-| **context7** plugin | Up-to-date docs for nba_api, yfpy, pandas while coding. Needs a one-time login. | Run `/mcp` → context7 → authenticate |
-| **pyright-lsp** plugin | Python type and error checking while Claude edits. | Automatic |
-| **security-guidance** plugin | Warns about risky code patterns (secrets, injection). | Automatic |
+| **context7** plugin | Up-to-date docs for nba_api, yfpy, pandas while coding. | Automatic |
+| **playwright** plugin | Claude clicks through the app in a real browser. Uses Microsoft Edge in the background (set in `~/.claude/settings.json`, since Chrome isn't installed). | Automatic |
 
-**Turned off for this project** (still installed globally): `superpowers` (overlaps with feature-dev and forces a long process on every task), `pr-review-toolkit` (feature-dev has a reviewer), `frontend-design` (replaced by impeccable and design-taste-frontend), `typescript-lsp` (no TypeScript here), `claude-code-setup` (one-time setup tool). Turn any back on in `.claude/settings.json`.
+**Turned off for this project** (installed for your account): `superpowers` (forces a long process on every task), `frontend-design` (impeccable covers it), `typescript-lsp` (no TypeScript here), the `humanizer` plugin (same version as the project skill above).
+
+**Left out on purpose:** `pyright-lsp` (reports ~75 false errors on the pandas code, so every edit gets noisy), `commit-commands` and `feature-dev` (plain git and plain requests do the same job), `security-guidance` (an AI review on every turn, for an app that only runs on your machine).
 
 ### Typical dev loop
 
-1. `/feature-dev <what you want>`, or just describe it.
-2. Claude runs `python test_model.py` and opens the app to check.
+1. Describe what you want, e.g. *"Read ROADMAP.md and do Trade lab T3"*.
+2. Claude runs `python test_model.py` and clicks through the app to check.
 3. UI changes: `/impeccable polish web/index.html`.
-4. `/commit`.
+4. Commit.
 5. `/revise-claude-md` when something non-obvious came up.
 
 ## Files
