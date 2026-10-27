@@ -6,18 +6,18 @@ argument-hint: "[question, e.g. who should I drop?]"
 
 Answer the user's fantasy question with numbers from this repo's engine. Never invent values.
 
-0. Run Python as `.venv/bin/python` (or activate `.venv` first).
-1. Data: if `data/league.json` is older than ~12 hours or the user says rosters changed, refresh it:
-   `python yahoo.py` (needs `.env` with YAHOO_* keys; if it fails, say so and fall back to the existing snapshot, or `python yahoo.py demo` if none exists).
+0. Run Python exactly as `.venv/bin/python` (no `source`, no bare `python`), as written below.
+1. Data: if `data/league.json` is older than ~12 hours or the user says rosters changed, import the newest league snapshot in the repo folder (the `*snapshot*.txt` with the latest date in its name):
+   `.venv/bin/python yahoo.py import <that file>`. If there's none, say so and use the existing `data/league.json`, or `.venv/bin/python yahoo.py demo` if that doesn't exist either.
 2. Run what the question needs (all print JSON; add `--punt "FT%,TOV"` when the user punts):
-   - `python model.py team` — category ranks, H2H vs each team, punt suggestions, roster values
-   - `python model.py trade --give "A, B" --get "C"` — evaluate a specific trade. 9-cat also returns `cats_detail` (both teams' category totals and odds, before → after), `vs`, `standings` (`rival` = partner or a top-4 team gaining more than the user), `flags`, `build_after` (punt hint) and `accept`. It's scored on top of the waiver moves the user could make without a trade (`free`), and so is every finder result; the other team is judged on the trade alone. Say so, e.g. "compared with just adding Vučević for Achiuwa (+1.2)"
-   - `python model.py ideas --mode fair|finesse [--team "Name"]` — trade finder
-   - `python model.py search --get "Target" | --give "Mine" [--lock "A, B"] [--tier easy|fair|finesse|hard] [--goal cats --cats "STL,AST" | --goal team --vs "Name"] [--size 3] [--healthy] [--shape consolidate|depth]` — targeted search: offers for a player, buyers for yours, deals that fix categories or beat one team. Each result has `accept` (Likely yes / Maybe / Long shot)
-   - `python model.py waivers` — best free agents + add/drop moves (`drop: null` = an open roster spot), and `free`: the moves trades are scored on top of
-   - `python model.py movers` — sell high / buy low
-   - `python model.py week [--vs "Name"]` — this week's matchup: `score` (expected categories won–lost), `win` (chance to win more categories), per-category totals so far → projected, odds and `call` (safe / chase / lost / punt), and `streams` (free agents scored on this week's win %, with `drop` and `season` = season-long change). `opponent: null` means none is saved: ask who the user plays and pass `--vs`
-   - `python model.py roster --team "Name"` — any team's roster
+   - `.venv/bin/python model.py team` — category ranks, H2H vs each team, punt suggestions, roster values
+   - `.venv/bin/python model.py trade --give "A, B" --get "C"` — evaluate a specific trade. 9-cat also returns `cats_detail` (both teams' category totals and odds, before → after), `vs`, `standings` (`rival` = partner or a top-4 team gaining more than the user), `flags`, `build_after` (punt hint) and `accept`. It's scored on top of the waiver moves the user could make without a trade (`free`), and so is every finder result; the other team is judged on the trade alone. Say so, e.g. "compared with just adding Vučević for Achiuwa (+1.2)"
+   - `.venv/bin/python model.py ideas --mode fair|finesse [--team "Name"]` — trade finder
+   - `.venv/bin/python model.py search --get "Target" | --give "Mine" [--lock "A, B"] [--tier easy|fair|finesse|hard] [--goal cats --cats "STL,AST" | --goal team --vs "Name"] [--size 3] [--healthy] [--shape consolidate|depth]` — targeted search: offers for a player, buyers for yours, deals that fix categories or beat one team. Each result has `accept` (Likely yes / Maybe / Long shot)
+   - `.venv/bin/python model.py waivers` — best free agents + add/drop moves (`drop: null` = an open roster spot), and `free`: the moves trades are scored on top of
+   - `.venv/bin/python model.py movers` — sell high / buy low
+   - `.venv/bin/python model.py week [--vs "Name"]` — this week's matchup: `score` (expected categories won–lost), `win` (chance to win more categories), per-category totals so far → projected, odds and `call` (safe / chase / lost / punt), and `streams` (free agents scored on this week's win %, with `drop` and `season` = season-long change). `opponent: null` means none is saved: ask who the user plays and pass `--vs`
+   - `.venv/bin/python model.py roster --team "Name"` — any team's roster
 3. Answer like a blunt GM: the move, the number, which categories change, the risk (injury, role, small sample early in the season). For trades always mention how it looks to the other manager (`their_net`, `their_view`).
 4. If the user wants a message to send another manager, write it short and casual, then run it through the `humanizer` skill.
 

@@ -59,6 +59,7 @@ PCT_NOISE = 1.75                                   # FG%/FT% variance vs coin-fl
 WEAK = 0.35                                        # a "weak spot" / punt hint: winning a category under 35% of
                                                    # weeks (about the bottom 10% of team-categories once odds are calibrated)
 FILL = 0.5                                         # share of a sat-out player's games your bench/streamers cover
+                                                   # (not in backtest.py: its rosters never change, so nobody fills in)
 STATUS_AVAIL = {"GTD": 0.9, "DTD": 0.9, "O": 0.7, "SUSP": 0.8, "INJ": 0.6, "IL": 0.5, "IL+": 0.4, "NA": 0.0}
 
 # Trade search difficulty: (min gain for you, min gain for them, both win %; min "looks to them" in value units).
@@ -403,8 +404,9 @@ class League:
 
     def _waiver_level(self, v):
         """The 5 best free agents by v, or the 10 players just outside the rostered pool without FA data."""
-        if self.fa:
-            return v.reindex(self.fa).nlargest(5).index
+        if self.fa:  # healthy ones only: an NA or IL free agent isn't who you'd grab
+            fa = [k for k in self.fa if self.meta.get(k, {}).get("status", "") not in OUT]
+            return v.reindex(fa or self.fa).nlargest(5).index
         n = self.teams_n * self.roster_n
         return v.nlargest(n + 10).index[n:]
 
@@ -940,9 +942,12 @@ class League:
         p = odds(left[me])
         win = float(match_prob(p))
 
-        def clears(k):  # a waiver claim only plays from the day it clears
+        def clears(k):  # a waiver claim only plays from the day it clears ("Jan 2" read on Dec 30 is next year)
             w = self.meta.get(k, {}).get("waiver")
-            return {k: datetime.strptime(f"{w} {self.today[:4]}", "%b %d %Y").date().isoformat()} if w else {}
+            if not w:
+                return {}
+            d = datetime.strptime(f"{w} {self.today[:4]}", "%b %d %Y").date()
+            return {k: (d.replace(year=d.year + 1) if d < date.fromisoformat(self.today) - timedelta(60) else d).isoformat()}
 
         # streams: each healthy free agent for whichever of your 3 cheapest healthy players (season win-% cost) helps most,
         # scored on the whole lineup since an add only counts on days he cracks your top `lineup`

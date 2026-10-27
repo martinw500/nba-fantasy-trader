@@ -2,7 +2,8 @@
 
 Drafts 20 simulated 12-team leagues from preseason projections. Each week the model predicts every matchup from what
 it would have known that Monday (last season blended with games so far, availability from games played), then the
-prediction is scored against the real box scores that week. All games count (no daily lineup cap), rosters never change.
+prediction is scored against the real box scores that week. All games count (no daily lineup cap), rosters never change,
+so predictions leave out League.week's FILL term (missed games covered at waiver level): nobody fills in here.
 Prints calibration (predicted vs actual win rates), log loss and Brier score for categories and for whole matchups.
 """
 import itertools

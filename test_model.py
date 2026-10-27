@@ -156,6 +156,11 @@ def test_all():
     assert r["free"] == [{"add": "Star FA", "drop": "Scrub B", "gain": r0["net"]}] and r["you_add"] == ["Scrub B"]
     assert abs(r["net"]) < 0.05 and fl.waivers()["free"][0]["add"] == "Star FA"
     assert not any("Star FA" in x["give"] for x in fl.search(tier="hard", limit=200))
+    # an NA free agent isn't part of the waiver level (replacement, FILL)
+    na = model.League({**lg.snap, "free_agents": [{**f, "status": "NA" if f["name"] == "Player 139" else ""}
+                                                  for f in lg.snap["free_agents"]]}, base, cur)
+    assert "player 139" in lg._waiver_level(lg.value()) and "player 139" not in na._waiver_level(na.value())
+    assert na.replacement()[0] < lg.replacement()[0]
     short = model.League({**lg.snap, "settings": {**lg.snap["settings"], "roster": 14}}, base, cur)
     assert [d for _, d, _ in short.free_moves()] == [None] and short.waivers()["moves"][0]["drop"] is None
     # the other team is judged on the trade alone unless their_free: then it fills its own open spot first
@@ -214,6 +219,12 @@ def test_all():
                         pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
                         sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week})
     assert late.games_week["twin a"] == 3 and late.games_week["twin b"] == 1
+    # a "Jan 2" claim read on Dec 30 clears next year: Twin F gets 2 of the 4 games left, not all 4
+    ny = ["2026-12-30", "2027-01-01", "2027-01-02", "2027-01-03"]
+    nl = model.League({**snap, "free_agents": [f for f in snap["free_agents"] if f["name"] != "Twin F"]
+                       + [{"name": "Twin F", "nba": "AAA", "waiver": "Jan 2"}]}, pd.concat([base, twins]),
+                      pd.concat([cur, twins]), today=model.date(2026, 12, 30), sched={"AAA": ny, "XXX": ny})
+    assert next(s for s in nl.this_week("Them", limit=50)["streams"] if s["name"] == "Twin F")["games"] == 2
     # banked totals add no noise: with the same final totals, a week that's over is surer than one just starting
     A, B = lg.vecs["Me"], lg.vecs["Them"]
     p_now, p_done = model.cat_probs(A, B, model.CATS), model.cat_probs(A * 1e-6, B * 1e-6, model.CATS, A, B)

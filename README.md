@@ -7,11 +7,14 @@ It only reads from Yahoo. You still make the actual moves on Yahoo.
 ## Setup (5 minutes)
 
 ```
-pip install -r requirements.txt
-python app.py
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python app.py
 ```
 
 That opens http://localhost:8765 with a **demo league**: 12 fake teams drafted from real NBA stats. Everything works on it, so you can try the app before connecting Yahoo.
+
+Homebrew Python blocks a global `pip install`, hence the `.venv`. Where this README says `python`, use `.venv/bin/python` (or run `source .venv/bin/activate` once per terminal; on Windows it's `.venv\Scripts\python`).
 
 ### Load your league without the Yahoo API
 
@@ -70,8 +73,9 @@ Also copy `.env` somewhere private (password manager, or a USB stick) if you cre
    ```
    git clone https://github.com/martinw500/nba-fantasy-trader.git
    cd nba-fantasy-trader
-   pip install -r requirements.txt
-   python test_model.py      # should print: ok
+   python3 -m venv .venv
+   .venv/bin/pip install -r requirements.txt
+   .venv/bin/python test_model.py      # should print: ok
    ```
 3. Put your `.env` back in the folder, or redo "Connect your Yahoo league" above.
 4. `python yahoo.py` to pull your league, or skip it to use the demo.
@@ -174,7 +178,7 @@ A trade, add or drop is judged by how much it changes your win %, with both rost
 - How "looks to them" works is a judgment call. There's no data on which offers real managers accept.
 - Not modelled yet:
   - positions and roster slots (daily lineup limits)
-  - this week's schedule in the weekly matchup itself (it's shown, and available as `week_vec`, but trades and odds use an average week)
+  - the real schedule in trades and season odds: they use an average 3.4-game week (This week uses the real one)
   - keeper or dynasty value
 
 The settings live at the top of `model.py`. Re-run `python backtest.py` after changing how players are projected; it prints predicted vs actual win rates.

@@ -208,14 +208,12 @@ The engine optimizes `match_prob` (the chance to win 5 of 9), which is the "One 
 
 **Done when:** a test trade whose only gain is the open spot scores about 0, the real-league deals above show their after-waiver numbers, and the Trades view names the pickup it assumed.
 
-### P4. Small fixes `high`
-- **Injured free agents in the waiver baseline.** `_waiver_level` ranks free agents on per-game value only, so Kevin Porter Jr. (NA, plays 0% of games) counts as one of the top 5. Replacement is −0.65 with him and −0.83 with healthy players only, and it feeds `replacement()` and the `FILL` line. Skip `OUT` statuses. `effective()` can't be used here: it needs `zfill`, which is built from `_waiver_level`.
-- **Waiver dates and New Year.** Claim dates assume the current year (`this_week` → `games()`), so a "Jan 2" claim read on Dec 30 counts as already cleared. Roll the year forward when the date is more than about two months in the past.
-- **Backtest without the fill-in.** `backtest.py` predicts weekly totals without the `FILL` term that `League.week` adds. Add it, or note it next to the knobs.
-- **Doc drift:**
-  - README Setup says `pip install -r requirements.txt`, which Homebrew Python blocks. Use `.venv`.
-  - README "Not modelled yet" says this week's schedule isn't in the weekly matchup. This week uses it; trades and season odds don't.
-  - `.claude/skills/gm/SKILL.md` step 1 refreshes with `python yahoo.py`, which needs a `.env` that doesn't exist. Point it at importing the newest snapshot, and use `.venv/bin/python` in every command (N2 depends on this).
+### P4. Small fixes ✅ done Oct 27 (branch `trade-lab`)
+- **Injured free agents in the waiver baseline:** `_waiver_level` skips `OUT` statuses (falls back to every FA if all are out). Real league: Kevin Porter Jr. (NA) and Tobias Harris (O) leave the top 5, Christian Braun and Grayson Allen come in, and replacement goes from −0.58 to −0.76. Standings barely move (40.4–61.9%, was 40.4–61.8%), and your free moves are unchanged (Jay Huff for P.J. Washington +0.3 → +0.4).
+- **Waiver dates and New Year:** `this_week`'s claim date rolls into next year when it's more than 60 days in the past.
+- **Backtest without the fill-in:** noted rather than added, next to `FILL` and in `backtest.py`'s docstring. Its rosters never change, so the real weekly totals have no fill-in either, and adding the term would bias the predictions. FILL stays a guess.
+- **Doc drift:** README Setup and the new-computer steps use `.venv` (with a line on the bare `python` elsewhere), "Not modelled yet" says only trades and season odds use the average week, and the `/gm` skill imports the newest snapshot and runs every command as `.venv/bin/python` (unblocks N2).
+- Tests: an NA free agent leaves the waiver level and lowers replacement, and a "Jan 2" claim read on Dec 30 gets 2 of 4 games left. Both fail on the old code.
 
 ---
 
@@ -382,7 +380,7 @@ One task per session: *"Read ROADMAP.md and do Next up N0"*. Run `python test_mo
 **Why:** `ai.py` needs a paid API key (billed separately from a Claude subscription). `claude -p` runs Claude Code headless with your own login.
 **Change:** `/api/chat` shells out to `claude -p "<message>" --output-format json --resume <session_id>`, with `--allowedTools "Bash(.venv/bin/python model.py:*)"`, `--append-system-prompt` from `.claude/skills/gm/SKILL.md`, and the current punt in the prompt. Save the session id per chat. Keep `ai.py` as the fallback when `ANTHROPIC_API_KEY` is set. Show a "thinking" state, since answers take 10–30s.
 **Watch out:**
-- SKILL.md's commands use bare `python model.py`, which the `--allowedTools` pattern won't match. Fix it first (P4).
+- SKILL.md's commands now run as `.venv/bin/python model.py` (P4), so the `--allowedTools` pattern matches.
 - `claude -p` also loads Martin's user-level settings, hooks (e.g. the ponytail SessionStart hook) and global CLAUDE.md. Check `claude --help` for a way to limit which settings it loads, so none of that leaks into GM answers.
 **Done when:** a chat question in the browser gets an answer quoting `model.py` numbers, a follow-up question remembers context, and New conversation starts fresh.
 
