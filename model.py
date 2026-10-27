@@ -295,8 +295,10 @@ class League:
         return keys
 
     def games_left(self, k, end="9999", start=None):
-        """Games k's NBA team plays from today (or `start`, or his return date, if later) through `end`."""
-        start = max(start or self.today, self.today, self.inj.get(k, {}).get("return") or "")
+        """Games k's NBA team plays from today (or `start`, his return date, or the first day the matchup totals don't
+        cover yet, if later) through `end`."""
+        start = max(start or self.today, self.today, self.matchup.get("from", ""),
+                    self.inj.get(k, {}).get("return") or "")
         return sum(start <= d <= end for d in self.sched.get(self.nba.get(k), ()))
 
     def _availability(self, base, cur):

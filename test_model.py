@@ -168,34 +168,125 @@ def test_all():
     stale = model.League({**snap, "matchup": {"opponent": "Them", "week_end": "2026-10-25"}}, pd.concat([base, twins]),
                          pd.concat([cur, twins]), today=model.date(2026, 10, 26))
     assert stale.this_week()["opponent"] is None and stale.week_end == "2026-11-01"
+    # totals pulled after Monday's games already hold them: the rest of the week counts from Tuesday
+    late = model.League({**snap, "matchup": {"opponent": "Them", "week_end": "2026-11-01", "from": "2026-10-27"}},
+                        pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
+                        sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week})
+    assert late.games_week["twin a"] == 3 and late.games_week["twin b"] == 1
     # banked totals add no noise: with the same final totals, a week that's over is surer than one just starting
     A, B = lg.vecs["Me"], lg.vecs["Them"]
     p_now, p_done = model.cat_probs(A, B, model.CATS), model.cat_probs(A * 1e-6, B * 1e-6, model.CATS, A, B)
     assert all(abs(d - 0.5) >= abs(n - 0.5) - 1e-9 for n, d in zip(p_now, p_done))
     assert np.isfinite(model.cat_probs(A * 0, B, model.CATS)).all()  # Sunday night, no games left, nothing banked
 
-    # league text import: Instinct-style snapshot (numbered teams, fixed-width rows, [O: Out], invisible glyphs,
-    # injured section skipped, FA section with roster % and waiver dates) and a hand-typed "## Team" list
-    name, teams, fa = yahoo.parse_text("""Yahoo league "mchc fantasy" (ID 1)
+    # league text import: a trimmed Instinct snapshot (settings, rosters with ranks and "Empty slot" rows, injured
+    # list skipped, free agents across three lists, matchups, transactions, projections, adds, schedule), sections it
+    # doesn't know skipped (PART 9, NOTES), invisible glyphs, and a hand-typed "## Team" list
+    got = yahoo.parse_text("""MCHC FANTASY BASKETBALL - FULL LEAGUE SNAPSHOT
+Yahoo league "mchc fantasy" (ID 231900) - 12 teams, head-to-head
+Pulled Monday, October 26, 2026, 11:37 PM MST (America/Creston, UTC-7) from Yahoo Fantasy. All NBA games of Oct 26 were final at pull time.
+Week 2: Mon Oct 26 - Sun Nov 1
+My team: fatty zhou
+=====
+LEAGUE SETTINGS
+=====
+Scoring type:     Head-to-Head Categories, 9 cats (FG%, FT%, 3PTM, PTS, REB, AST, ST, BLK, TO)
+Roster slots:     PG, SG, G, SF, PF, F, C, C, Util, Util (10 starters) + 3 BN + 3 IL = 16
+Max adds/week:    4 (no season limit on adds or trades)
+=====
 PART 1 - ALL 12 TEAM ROSTERS
-1. Toronto blue jays\ue002  (4-5-0, 7th place)
--------------------
-   C     Ivica Zubac                 IND - C  [O: Out]
-   Util  De'Aaron Fox                SAS - PG
+=====
+5. fatty zhou  (5-4-0, 5th place)
+---------------
+   C     Nikola Jokić                DEN - C                     Pre 1    Cur 8    Ros 100%
+   BN    VJ Edgecombe                PHI - PG,SG  [Q: Questionable]  Pre 88   Cur 58   Ros 91%
+   IL    Empty slot
+10. Big Tuo Plumbing Inc.  (0-9-0, 12th place)
+   SF    Empty slot
+   Util  Kel'el Ware                 MIL - C                     Pre 69   Cur 170  Ros 88%
+   Note: Yahoo shows 4 bench players here; league limit is 3 BN (sf is empty).
 PART 2 - INJURED PLAYERS ON ROSTERS (all 12 teams)
-Out           Ivica Zubac                 IND - C            (Toronto blue jays, C)
-PART 4 - EVERYTHING 15%+ ROSTERED, SORTED BY ROSTER %
-1   63%   Keegan Murray                SAC - SF,PF       O    W Oct 28   189    no (waivers)
-5   37%   Sandro Mamukelashvili        LAL - PF,C             FA         150    YES
+Questionable  VJ Edgecombe                PHI - PG,SG         (fatty zhou, BN)
+PART 3 - TOP 100 FREE AGENTS (blended rank: average of preseason + current)
+#   Blend  Pre   Cur   Player                         Team - Pos        Inj  %Ros
+1   125    135   115   Daniel Gafford                 DAL - C                34%
+PART 4 - EVERYTHING 15%+ ROSTERED, SORTED BY ROSTER % (your 15% cutoff)
+#   %Ros  Player                         Team - Pos        Inj  Status    Blend  In T100
+1   63%   Keegan Murray                  SAC - SF,PF       O    W Oct 28  182    no (waivers)
+9   34%   Daniel Gafford                 DAL - C                FA        125    YES
+PART 5 - FULL WAIVER WIRE (all 11 players, can't add directly; claim by date)
+Clears   %Ros  Blend  Pre   Cur   Player                         Team - Pos        Inj
+Oct 28   63%   182    108   256   Keegan Murray                  SAC - SF,PF       O
+PART 6 - THIS WEEK'S MATCHUPS (week 2, Oct 26 - Nov 1)
+Category totals so far this week (as of ~11:37 PM MST, all of Oct 26's games final).
+fatty zhou vs Big Tuo Plumbing Inc.
+  fatty zhou             FGM/FGA 36/91   FTM/FTA 15/19   3PTM 13   PTS 100   REB 37   AST 37   ST 5   BLK 5   TO 16
+  Big Tuo Plumbing Inc.  FGM/FGA 68/147   FTM/FTA 47/61   3PTM 14   PTS 197   REB 81   AST 37   ST 11   BLK 18   TO 22
+PART 7 - RECENT TRANSACTIONS (last 30, newest first)
+  Oct 26 3:08am   fatty zhou            waiver claim  Brandin Podziemski (dropped Jeremiah Fears)
+  Oct 25 12:22pm  Big Tuo Plumbing Inc. add           Joan Beringer
+PART 8 - YAHOO PROJECTIONS (rest of season, per game)
+fatty zhou:
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Nikola Jokić                DEN - C           -     10.0  17.9  5.1   6.2   1.9   27.0  12.5  9.9   1.6   0.7   3.0
+  VJ Edgecombe                PHI - PG,SG       no projection shown by Yahoo
+PART 9 - LAST SEASON'S WEEKLY RESULTS
+   PG    Ghost Player                DET - PG                    Pre 5    Cur 41   Ros 100%
+=====
+ADDS USED THIS WEEK AND WAIVER PRIORITY
+=====
+  fatty zhou            1/4
+  1   Big Tuo Plumbing Inc.
+  2   fatty zhou
+=====
+SEASON SCHEDULE (weeks 1-23)
+=====
+Week 10: Mon Dec 28 - Sun Jan 3
+  fatty zhou vs Big Tuo Plumbing Inc.
+Week 21: Mon Mar 22 - Sun Mar 28
+  Playoffs - pairings not set yet (8 teams, seeded after Week 20; Yahoo lists none)
+=====
+NOTES
+=====
+   BN    Ghost Player                DET - PG                    Pre 5    Cur 41   Ros 100%
 ## Sharks
 Chet Holmgren (Q)
 Sharks has an open SF slot.""")
-    assert name == "mchc fantasy" and list(teams) == ["Toronto blue jays", "Sharks"]
-    assert teams["Toronto blue jays"][0] == {"name": "Ivica Zubac", "nba": "IND", "pos": "C", "status": "O", "slot": "C"}
-    assert teams["Toronto blue jays"][1]["name"] == "De'Aaron Fox"
-    assert teams["Sharks"] == [{"name": "Chet Holmgren", "pos": "", "nba": "", "status": "GTD"}]
-    assert fa[0] == {"name": "Keegan Murray", "nba": "SAC", "pos": "SF,PF", "status": "O", "owned": 63, "waiver": "Oct 28"}
-    assert fa[1]["owned"] == 37 and "waiver" not in fa[1] and fa[1]["status"] == ""
+    assert got["name"] == "mchc fantasy" and got["me"] == "fatty zhou"
+    assert list(got["teams"]) == ["fatty zhou", "Big Tuo Plumbing Inc.", "Sharks"]
+    assert got["pulled"] == "2026-10-26T23:37:00-07:00" and got["from"] == "2026-10-27"  # Oct 26's games are banked
+    assert got["week"] == {"week": 2, "start": "2026-10-26", "end": "2026-11-01"}
+    assert got["settings"] == {"roster": 13, "scoring": "categories", "max_adds": 4}
+    fz = got["teams"]["fatty zhou"]
+    assert fz[0] == {"name": "Nikola Jokić", "nba": "DEN", "pos": "C", "status": "", "slot": "C",
+                     "rank": {"pre": 1, "cur": 8}, "owned": 100}
+    assert [p["name"] for p in fz] == ["Nikola Jokić", "VJ Edgecombe"] and fz[1]["status"] == "GTD"
+    assert [p["name"] for p in got["teams"]["Big Tuo Plumbing Inc."]] == ["Kel'el Ware"]
+    assert got["records"]["fatty zhou"] == {"w": 5, "l": 4, "t": 0, "rank": 5}
+    fa = {p["name"]: p for p in got["free_agents"]}
+    assert fa["Daniel Gafford"] == {"name": "Daniel Gafford", "nba": "DAL", "pos": "C", "status": "",
+                                    "rank": {"pre": 135, "cur": 115}, "owned": 34}
+    assert fa["Keegan Murray"] == {"name": "Keegan Murray", "nba": "SAC", "pos": "SF,PF", "status": "O", "owned": 63,
+                                   "waiver": "Oct 28", "rank": {"pre": 108, "cur": 256}}
+    assert got["matchups"] == [{"teams": ["fatty zhou", "Big Tuo Plumbing Inc."], "totals": {
+        "fatty zhou": {"FGM": 36, "FGA": 91, "FTM": 15, "FTA": 19, "FG3M": 13, "PTS": 100, "REB": 37, "AST": 37,
+                       "STL": 5, "BLK": 5, "TOV": 16},
+        "Big Tuo Plumbing Inc.": {"FGM": 68, "FGA": 147, "FTM": 47, "FTA": 61, "FG3M": 14, "PTS": 197, "REB": 81,
+                                  "AST": 37, "STL": 11, "BLK": 18, "TOV": 22}}}]
+    assert got["transactions"] == [
+        {"when": "Oct 26 3:08am", "team": "fatty zhou", "type": "waiver claim", "player": "Brandin Podziemski",
+         "dropped": "Jeremiah Fears"},
+        {"when": "Oct 25 12:22pm", "team": "Big Tuo Plumbing Inc.", "type": "add", "player": "Joan Beringer"}]
+    assert got["projections"] == {"Nikola Jokić": {"FGM": 10.0, "FGA": 17.9, "FTM": 5.1, "FTA": 6.2, "FG3M": 1.9,
+                                                   "PTS": 27.0, "REB": 12.5, "AST": 9.9, "STL": 1.6, "BLK": 0.7, "TOV": 3.0}}
+    assert got["adds"] == {"fatty zhou": 1} and got["waiver_order"] == ["Big Tuo Plumbing Inc.", "fatty zhou"]
+    assert got["schedule"] == [
+        {"week": 10, "start": "2026-12-28", "end": "2027-01-03", "matchups": [["fatty zhou", "Big Tuo Plumbing Inc."]]},
+        {"week": 21, "start": "2027-03-22", "end": "2027-03-28", "matchups": []}]
+    assert got["teams"]["Sharks"] == [{"name": "Chet Holmgren", "pos": "", "nba": "", "status": "GTD"}]
+    # pulled mid-games: the rest of the week starts tomorrow; pulled before tip-off: today still counts
+    assert yahoo.parse_text("Pulled Monday, October 26, 2026, ~8:30 PM MST (UTC-7)")["from"] == "2026-10-27"
+    assert yahoo.parse_text("Pulled Saturday, October 31, 2026, 10:00 AM MST (UTC-7)")["from"] == "2026-10-31"
 
     w = lg.waivers()
     assert all(m["gain"] > 0.5 for m in w["moves"])

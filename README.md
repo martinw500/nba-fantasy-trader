@@ -17,14 +17,14 @@ That opens http://localhost:8765 with a **demo league**: 12 fake teams drafted f
 
 Since summer 2026, Yahoo only gives Fantasy API access to applications it approves, and approval has no timeline. Until then, load the league from a text snapshot:
 
-1. Get a snapshot of the league as a text file. Instinct's "MCHC FANTASY BASKETBALL - FULL LEAGUE SNAPSHOT" works as-is: numbered team headings, one fixed-width row per player (`PG    Cade Cunningham    DET - PG,SG  [O: Out]`), and free-agent and waiver sections with roster % and claim dates. A hand-typed list works too:
+1. Get a snapshot of the league as a text file. Instinct's "MCHC FANTASY BASKETBALL - FULL LEAGUE SNAPSHOT" works as-is: league settings, numbered team headings, one fixed-width row per player (`PG    Cade Cunningham    DET - PG,SG  [O: Out]   Pre 5  Cur 41  Ros 100%`), free-agent and waiver sections with roster % and claim dates, this week's matchup totals, transactions, Yahoo projections, adds used, waiver priority and the season schedule. Sections it doesn't recognise are skipped. A hand-typed list works too:
    ```
    ## Toronto blue jays
    Cade Cunningham
    Ivica Zubac (O)
    ```
-2. Run `python yahoo.py import mchc-fantasy-snapshot-v3.txt "fatty zhou"`. It lists any player it couldn't match to NBA stats (usually rookies who haven't played yet).
-3. Restart `python app.py`. When there's a new snapshot, run the import again with the new file. Refresh re-reads the last file you imported.
+2. Run `.venv/bin/python yahoo.py import mchc-fantasy-snapshot-2026-10-26.txt`. Your team comes from the file's `My team:` line; name it after the file to pick another (`... import file.txt "fatty zhou"`). It lists any player it couldn't match to NBA stats (usually rookies who haven't played yet).
+3. Restart `python app.py`. For a new snapshot, drop the file in the repo folder and press **Refresh**: it imports the newest `*snapshot*.txt`.
 
 Pick your team from the dropdown under the league name in the top bar. Snapshot files (`*snapshot*.txt`) are gitignored.
 
@@ -89,7 +89,7 @@ Then see [ROADMAP.md](ROADMAP.md) for what's next.
 **My team** shows your projected finish and your chance of winning a typical week. It also shows your odds in each category and your head-to-head odds against every team. **League** shows projected standings for everyone.
 
 ### "How's my matchup this week? Who do I stream?"
-**This week** tab. Pick your opponent once (it's saved until the week ends on Sunday). You get your chance to win the week, each category's projected total and odds with a call (*Safe*, *Chase*, *Lost*), and **Streaming adds**: free agents ranked by how much they raise this week's odds, with games left, who to drop, and what keeping him does to your season-long odds. Projections count each player's games left this week; players in IL slots sit, and a waiver claim counts only from the day it clears. The text snapshot has no live score, so totals start at zero (right on Mondays); a Yahoo pull will fill in the opponent and the score. CLI: `python model.py week --vs "Team"`.
+**This week** tab. Pick your opponent once (it's saved until the week ends on Sunday). You get your chance to win the week, each category's projected total and odds with a call (*Safe*, *Chase*, *Lost*), and **Streaming adds**: free agents ranked by how much they raise this week's odds, with games left, who to drop, and what keeping him does to your season-long odds. Projections count each player's games left this week; players in IL slots sit, and a waiver claim counts only from the day it clears. A snapshot with a matchups section (or a Yahoo pull) fills in the opponent and the score so far, and when it was pulled after that day's games started, the rest of the week counts from the next day. Without one, totals start at zero (right on Mondays). CLI: `python model.py week --vs "Team"`.
 
 ### "Should I punt something?"
 **My team** shows your odds in each category. Categories you win under 35% of weeks get a **Punt …** suggestion. You can also toggle any category with the **Punt** chips in the top bar. A punted column greys out in every table, and trades, waivers and ideas re-optimize with that category treated as a loss.
@@ -208,6 +208,7 @@ Open the folder in Claude Code. These skills and plugins are set up for this pro
 | `app.py` | Local web server + JSON API (`python app.py`, add `--no-browser` to skip opening a tab) |
 | `web/index.html` | The whole UI: one file, no build step |
 | `model.py` | Engine: values, trades, finder, waivers, hot/cold, punts. Also a CLI (`python model.py --help`) |
+| `backtest.py` | Checks the matchup odds against a real NBA season and prints predicted vs actual win rates |
 | `yahoo.py` | Pulls your league from Yahoo (`python yahoo.py`) or builds the demo (`python yahoo.py demo`) |
 | `ai.py` | AI GM: Claude with tools that call `model.py` |
 | `test_model.py` | Self-check, no network: `python test_model.py` |

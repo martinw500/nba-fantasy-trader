@@ -4,15 +4,17 @@ Local Yahoo NBA fantasy GM app. Python 3.13 + pandas backend, one-file vanilla H
 
 ## Files
 - `model.py`: the engine (`League` class) plus a JSON CLI. All numbers come from here: UI, AI chat and the `/gm` skill.
-- `yahoo.py`: league snapshot → `data/league.json`. Yahoo API (read-only, yfpy; access now needs Yahoo's approval), `python yahoo.py import <snapshot>.txt "Team"` (Instinct-style league snapshot or a hand-typed list, `parse_text`; Refresh re-reads the file; the top-bar dropdown switches your team via `/api/me`), or `python yahoo.py demo` (fake league from real stats).
+- `yahoo.py`: league snapshot → `data/league.json`. Yahoo API (read-only, yfpy; access now needs Yahoo's approval), `python yahoo.py import <snapshot>.txt ["Team"]` (Instinct-style league snapshot or a hand-typed list, `parse_text`; unknown sections are skipped; Refresh imports the newest `*snapshot*.txt`; the top-bar dropdown switches your team via `/api/me`), or `python yahoo.py demo` (fake league from real stats).
 - `model.py` also fetches the NBA schedule (`nba_api`, cached a day) and ESPN's injury feed (cached 3h) in `load()`. `League` built directly (tests) gets neither, so it stays offline.
 - `app.py`: stdlib `ThreadingHTTPServer` on 127.0.0.1:8765, routes in `api()`.
 - `ai.py`: Claude GM via `client.beta.messages.tool_runner`, tools wrap `League` methods, model `claude-opus-5-5`.
+- `backtest.py`: replays a real NBA season (game logs cached in `data/gamelogs_*.csv`) in 20 simulated leagues and prints predicted vs actual win rates. It's the evidence behind the matchup knobs.
 - `web/index.html`: the whole UI. State in `S`, views are `view*()` functions returning HTML strings, event delegation via `data-act` / `data-view` / `data-punt`.
 
 ## Commands
 Python lives in `.venv` (Homebrew Python blocks global pip): use `.venv/bin/python` or `source .venv/bin/activate`.
 - `python test_model.py`: self-check, synthetic data, no network. Run it after touching `model.py`.
+- `python backtest.py`: calibration check (~1 min). Run it after changing projections or odds maths.
 - `python app.py --no-browser`: run the app without opening a tab. `#view` and `?punt=FT%25,TOV` deep-link a view and build.
 - `python model.py {team|trade|ideas|search|waivers|movers|roster|week} [--punt ...]`: prints JSON.
 

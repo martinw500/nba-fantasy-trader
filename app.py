@@ -61,8 +61,9 @@ def api(path, q, body):
     if path == "/api/refresh":
         if os.environ.get("YAHOO_LEAGUE_ID"):
             yahoo.snapshot()
-        elif lg.snap.get("text"):  # imported from a roster file: re-read it (and refetch injuries)
-            yahoo.from_text(lg.snap["text"], lg.me)
+        elif lg.snap.get("text"):  # imported from a snapshot file: read the newest one (and refetch injuries)
+            newest = max(ROOT.glob("*snapshot*.txt"), key=lambda p: p.stat().st_mtime, default=lg.snap["text"])
+            yahoo.from_text(newest, lg.me)
             (model.DATA / "injuries.json").unlink(missing_ok=True)
         else:
             yahoo.demo()

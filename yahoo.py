@@ -2,7 +2,7 @@
 
   python yahoo.py            # uses YAHOO_LEAGUE_ID from .env
   python yahoo.py demo       # fake 12-team league drafted from real stats, no Yahoo needed
-  python yahoo.py import snapshot.txt "My team"   # league from a text snapshot, no Yahoo API (format: parse_text)
+  python yahoo.py import snapshot.txt ["My team"]   # league from a text snapshot, no Yahoo API (format: parse_text)
 
 One-time setup: see README.md -> "Connect Yahoo".
 """
@@ -12,8 +12,9 @@ import random
 import re
 import sys
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).parent
 OUT = ROOT / "data" / "league.json"
@@ -94,75 +95,166 @@ def snapshot(league_id=None):
 
 PLAYER = re.compile(r"(\S+(?: \S+)*?)\s{2,}([A-Z]{2,4}) - ([A-Z,]+)(.*)")  # "Cade Cunningham    DET - PG,SG  [O: Out]"
 SLOTS = {"PG", "SG", "G", "SF", "PF", "F", "C", "Util", "BN", "IL", "IL+", "NA"}
+WEEK = re.compile(r"Week (\d+): \w{3} (\w{3} \d+) - \w{3} (\w{3} \d+)")  # "Week 2: Mon Oct 26 - Sun Nov 1"
+ET = ZoneInfo("America/New_York")
+# section heading words -> what its rows are, first match wins; a section nothing matches is skipped
+MODES = [("injur", "skip"), ("adds used", "adds"), ("priority", "adds"), ("team roster", "teams"), ("free agent", "fa"),
+         ("15%+", "fa"), ("waiver", "fa"), ("matchup", "matchups"), ("transaction", "transactions"),
+         ("projection", "projections"), ("settings", "settings"), ("schedule", "schedule")]
+
+
+def _day(s, y0):
+    """"Oct 26" -> "2026-10-26" in the season that starts in October of y0 (January-July dates are in y0 + 1)."""
+    y = y0 + (datetime.strptime(s[:3], "%b").month < 8)
+    return datetime.strptime(f"{s} {y}", "%b %d %Y").date().isoformat()
 
 
 def parse_text(text):
-    """A league snapshot as text (e.g. Instinct's "MCHC FANTASY BASKETBALL - FULL LEAGUE SNAPSHOT"), or a hand-typed list:
+    """A league snapshot as text (Instinct's "MCHC FANTASY BASKETBALL - FULL LEAGUE SNAPSHOT"), or a hand-typed list:
 
-        1. Toronto blue jays  (4-5-0, 7th place)        or   ## Toronto blue jays
-           PG    Cade Cunningham    DET - PG,SG                Cade Cunningham (Q)
-           C     Ivica Zubac        IND - C  [O: Out]
-        PART 3 - TOP 75 FREE AGENTS ...                 or   ## Free agents
-        1   117   135   98    Daniel Gafford    DAL - C           34%
+        Pulled Monday, October 26, 2026, 11:37 PM MST (America/Creston, UTC-7) ...   Week 2: Mon Oct 26 - Sun Nov 1
+        LEAGUE SETTINGS (between ==== lines)         Roster slots: ... (10 starters) + 3 BN + 3 IL = 16
+        PART 1 - ALL 12 TEAM ROSTERS                 or   ## Toronto blue jays
+        1. Toronto blue jays  (4-5-0, 7th place)          Cade Cunningham (Q)
+           C     Ivica Zubac   IND - C  [O: Out]   Pre 53   Cur 189  Ros 94%
+        PART 3 - TOP 100 FREE AGENTS / 15%+ / WAIVER WIRE: rows with Pre/Cur ranks, roster %, "W Oct 28" claim dates
+        PART 6 matchups (pair line, then each team's FGM/FGA 36/91 ... TO 16), PART 7 transactions,
+        PART 8 Yahoo projections per game, ADDS USED ... AND WAIVER PRIORITY, SEASON SCHEDULE
 
-    Injury tags O / Q / P / D / NA (or [O: Out]); % = Yahoo roster %; "W Oct 28" = on waivers until then.
-    Sections about injured players are skipped (those players are already on the rosters).
-    Returns (league name, {team: [player]}, [free agent])."""
-    name, teams, fa, cur, mode = "", {}, {}, None, "teams"
-    for raw in text.splitlines():
-        line = "".join(c for c in raw if unicodedata.category(c) != "Co").strip()  # some exports add invisible glyphs
-        if m := re.search(r'league "([^"]+)"', line) or re.fullmatch(r"# (.+)", line):
-            name = name or m[1]
-        head = re.fullmatch(r"(?:PART \d+ - |## )(.+)", line)
-        if head:  # section heading: teams, injured (skip), or free agents / waivers
+    Injury tags O / Q / P / D / NA (or [O: Out]). "Empty slot" rows, the injured list and any section it doesn't
+    know (last season, notes) are skipped. Returns a dict: name, teams {team: [player]}, free_agents, records,
+    matchups, transactions, projections, adds, waiver_order, schedule, rules (settings lines), settings, and when
+    the header has them: me, pulled, week, from (first day whose games aren't in the matchup totals yet)."""
+    out = {"name": "", "teams": {}, "records": {}, "matchups": [], "transactions": [], "projections": {}, "adds": {},
+           "waiver_order": [], "schedule": [], "rules": {}}
+    teams, fa = out["teams"], {}
+    y0 = date.today().year - (date.today().month < 8)
+    lines = ["".join(c for c in raw if unicodedata.category(c) != "Co").strip() for raw in text.splitlines()]
+    bar = lambda i: 0 <= i < len(lines) and lines[i].startswith("====")
+    mode, cur, cols, pair = None, None, [], None
+    for i, line in enumerate(lines):
+        if m := re.search(r'league "([^"]+)"', line) or re.fullmatch(r"# (\S.*)", line):
+            out["name"] = out["name"] or m[1]
+        head = re.fullmatch(r"(?:PART \d+ - |## )(.+)", line) or (bar(i - 1) and bar(i + 1) and not bar(i)
+                                                                    and re.fullmatch(r"(.+)", line))
+        if head:
             h = head[1].lower()
-            mode = "skip" if "injur" in h else "teams" if "roster" in h and "%" not in h else "fa" if (
-                "free" in h or "waiver" in h or "%" in h) else "teams"
-            if line.startswith("## ") and mode == "teams":
+            mode = next((md for w, md in MODES if w in h), "list" if line.startswith("## ") else "skip")
+            if mode == "list":
                 cur = teams.setdefault(head[1].split(" · ")[0].strip(), [])
+            cols = []
             continue
-        if mode == "teams" and (m := re.fullmatch(r"\d+\.\s+(.+?)\s+\(\d+-\d+.*", line)):
+        if mode is None:  # header lines before the first section
+            if m := re.match(r"Pulled \w+, (\w+ \d+, \d{4}), ~?(\d+:\d+ [AP]M)(?:.*?UTC([+-]\d+))?", line):
+                at = datetime.strptime(f"{m[1]} {m[2]}", "%B %d, %Y %I:%M %p").replace(
+                    tzinfo=timezone(timedelta(hours=int(m[3]))) if m[3] else ET)
+                out["pulled"], y0 = at.isoformat(), at.year - (at.month < 8)
+                # games under way at pull time are in the totals, so the rest of the week starts the next day.
+                # ponytail: 7 PM ET is the usual first tip-off; weekend matinees start earlier
+                started = "final" in line or at >= datetime.combine(at.date(), time(19), ET)
+                out["from"] = (at.date() + timedelta(days=1 if started else 0)).isoformat()
+            elif m := re.match(r"My team: (.+)", line):
+                out["me"] = m[1]
+            elif m := WEEK.match(line):
+                out["week"] = {"week": int(m[1]), "start": _day(m[2], y0), "end": _day(m[3], y0)}
+            continue
+        if mode == "skip" or "Empty slot" in line or not re.search(r"[A-Za-z]", line):
+            continue
+        if mode == "settings":
+            if m := re.match(r"([^:]+):\s+(.+)", line):
+                out["rules"][m[1]] = m[2]
+        elif mode == "teams" and (m := re.fullmatch(r"\d+\.\s+(.+?)\s+\((.*)\)", line)):
             cur = teams.setdefault(m[1], [])
-            continue
-        if mode == "skip" or not re.search(r"[A-Za-z]", line):
-            continue
-        if m := PLAYER.search(line):
+            out["records"][m[1]] = dict(zip(("w", "l", "t", "rank"), map(int, re.findall(r"\d+", m[2]))))
+        elif mode == "matchups":
+            if (m := re.fullmatch(r"(.+?) vs (.+)", line)) and m[1] in teams and m[2] in teams:
+                pair = {"teams": [m[1], m[2]], "totals": {}}
+                out["matchups"].append(pair)
+            elif pair and (t := next((t for t in pair["teams"] if line.startswith(t + " ")), None)):
+                pair["totals"][t] = {YAHOO_STAT[k]: float(v) for ks, vs in re.findall(r"(\S+) ([\d./]+)", line[len(t):])
+                                     for k, v in zip(ks.split("/"), vs.split("/")) if k in YAHOO_STAT and "%" not in k}
+        elif mode == "transactions":  # a long team name can fill its column, so match the names, not the spacing
+            m = re.match(r"(\w{3} \d+ \d+:\d+[ap]m)\s+(.+)", line)
+            if m and (t := max((t for t in teams if m[2].startswith(t + " ")), key=len, default=None)):
+                kind, what = (re.split(r"\s{2,}", m[2][len(t):].strip(), maxsplit=1) + [""])[:2]
+                d = re.fullmatch(r"(.*?)(?: \(dropped (.+)\))?", what)
+                out["transactions"].append({"when": m[1], "team": t, "type": kind, "player": d[1],
+                                            **({"dropped": d[2]} if d[2] else {})})
+        elif mode == "adds":
+            if (m := re.fullmatch(r"(.+?)\s+(\d+)/\d+", line)) and m[1] in teams:
+                out["adds"][m[1]] = int(m[2])
+            elif (m := re.fullmatch(r"\d+\s+(.+)", line)) and m[1] in teams:
+                out["waiver_order"].append(m[1])
+        elif mode == "schedule":
+            if m := WEEK.match(line):
+                out["schedule"].append({"week": int(m[1]), "start": _day(m[2], y0), "end": _day(m[3], y0), "matchups": []})
+            elif out["schedule"] and (m := re.fullmatch(r"(.+?) vs (.+)", line)) and m[1] in teams and m[2] in teams:
+                out["schedule"][-1]["matchups"].append([m[1], m[2]])
+        elif "Team - Pos" in line:  # column headers: "#  Blend  Pre  Cur  Player  Team - Pos  Inj  %Ros"
+            w = line.split()
+            cols = w[w.index("Pos") + 1:] if mode == "projections" else w[:w.index("Player")]
+        elif mode == "projections":
+            if (m := PLAYER.search(line)) and len(vals := m[4].split()) == len(cols):  # rookies: "no projection shown"
+                out["projections"][m[1]] = {YAHOO_STAT[c]: float(v) for c, v in zip(cols, vals) if c in YAHOO_STAT and v != "-"}
+        elif m := PLAYER.search(line):  # a player on a roster or a free-agent list
             tag = re.match(r"\s+(?:\[)?(O|Q|P|D|NA|GTD|DTD|INJ|SUSP)\b", m[4])
             p = {"name": m[1], "nba": m[2], "pos": m[3], "status": STATUS.get(tag[1].lower(), tag[1]) if tag else ""}
-            if mode == "teams" and cur is not None:
+            left = dict(zip(cols[::-1], line[:m.start(1)].split()[::-1]))  # FA columns before the name, right-aligned
+            r = re.search(r"Pre (\d+)\s+Cur (\d+)", m[4])  # roster rows: "Pre 5  Cur 41  Ros 100%"
+            pre, now = (r[1], r[2]) if r else (left.get("Pre", ""), left.get("Cur", ""))
+            extra = {"rank": {"pre": int(pre), "cur": int(now)}} if pre.isdigit() and now.isdigit() else {}
+            if pct := re.search(r"(\d+)%", line):
+                extra["owned"] = int(pct[1])
+            if mode in ("teams", "list") and cur is not None:
                 slot = line.split()[0]
-                cur.append({**p, **({"slot": slot} if slot in SLOTS else {})})
+                cur.append({**p, **({"slot": slot} if slot in SLOTS else {}), **extra})
             elif mode == "fa":
-                pct, w = re.search(r"(\d+)%", line), re.search(r"(?:^|W )([A-Z][a-z]{2} \d{1,2})\b", line)
-                fa.setdefault(p["name"], p).update({"owned": int(pct[1])} if pct else {}, **({"waiver": w[1]} if w else {}))
-        elif mode == "teams" and cur is not None and len(line.split()) <= 4 and not re.search(r"\d", line):
+                w = re.search(r"(?:^|W )([A-Z][a-z]{2} \d{1,2})\b", line)
+                fa.setdefault(p["name"], p).update(extra, **({"waiver": w[1]} if w else {}))
+        elif mode == "list" and cur is not None and len(line.split()) <= 4 and not re.search(r"\d", line):
             m = re.fullmatch(r"(.+?)\s*\((\S+)\)", line)  # hand-typed "Name" or "Name (O)"
             cur.append({"name": m[1] if m else line, "pos": "", "nba": "",
                         "status": STATUS.get(m[2].lower(), m[2].upper()) if m else ""})
-    return name, teams, list(fa.values())
+    rules = out["rules"]
+    slots = re.search(r"\((\d+) starters\) \+ (\d+) BN", rules.get("Roster slots", ""))  # IL slots don't count
+    adds = re.match(r"\d+", rules.get("Max adds/week", ""))
+    scoring = next((k for k, w in (("categories", "categor"), ("one_win", "one win")) if w in rules.get("Scoring type", "").lower()), None)
+    out["settings"] = {**({"roster": int(slots[1]) + int(slots[2])} if slots else {}),
+                       **({"scoring": scoring} if scoring else {}), **({"max_adds": int(adds[0])} if adds else {})}
+    out["free_agents"] = list(fa.values())
+    return out
 
 
-def from_text(path, me):
-    """league.json from a league text file (parse_text). Free agents come from the file when it lists them,
-    otherwise they're the best players nobody rosters (then players on waivers count as free)."""
+def from_text(path, me=None):
+    """league.json from a league text file (parse_text). me defaults to the file's "My team:" line. Free agents are
+    the ones the file lists (with roster % and claim dates) plus the best players nobody rosters, since anyone not
+    on a roster is available."""
     import model
-    name, teams, listed = parse_text(Path(path).read_text(encoding="utf-8"))
-    me = next((t for t in teams if t.lower() == me.lower()), None)
+    got = parse_text(Path(path).read_text(encoding="utf-8"))
+    teams = got["teams"]
+    me = next((t for t in teams if t.lower() == (me or got.get("me", "")).lower()), None)
     if not me:
         raise SystemExit(f"No team called that. Teams: {', '.join(teams)}")
     line, val = _pool()
-    roster = max(sum(p.get("slot") not in BENCH_ONLY for p in ps) for ps in teams.values())
-    snap = {"name": name or Path(path).stem, "me": me, "teams": teams, "text": str(path), "free_agents": [],
-            "settings": {"teams": len(teams), "roster": roster, "mode": "9cat", "cats": model.CATS}}
+    keep = ("pulled", "records", "matchups", "transactions", "projections", "adds", "waiver_order", "schedule", "rules")
+    snap = {"name": got["name"] or Path(path).stem, "me": me, "teams": teams, "text": str(path), "free_agents": [],
+            "settings": {"teams": len(teams), "roster": 13, "mode": "9cat", "cats": model.CATS, **got["settings"]},
+            **{k: got[k] for k in keep if got.get(k)}}
     lg = model.League(snap)  # matches names the way the app will ("N. Alexander-Walker", accents, Jr.)
     if missed := [p["name"] for ps in teams.values() for p in ps if not lg.find(p["name"], strict=False)]:
         print(f"Left out (no NBA stats yet, or a name to fix in {path}): {', '.join(missed)}")
     taken = {k for ks in lg.rosters.values() for k in ks}
-    fa = [k for k in val.sort_values(ascending=False).index if k not in taken][:100]
-    snap["free_agents"] = listed or [{"name": line.at[k, "PLAYER_NAME"], "pos": "", "status": "",
-                                      "nba": line.at[k, "TEAM_ABBREVIATION"]} for k in fa]
+    listed = {lg.find(p["name"], strict=False) for p in got["free_agents"]}
+    best = [k for k in val.sort_values(ascending=False).index if k not in taken and k not in listed][:100]
+    snap["free_agents"] = got["free_agents"] + [{"name": line.at[k, "PLAYER_NAME"], "pos": "", "status": "",
+                                                 "nba": line.at[k, "TEAM_ABBREVIATION"]} for k in best]
+    mine = next((x for x in got["matchups"] if me in x["teams"]), None)
     old = json.loads(OUT.read_text(encoding="utf-8")) if OUT.exists() else {}
-    if old.get("matchup") and old.get("me") == me:  # the opponent picked in the app survives a re-import
+    if mine and got.get("week"):
+        snap["matchup"] = {"opponent": next(t for t in mine["teams"] if t != me), "week_start": got["week"]["start"],
+                           "week_end": got["week"]["end"], "totals": mine["totals"],
+                           **({"from": got["from"]} if got.get("from") else {})}
+    elif old.get("matchup") and old.get("me") == me:  # the opponent picked in the app survives a re-import
         snap["matchup"] = old["matchup"]
     return save(snap)
 
