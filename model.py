@@ -19,6 +19,7 @@ CLI (prints JSON, used by Claude Code and for quick checks):
   add --punt "FT%,TOV" to any of them
 """
 import argparse
+import collections
 import difflib
 import functools
 import itertools
@@ -237,6 +238,7 @@ class League:
     def __init__(self, snap, base=None, cur=None, sched=None, inj=None, today=None):
         s = snap["settings"]
         self.snap, self.teams_n, self.roster_n = snap, s.get("teams", 12), s.get("roster", 13)
+        self.lineup = s.get("starters", 10)  # players whose games count each day
         self.mode = s.get("mode", "9cat")
         self.u = 3.0 if self.mode == "points" else 1.0  # FP/game spreads ~3x wider than 9-cat z-sums; scales thresholds
         self.cats = [c for c in s.get("cats", CATS) if c in CATS] or CATS
@@ -275,7 +277,7 @@ class League:
         m = snap.get("matchup") or {}
         self.matchup = m if (m.get("week_end") or "") >= self.today else {}
         self.week_end = self.matchup.get("week_end") or sunday
-        self.games_week = pd.Series({k: self.games_left(k, self.week_end) for k in self.p.index}, dtype=float)
+        self.games_week = pd.Series({k: len(self.game_days(k, self.week_end)) for k in self.p.index}, dtype=float)
         # expected weekly contribution: games played at his line, missed games partly covered at waiver level
         fill = self.p.loc[self._waiver_level(self.value()), RAW].mean()
         # what a missed game is worth in value units: the half-covered waiver line (zero point for effective())
@@ -294,12 +296,22 @@ class League:
                 keys.append(k)
         return keys
 
-    def games_left(self, k, end="9999", start=None):
-        """Games k's NBA team plays from today (or `start`, his return date, or the first day the matchup totals don't
+    def game_days(self, k, end="9999", start=None):
+        """Dates k's NBA team plays from today (or `start`, his return date, or the first day the matchup totals don't
         cover yet, if later) through `end`."""
         start = max(start or self.today, self.today, self.matchup.get("from", ""),
                     self.inj.get(k, {}).get("return") or "")
-        return sum(start <= d <= end for d in self.sched.get(self.nba.get(k), ()))
+        return [d for d in self.sched.get(self.nba.get(k), ()) if start <= d <= end]
+
+    def starts(self, keys, start=None):
+        """{player: games he starts the rest of this week}. Yahoo only scores starters, so each day the best `lineup`
+        players with a game count and bench games fill in on light days. start: {player: first day}, for claims.
+        ponytail: best = per-game value, position eligibility ignored; a lineup set by hand can count fewer."""
+        day = {}
+        for k in sorted(keys, key=self._value.get, reverse=True):
+            for d in self.game_days(k, self.week_end, (start or {}).get(k)):
+                day.setdefault(d, []).append(k)
+        return collections.Counter(k for ks in day.values() for k in ks[:self.lineup])
 
     def _availability(self, base, cur):
         """Share of games a player suits up for: GP rate over last season + this one, shrunk halfway toward 85%
@@ -402,14 +414,17 @@ class League:
     def vec(self, keys):
         return self.week.reindex(list(keys)).fillna(0).sum().to_numpy()
 
-    def week_vec(self, keys):
-        """This week's expected totals: per-game line x games left this week (none before a return date) x
+    def week_vec(self, keys, start=None):
+        """This week's expected totals: per-game line x games he starts the rest of this week (starts()) x
         availability. Without a schedule it's the season-average week, vec()."""
         if not self.sched:
             return self.vec(keys)
-        keys = [k for k in keys if k in self.p.index]
-        g = (self.games_week.reindex(keys) * self.rate.reindex(keys)).to_numpy()[:, None]
-        return (g * self.p.loc[keys, RAW].to_numpy()).sum(0)
+        g = pd.Series(self.starts([k for k in keys if k in self.p.index], start), dtype=float)
+        return (g * self.rate.reindex(g.index)).to_numpy() @ self.p.loc[g.index, RAW].to_numpy()
+
+    @functools.cached_property
+    def _value(self):
+        return self.value()
 
     @functools.cached_property
     def vecs(self):
@@ -826,37 +841,36 @@ class League:
         p = odds(left[me])
         win = float(match_prob(p))
 
-        def games(k):  # a waiver claim only plays from the day it clears
+        def clears(k):  # a waiver claim only plays from the day it clears
             w = self.meta.get(k, {}).get("waiver")
-            clears = w and datetime.strptime(f"{w} {self.today[:4]}", "%b %d %Y").date().isoformat()
-            return self.games_left(k, self.week_end, clears) if self.sched else GAMES_WEEK
+            return {k: datetime.strptime(f"{w} {self.today[:4]}", "%b %d %Y").date().isoformat()} if w else {}
 
-        # streams: each healthy free agent for whichever of your 3 cheapest healthy players (season win-% cost) helps most
+        # streams: each healthy free agent for whichever of your 3 cheapest healthy players (season win-% cost) helps most,
+        # scored on the whole lineup since an add only counts on days he cracks your top `lineup`
         healthy = lambda ks: [k for k in ks if self.meta.get(k, {}).get("status", "") not in OUT]
         cost = self._contrib(me, healthy(play(me)), punt)
         drops, adds = sorted(cost, key=cost.get)[:3], healthy(self.fa)
+        swap = lambda a, d: [k for k in play(me) if k != d] + [a]
         streams = []
         if drops and adds:
-            g = {k: games(k) for k in adds}
-            full = lambda k: self.games_week[k] if self.sched else GAMES_WEEK
-            A = np.stack([self.week_vec([k]) * (g[k] / full(k) if full(k) else 0) for k in adds])
-            D = np.stack([self.week_vec([k]) for k in drops])
-            gain = 100 * (match_prob(odds(left[me] - D[None] + A[:, None])) - win)
+            V = np.array([[self.week_vec(swap(a, d), clears(a)) for d in drops] for a in adds])
+            gain = 100 * (match_prob(odds(V)) - win)
             season0 = self.outlook(me, punt=punt)["win"]
             for i in np.argsort(-gain.max(1))[:limit]:
                 a, d = adds[i], drops[gain[i].argmax()]
                 if gain[i].max() < 0.1:
                     break
                 season = self.outlook(me, {me: self.vecs[me] - self.rows[d] + self.rows[a]}, punt)["win"]
-                streams.append({**self.player(a, punt), **({"games": int(g[a])} if self.sched else {}),
+                g = self.starts(swap(a, d), clears(a))[a]
+                streams.append({**self.player(a, punt), **({"games": g} if self.sched else {}),
                                 "gain": round(float(gain[i].max()), 1), "drop": self.p.at[d, "PLAYER_NAME"],
                                 "season": round(100 * (season - season0), 1)})
         call = lambda c, x: "punt" if c in punt else "safe" if x >= 1 - WEAK else "lost" if x <= WEAK else "chase"
         return {"opponent": opp, "teams": others, "week_end": self.week_end,
                 "live": m.get("opponent") == opp and all(t in m.get("totals", {}) for t in (me, opp)),
                 "win": round(100 * win, 1), "score": [round(float(p.sum()), 1), round(len(self.cats) - float(p.sum()), 1)],
-                **({"games": {"you": int(self.games_week.reindex(play(me)).sum()),
-                              "them": int(self.games_week.reindex(play(opp)).sum())}} if self.sched else {}),
+                **({"games": {"you": sum(self.starts(play(me)).values()),
+                              "them": sum(self.starts(play(opp)).values())}} if self.sched else {}),
                 "cats": {c: {"you": [total(so_far[me], c), total(so_far[me] + left[me], c)],
                              "them": [total(so_far[opp], c), total(so_far[opp] + left[opp], c)],
                              "odds": round(100 * float(x), 1), "call": call(c, x)} for c, x in zip(self.cats, p)},

@@ -219,7 +219,7 @@ def parse_text(text):
     slots = re.search(r"\((\d+) starters\) \+ (\d+) BN", rules.get("Roster slots", ""))  # IL slots don't count
     adds = re.match(r"\d+", rules.get("Max adds/week", ""))
     scoring = next((k for k, w in (("categories", "categor"), ("one_win", "one win")) if w in rules.get("Scoring type", "").lower()), None)
-    out["settings"] = {**({"roster": int(slots[1]) + int(slots[2])} if slots else {}),
+    out["settings"] = {**({"roster": int(slots[1]) + int(slots[2]), "starters": int(slots[1])} if slots else {}),
                        **({"scoring": scoring} if scoring else {}), **({"max_adds": int(adds[0])} if adds else {})}
     out["free_agents"] = list(fa.values())
     return out

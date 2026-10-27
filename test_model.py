@@ -146,6 +146,13 @@ def test_all():
     assert sl.games_week["twin a"] == 4 and sl.games_week["twin b"] == 2 and sl.games_week["twin c"] == 0
     assert sl.week_vec(["twin a"])[model.RAW.index("PTS")] > sl.week_vec(["twin b"])[model.RAW.index("PTS")]
     assert abs(sl.avail["twin c"] / sl.rate["twin c"] - 2 / 6) < 1e-9 and sl.player("twin c")["injury"] == "Ankle."
+    # only the best `lineup` players with a game count each day: a third twin adds nothing on days two better ones play
+    sl.lineup = 2
+    assert sl.starts(["player 198", "twin a", "twin d"]) == {"player 198": 4, "twin a": 4}
+    # ... and a bench player fills in on a light day: twin a (a claim) only plays from Oct 30, so twin b starts Monday
+    assert sl.starts(["player 198", "twin a", "twin b"], {"twin a": "2026-10-30"}) == {"player 198": 4, "twin a": 2,
+                                                                                         "twin b": 1}
+    sl.lineup = 10
 
     # this week: no opponent until one is known; streams score more games higher, a waiver claim plays from the day
     # it clears; banked totals decide a category, a punt concedes it, last week's matchup is ignored
@@ -256,7 +263,7 @@ Sharks has an open SF slot.""")
     assert list(got["teams"]) == ["fatty zhou", "Big Tuo Plumbing Inc.", "Sharks"]
     assert got["pulled"] == "2026-10-26T23:37:00-07:00" and got["from"] == "2026-10-27"  # Oct 26's games are banked
     assert got["week"] == {"week": 2, "start": "2026-10-26", "end": "2026-11-01"}
-    assert got["settings"] == {"roster": 13, "scoring": "categories", "max_adds": 4}
+    assert got["settings"] == {"roster": 13, "starters": 10, "scoring": "categories", "max_adds": 4}
     fz = got["teams"]["fatty zhou"]
     assert fz[0] == {"name": "Nikola Jokić", "nba": "DEN", "pos": "C", "status": "", "slot": "C",
                      "rank": {"pre": 1, "cur": 8}, "owned": 100}
