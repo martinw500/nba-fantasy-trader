@@ -140,6 +140,30 @@ def test_all():
     c = lg._contrib("Me", keys)
     assert r["you_drop"] == lg.names(sorted(keys, key=c.get)[:2])
 
+    # free moves: trades are scored on top of them. A 2-for-1 whose only gain is the open spot (Twin Y = Player 170,
+    # Scrub A = Scrub B) scores 0 once the star free agent is already in (the free move drops Scrub B, who comes back
+    # for the open spot), not the star's worth. Search never offers the pickup; a short roster gets a plain add
+    extra = [line("Star FA", 195), line("Twin Y", 170), line("Scrub A", 145), line("Scrub B", 145)]
+    as_pl = lambda n: {"name": n, "pos": "", "status": ""}
+    fl = model.League({**lg.snap, "teams": {"Me": lg.snap["teams"]["Me"] + [as_pl("Scrub A"), as_pl("Scrub B")],
+                                            "Them": lg.snap["teams"]["Them"] + [as_pl("Twin Y")]},
+                       "free_agents": lg.snap["free_agents"] + [as_pl("Star FA")]},
+                      pd.concat([base, model.keyed(pd.DataFrame(extra))]),
+                      pd.concat([cur, model.keyed(pd.DataFrame([{**x, "GP": 5} for x in extra]))]))
+    deal = (["Player 170", "Scrub A"], ["Twin Y"])
+    r0, r = fl.trade(*deal, free=False), fl.trade(*deal)
+    assert r0["you_add"] == ["Star FA"] and r0["net"] > 1
+    assert r["free"] == [{"add": "Star FA", "drop": "Scrub B", "gain": r0["net"]}] and r["you_add"] == ["Scrub B"]
+    assert abs(r["net"]) < 0.05 and fl.waivers()["free"][0]["add"] == "Star FA"
+    assert not any("Star FA" in x["give"] for x in fl.search(tier="hard", limit=200))
+    short = model.League({**lg.snap, "settings": {**lg.snap["settings"], "roster": 14}}, base, cur)
+    assert [d for _, d, _ in short.free_moves()] == [None] and short.waivers()["moves"][0]["drop"] is None
+    # the other team is judged on the trade alone unless their_free: then it fills its own open spot first
+    assert short.trade(["Player 198"], ["Player 151"])["their_free"] == []
+    assert [m["drop"] for m in short.trade(["Player 198"], ["Player 151"], their_free=True)["their_free"]] == [None]
+    assert short.search(tier="hard", their_free=True, limit=200) == short.search(team="Them", tier="hard",
+                                                                                 their_free=True, limit=200)
+
     # schedule: identical twins, one with 4 games left this week and one with 2; a return date wipes this week
     # and cuts rest-of-season availability to the share of games after it
     twins = model.keyed(pd.DataFrame([line(f"Twin {x}", 180) for x in "ABCDEF"]))

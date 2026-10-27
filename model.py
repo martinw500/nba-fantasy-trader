@@ -14,13 +14,14 @@ CLI (prints JSON, used by Claude Code and for quick checks):
   python model.py trade --give "A" --get "B, C"
   python model.py ideas --mode finesse      # fair | finesse
   python model.py search --get "Wembanyama" --tier easy --lock "Jokic"   # offers for a target, see --help
-  python model.py waivers
+  python model.py waivers                   # trades and search are scored on top of the free moves it lists
   python model.py movers                    # sell-high / buy-low
   python model.py week --vs "Team"          # this week's matchup (--vs defaults to the snapshot's opponent)
   add --punt "FT%,TOV" to any of them
 """
 import argparse
 import collections
+import copy
 import difflib
 import functools
 import itertools
@@ -252,6 +253,7 @@ class League:
         self.cats = [c for c in s.get("cats", CATS) if c in CATS] or CATS
         self.points = s.get("points") or POINTS
         self.me = snap["me"]
+        self.free = {}  # {team: free moves already made on this copy} (after_free)
         base = baseline(fetch(LAST), fetch(OLDER)) if base is None else base
         cur = fetch(CUR, max_age_hours=12) if cur is None else cur
         pool = self.teams_n * self.roster_n
@@ -523,10 +525,17 @@ class League:
                            + ", ".join(f"{p} ({self.owner(k) or 'no team'})" for k, p in zip(get, self.names(get))))
         return give, get
 
-    def trade(self, give, get, punt=()):
+    def trade(self, give, get, punt=(), free=True, their_free=False):
         """Evaluate a trade for you. 9-cat: change in your weekly win % vs the league, both rosters updated
-        (extra players dropped, open spots filled from waivers). Points: value net of replacement level."""
+        (extra players dropped, open spots filled from waivers), on top of your free moves (after_free; free=False
+        scores it on today's rosters). their_free: the other team's too; off by default, since managers judge the
+        deal itself, not their own waiver options (Martin, Oct 27). Points: value net of replacement level."""
         give, get = self._check(give, get)
+        if free:
+            lg = self.after_free(punt, keep=give)
+            if their_free and get:
+                lg = lg.after_free(keep=get, team=lg.owner(get[0]))
+            return lg.trade(give, get, punt, free=False)
         name = self.names
         n = len(get) - len(give)
         rv, rz = self.replacement(punt)
@@ -541,6 +550,8 @@ class League:
         out = {"give": [self.player(k, punt) for k in give], "get": [self.player(k, punt) for k in get],
                "cats": {c: round(float(cats[c]), 2) for c in self.cats}, "net": round(mine, 2), "unit": "value",
                "other_team": other, "their_build": tp, "their_net": round(theirs, 2), "their_view": round(seen, 2),
+               "free": self._moves_out(self.free.get(self.me, ())),
+               "their_free": self._moves_out(self.free.get(other, ())),
                "verdict": "accept" if mine > 0.25 * self.u else "decline" if mine < -0.25 * self.u else "toss-up"}
         if self.mode == "points" or other not in self.rosters:
             return out
@@ -638,7 +649,8 @@ class League:
         return self._top_ideas(out, mode, limit, "value", 2)
 
     def search(self, give=(), get=(), lock=(), team=None, size=3, tier="fair", goal="win", goal_cats=(),
-               goal_team=None, healthy_only=False, shape=None, punt=(), limit=20, depth=10):
+               goal_team=None, healthy_only=False, shape=None, punt=(), limit=20, depth=10, free=True,
+               their_free=False):
         """9-cat trade search scored by the matchup model, vectorized over every give/get combo per team.
 
         give / get: players every deal must include. Pinning a get fixes the team and searches both whole rosters,
@@ -649,6 +661,8 @@ class League:
         goal:  "win" (weekly win %), "cats" (your odds in goal_cats) or "team" (head-to-head vs goal_team).
                The last two skip deals that cost you more than GUARD win %.
         shape: "consolidate" (you send more players) or "depth" (you get more).
+        free:  score deals on top of your free moves (after_free), never offering the players they pick up.
+               their_free: each partner's too (as in trade()).
         """
         if self.mode == "points":
             raise KeyError("Trade search needs a category league")
@@ -659,6 +673,14 @@ class League:
         if goal == "team" and (goal_team not in self.rosters or goal_team == self.me):
             raise KeyError(f"Goal 'team' needs another team: {', '.join(t for t in self.rosters if t != self.me)}")
         give, get = self._check(give, get)
+        if free:
+            lg, out = self.after_free(punt, keep=give), []
+            each = their_free and not team and not get  # one search per partner, each on top of its own free moves
+            for t in [x for x in self.rosters if x != self.me] if each else [team or (self.owner(get[0]) if get else None)]:
+                lt = lg.after_free(keep=get, team=t) if their_free and t else lg
+                out += lt.search(give, get, [*lock, *(a for ms in lt.free.values() for a, _, _ in ms)], t, size, tier,
+                                 goal, goal_cats, goal_team, healthy_only, shape, punt, limit, depth, free=False)
+            return self._rank(out, tier, team, limit)
         if max(len(give), len(get)) > size:
             raise KeyError(f"More than {size} pinned players on one side")
         if get:
@@ -757,6 +779,10 @@ class League:
                             "their_view": round(float(seen[gi, ri]), 2), "unit": "win%",
                             "accept": accept(dthem[gi, ri], seen[gi, ri], u, self.s),
                             **({"score": round(float(score[gi, ri]), 1)} if goal != "win" else {})})
+        return self._rank(out, tier, team, limit)
+
+    @staticmethod
+    def _rank(out, tier, team, limit):
         s = lambda x: x.get("score", x["net"])
         out.sort(key=lambda x: -min(s(x), x["their_net"]) if tier in ("easy", "fair") else -s(x))
         if not team:  # spread suggestions across teams
@@ -818,22 +844,80 @@ class League:
                 "drop_candidates": [self.player(k, punt) for k in drops.index], "moves": moves[:8]}
 
     def _waivers_matchup(self, punt, limit):
-        """Every (add, drop) pair scored by the change in your weekly win % vs the league."""
-        adds = self.value(self.fa, punt).nlargest(40).index.tolist()
-        drops = [k for k in self.rosters[self.me] if self.meta.get(k, {}).get("status", "") not in OUT]
-        A = np.stack([self.vec([k]) for k in adds])
-        D = np.stack([self.vec([k]) for k in drops])
-        new = self.vecs[self.me] - D[None, :, :] + A[:, None, :]
-        _, O = self._others(self.me)
-        win = self._score(self._concede(cat_probs(new[:, :, None], O[None, None], self.cats), punt)).mean(-1)
-        gain = 100 * (win - self.outlook(self.me, punt=punt)["win"])  # (adds, drops)
+        """Every (add, drop) pair scored by the change in your weekly win % vs the league (drop None: an open spot),
+        and the free moves trades are scored on top of."""
+        roster = self.rosters[self.me]
+        adds, drops = self._adds(punt), self._drops(roster)
+        gain = self._gains(self.me, roster, adds, drops, punt)
         fit, best_drop = gain.max(1), gain.argmax(1)
         order = np.argsort(-fit)[:limit]
-        moves = [{"add": self.p.at[adds[i], "PLAYER_NAME"], "drop": self.p.at[drops[best_drop[i]], "PLAYER_NAME"],
-                  "gain": round(float(fit[i]), 1), "unit": "win%"} for i in order if fit[i] > MOVE * self.s][:8]
-        cheap = np.argsort(-gain.max(0))[:3]  # drops that cost least when swapped for the best add
+        moves = [{**self._moves_out([(adds[i], drops[best_drop[i]], fit[i])])[0], "unit": "win%"}
+                 for i in order if fit[i] > MOVE * self.s][:8]
+        cheap = [j for j in np.argsort(-gain.max(0)) if drops[j]][:3]  # drops that cost least when swapped for the best add
         return {"free_agents": [{**self.player(adds[i], punt), "fit": round(float(fit[i]), 1)} for i in order],
-                "drop_candidates": [self.player(drops[j], punt) for j in cheap], "moves": moves}
+                "drop_candidates": [self.player(drops[j], punt) for j in cheap], "moves": moves,
+                "free": self._moves_out(self.free_moves(punt))}
+
+    def _adds(self, punt):
+        return self.value(self.fa, punt).nlargest(40).index.tolist()
+
+    def _drops(self, roster, keep=()):
+        """Who an add can replace: healthy players outside `keep`, plus nobody (None) while the active roster has an
+        open spot."""
+        drops = [k for k in roster if k not in keep and self.meta.get(k, {}).get("status", "") not in OUT]
+        return drops + [None] * (len(self._playing(roster)) < self.roster_n)
+
+    def _gains(self, team, roster, adds, drops, punt):
+        """Change in team's win % vs the league from swapping each add in for each drop on `roster`: (adds, drops)."""
+        V, D = self.vec(roster), np.stack([self.rows[k] if k else np.zeros(len(RAW)) for k in drops])
+        A = np.stack([self.rows[k] for k in adds])
+        _, O = self._others(team)
+        win = lambda X: self._score(self._concede(cat_probs(X[..., None, :], O, self.cats), punt)).mean(-1)
+        return 100 * (win(V - D[None] + A[:, None]) - win(V))
+
+    def free_moves(self, punt=(), keep=(), team=None):
+        """Waiver moves worth making without a trade: the best add/drop (or plain add into an open spot) by win %,
+        repeated while one still clears MOVE. keep: players never dropped (a trade's). team: yours by default (punt is
+        only yours). [(add, drop or None, gain)]
+        ponytail: greedy and ignores the weekly adds cap; a cap only delays moves, rest of season."""
+        if self.mode == "points" or not self.fa:
+            return []
+        team = team or self.me
+        roster, adds, moves = list(self.rosters[team]), self._adds(punt), []
+        while adds:
+            drops = self._drops(roster, keep)
+            g = self._gains(team, roster, adds, drops, punt)
+            i, j = np.unravel_index(g.argmax(), g.shape)
+            if g[i, j] <= MOVE * self.s:
+                break
+            moves.append((adds.pop(i), drops[j], float(g[i, j])))
+            roster = [k for k in roster if k != drops[j]] + [moves[-1][0]]
+        return moves
+
+    def after_free(self, punt=(), keep=(), team=None):
+        """The league after a team's free moves (yours by default): trades and search are scored on top of it, so a
+        deal gets no credit for a pickup that team could make anyway, and an open spot it leaves gets the next-best
+        free agent."""
+        team = team or self.me
+        moves = self.free_moves(punt, keep, team)
+        if not moves:
+            return self
+        lg = copy.copy(self)
+        for c in ("vecs", "outlooks", "totals"):  # cached on today's rosters
+            lg.__dict__.pop(c, None)
+        roster, fa = list(self.rosters[team]), list(self.fa)
+        for a, d, _ in moves:
+            roster, fa = [k for k in roster if k != d] + [a], [k for k in fa if k != a] + [d] * bool(d)
+        lg.rosters, lg.fa, lg.free = {**self.rosters, team: roster}, fa, {**self.free, team: moves}
+        return lg
+
+    def _moves_out(self, moves):
+        name = lambda k: self.p.at[k, "PLAYER_NAME"] if k else None
+        return [{"add": name(a), "drop": name(d), "gain": round(float(g), 1)} for a, d, g in moves]
+
+    def _playing(self, keys):
+        """Players not parked in an IL slot: the ones on the active roster."""
+        return [k for k in keys if self.meta.get(k, {}).get("slot") not in ("IL", "IL+", "NA")]
 
     def this_week(self, opp=None, punt=(), limit=5):
         """This week's matchup: totals so far + the rest of the week (week_vec, players in IL slots sit) -> odds per
@@ -850,7 +934,7 @@ class League:
         if opp not in others:
             raise KeyError(f"Unknown opponent {opp}: pick one of {', '.join(others)}")
         so_far = {t: np.array([float(m.get("totals", {}).get(t, {}).get(s, 0)) for s in RAW]) for t in (me, opp)}
-        play = lambda t: [k for k in self.rosters[t] if self.meta.get(k, {}).get("slot") not in ("IL", "IL+", "NA")]
+        play = lambda t: self._playing(self.rosters[t])
         left = {t: self.week_vec(play(t)) for t in (me, opp)}
         odds = lambda v: self._concede(cat_probs(v, left[opp], self.cats, so_far[me], so_far[opp]), punt)
         p = odds(left[me])

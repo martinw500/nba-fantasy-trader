@@ -44,6 +44,7 @@ To pick this up in Claude Code: *"Read ROADMAP.md and do P3"*. Work through **Do
    - they gain in real odds too, and the market gap is moderate (starting guess ±30%). You may send slightly lesser players, as long as the fit helps them.
 
    The cap keeps the Trae Young lowball out of Fair.
+5. **Other managers judge a trade on the trade itself** (Oct 27, P3), not on the waiver moves they could make instead. So only your side is scored against your free pickups.
 
 ### Asked Instinct (Oct 26): answered in the 11:37 PM file
 
@@ -164,7 +165,27 @@ The engine optimizes `match_prob` (the chance to win 5 of 9), which is the "One 
 
 **Done when:** standings, trades, search, waivers and This week run on the category goal in a categories league, tests cover both formats, demo standings stay in a sane range, and N1's punt analysis is re-run.
 
-### P3. Score trades against the free pickup (requested by Martin, Oct 26) `xhigh`
+### P3. Score trades against the free pickup (requested by Martin, Oct 26) ✅ done Oct 27 (branch `trade-lab`)
+**Result:** `free_moves()` finds a team's waiver moves that need no trade: the best add/drop, or a plain add into an open spot (`drop: None`), repeated greedily while one clears `MOVE` (0.2 in categories). It uses `_waivers_matchup`'s maths, now shared as `_gains`. `after_free()` returns a copy of the league with those moves made. `trade()` and `search()` (so also `ideas()`, Improve this deal and Saved trades) score your side on top of it. The players a deal sends are never dropped (`keep`), and your pickups are never offered. `free=False` gives today's numbers. `trade()` and `waivers()` return `free`.
+- Real league (Oct 27 file): your free moves are Vučević for Achiuwa (+1.2), Tobias Harris for Anthony Black (+0.5) and Jay Huff for P.J. Washington (+0.4), taking you from 58.4% to 60.8%.
+- The deals below, you / them, categories scoring. The open spot now gets Daniel Gafford:
+
+  | Trade | Today | After your free moves |
+  |---|---|---|
+  | Lillard + Kessler → Myles Turner | +1.2 / +0.8 | +0.6 / +0.9 |
+  | Kessler + Collins → Turner | +1.1 / +1.0 | +0.5 / +1.0 |
+  | Lillard + George → OG Anunoby | +1.0 / +1.0 | +0.5 / +1.1 |
+  | Suggs + Podziemski → Mikal Bridges | +0.9 / +1.3 | +0.4 / +1.4 |
+  | Kessler + George → Turner | +1.1 / +1.1 | +0.4 / +1.2 |
+  | Lillard + Suggs → Bridges | +1.1 / +1.0 | +0.7 / +1.1 |
+
+- **The partner:** measured first. Their own free moves would cut their gain by 0.3–1.6 points and flip it negative in 6 of the top 15 fair deals (Big Tuo would just swap Beringer for Grayson Allen, +1.7). Martin decided against it as the default (Decision 5): managers look at the deal itself, so the partner is judged on the trade alone. The Trades toolbar's **Count their waiver moves** turns it on (`their_free`, remembered per browser): then fair search finds 9 deals, best about +0.6 for both.
+- Fair search: none of the old top 20 survive. The best are about +0.8 to +0.9 for you and +0.8 to +1.0 for them, all with Mathmagicians, e.g. Kessler + George + Edgecombe → Bridges + Champagnie. Search still takes 0.8s.
+- UI: the trade result names your assumed moves under the verdict, the finder says what it's scored against, Waivers lists the chain, and an open spot reads "Open spot" / "into your open spot". `ai.py` SYSTEM, the `/gm` skill, README and CLAUDE.md say the same.
+- Test: a 2-for-1 whose only gain is the open spot scores +1.5 today and 0.0 on top of the free move. Search never offers the pickup, and a short roster gets a plain add.
+- Checked in the browser (Oct 27): the trade result's note, the finder text and the Waivers line name the moves; **Count their waiver moves** re-scores the open trade (Mathmagicians +1.1% → +0.5% on Lillard + Suggs → Bridges), the finder (9 deals) and saved trades, and is remembered. No script errors.
+- Not done: the weekly adds cap (4). The greedy chain ignores it, since over the rest of the season a cap only delays moves. Also, deals that send an IL player still get an open-spot pickup; see N5.
+
 **Why:** T1's known limit ("a trade still gets credit for a waiver pickup you could make anyway") drives the real league's results.
 - All six of fatty zhou's top fair deals were 2-for-1s whose open spot went to Vučević.
 - Dropping Achiuwa for Vučević on its own was worth +3.1, more than any fair trade.
@@ -351,8 +372,9 @@ One task per session: *"Read ROADMAP.md and do Next up N0"*. Run `python test_mo
 ### N1. Strategy panel (punt planner) `xhigh`
 **Why:** toggling a punt chip only concedes categories on today's roster, so it always lowers your odds. A punt pays off through the moves it unlocks. The Oct 26 analysis on fatty zhou showed no punt beats staying balanced (best fair trade +3.7% unpunted, +3.6% punting FG%, +0.5% punting FT%+TO), but nothing in the app says that.
 **Change:** `League.strategy()` loops over builds (no punt, each single category, FT%+TO, FG%+TO, FG%+FT%, AST+TO, 3PM+FT%, FG%+3PM). For each build: the best `search(tier="fair", punt=build)` deals and best `waivers(build)` moves, re-scored with `trade()` / `outlook()` on true odds (no concession). Return builds ranked by true win % after the best move. Add a panel on My team with build, best move, true odds after, and a one-line verdict ("Stay balanced" / "Punt X: it unlocks Y"). Also list "cheapest categories to move": the ones near 50%, where a trade or stream changes the odds most.
-**Before building:** redo the Oct 26 analysis after P2 and P3. Its numbers are one-win odds and include free-pickup credit, and under Categories each conceded category is a straight loss in the standings, which makes punting cost more.
-**Re-run after P2 (Oct 27, categories scoring, still with free-pickup credit):** no punt beats staying balanced. The best fair trade found with each build, re-scored on true odds: none +1.2 (Lillard + Suggs → Bridges), PTS +1.2, FG%/AST/TO +1.1, single 3PM/BLK +1.0, FT%+TO +0.4, FT% +0.2, 3PM+FT% −0.1. Conceding a category today costs 3.5 (TO) to 7.9 (AST) points of win %, and pairs 8–13.5, so a punt has to unlock far more than any fair trade offers. Redo after P3.
+**Before building:** redo the Oct 26 analysis after P2 and P3 (both done, below). Its numbers are one-win odds and include free-pickup credit, and under Categories each conceded category is a straight loss in the standings, which makes punting cost more.
+**Re-run after P2 (Oct 27, categories scoring, still with free-pickup credit):** no punt beats staying balanced. The best fair trade found with each build, re-scored on true odds: none +1.2 (Lillard + Suggs → Bridges), PTS +1.2, FG%/AST/TO +1.1, single 3PM/BLK +1.0, FT%+TO +0.4, FT% +0.2, 3PM+FT% −0.1. Conceding a category today costs 3.5 (TO) to 7.9 (AST) points of win %, and pairs 8–13.5, so a punt has to unlock far more than any fair trade offers.
+**Re-run after P3 (Oct 27, your free moves made first):** still no punt beats staying balanced. Best fair trade per build, re-scored on true odds: none +0.9 (Kessler + George + Edgecombe → Bridges + Champagnie), PTS +0.8, FG%+FT% +0.7, FG% +0.6, 3PM/REB/BLK +0.5, STL +0.4, AST+TO +0.2, TO, FG%+TO and FG%+3PM +0.1, AST −0.4, FT% and FT%+TO −0.6, 3PM+FT% −0.8. Conceding costs 3.4 (TO) to 7.9 (STL, AST) points of win %, pairs 8–13.7. The whole loop (16 builds, size 3) took 14s.
 **Speed:** 12 builds × an open search. Size 2 takes about 0.2s on the real league and size 3 about 2s on the demo, so use size 2 or run it on demand behind a "thinking" state.
 **Done when:** the panel matches a script run of the same numbers, and the test covers a league where one punt clearly wins.
 
@@ -389,6 +411,7 @@ Keep checking that apostrophe names (De'Aaron Fox) survive in each new file.
 **Done for This week (Oct 27):** `starts()` counts only the best `lineup` (10, `settings.starters`) players with a game each day, in `week_vec()`, the games-left count and streaming adds. Martin spotted it: the app showed 35 games left for both teams, Yahoo 32 (fatty zhou) and 27 (kobe). It now shows 35 and 32: kobe had 13 players with games on Wednesday. The rest of the gap is lineups set by hand (Yahoo counts each day's set lineup, the app assumes the best players start). Positions are still ignored. Left: the season-average week (`League.week`, trades, standings) and `backtest.py`.
 **Why:** every rostered game counts today, so depth (and streaming the 13th man) is overvalued vs stars, and 3-for-1 deals look better for the side taking 3. Positions now come from the snapshot.
 **Change:** simulate the 10 active slots per day from the NBA schedule (best players start), in `week_vec()` and the season-average week. Add the cap to `backtest.py` and re-fit if the odds shift.
+**IL slots (found in P3, Oct 27):** team totals (`vec`) add up every rostered player, IL slots included, which is why `_after` holds the total roster size. So a trade that sends an IL player still gets an open-spot pickup it couldn't make in Yahoo (after P3, the next-best free agent), and most top fair deals send Suggs or Ingram. Lineup-aware totals should leave IL slots out and count active spots in `_after` and `search`.
 **Done when:** a 3-for-1 consolidation scores higher than before for the side getting the star, and the backtest stays calibrated.
 
 ### N6. Smaller model items `high`

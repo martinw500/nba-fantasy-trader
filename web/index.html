@@ -297,7 +297,7 @@ const S = {
   week: {},  // { data, loading }; replaced on punt / team / refresh, so late answers land in the old object
   trade: { give: new Set(), get: new Set(), team: null, roster: null, result: null, busy: false },
   locks: new Set(store.get("locks", [])),
-  find: { tier: "fair", goal: "win", cats: [], vs: "", size: 3, healthy: false, shape: "", team: "", list: null, busy: false, ran: "", sort: null },
+  find: { tier: "fair", goal: "win", cats: [], vs: "", size: 3, healthy: false, theirs: store.get("theirs", false), shape: "", team: "", list: null, busy: false, ran: "", sort: null },
   improve: { kind: null, list: null, busy: false, sort: null },
   saved: { list: store.get("saved", []), evals: {}, loading: false },
   players: null,
@@ -339,6 +339,10 @@ const sign = v => (v > 0 ? "+" : "") + Number(v).toFixed(2);
 const sign1 = v => (v > 0 ? "+" : "") + Number(v).toFixed(1);
 const pct = v => Math.round(v * 100) + "%";
 const delta = (v, unit) => unit === "win%" ? sign1(v) + "%" : sign(v);  // win% deltas are percentage points
+const and = xs => xs.length > 1 ? xs.slice(0, -1).join(", ") + " and " + xs.at(-1) : xs.join("");
+// waiver moves that need no trade (trades are scored on top of them): "Vučević for Achiuwa (+1.2%)"
+const freeList = (ms, more = 0) => and([...ms.map(m => `${esc(m.add)} ${m.drop ? "for " + esc(m.drop) : "into the open spot"} (${delta(m.gain, "win%")})`),
+  ...(more > 0 ? [`${more} more`] : [])]);
 const ord = n => n + (n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th");
 const oddsColor = v => v > 0.6 ? "var(--pos)" : v < 0.35 ? "var(--neg)" : "var(--faint)";
 const tone = v => v > 0.05 ? "pos" : v < -0.05 ? "neg" : "";
@@ -398,7 +402,7 @@ function viewTeam() {
   const moves = st.waivers.moves.slice(0, 3), sells = st.movers.sell_high.slice(0, 3);
   const todo = (moves.length || sells.length) ? `<div class="panel"><div class="panel-h"><div><h2>Worth doing now</h2><p>Top waiver upgrades and sell-high candidates on your build.</p></div></div>
     <div class="tw"><table class="wrap"><tbody>
-      ${moves.map(m => `<tr><td>Add <b>${esc(m.add)}</b>, drop ${esc(m.drop)}</td><td class="n pos val" title="${m.unit === "win%" ? "Change in your " + WIN().of : "Value gain"}">${delta(m.gain, m.unit)}</td><td class="n"><button class="btn ghost" data-go="waivers">Waivers</button></td></tr>`).join("")}
+      ${moves.map(m => `<tr><td>Add <b>${esc(m.add)}</b>${m.drop ? `, drop ${esc(m.drop)}` : " into your open spot"}</td><td class="n pos val" title="${m.unit === "win%" ? "Change in your " + WIN().of : "Value gain"}">${delta(m.gain, m.unit)}</td><td class="n"><button class="btn ghost" data-go="waivers">Waivers</button></td></tr>`).join("")}
       ${sells.map(p => `<tr><td>Sell high on <b>${esc(p.name)}</b>: playing ${sign(p.gap)} above real value</td><td class="n muted">${p.gp} GP</td><td class="n"><button class="btn ghost" data-act="shop" data-name="${esc(p.name)}">Find a buyer</button></td></tr>`).join("")}
     </tbody></table></div></div>` : "";
   const outlook = prof ? `Projected ${ord(prof.rank)} of ${n} · wins ${pct(prof.win)} of ${oneWin() ? "weekly matchups" : "categories"} · ` : "";
@@ -553,6 +557,9 @@ function tradeResultOdds(r) {
   const st = Object.entries(r.standings).filter(([t, s]) => t === S.state.me || s.rival || s.rank[0] !== s.rank[1] || Math.abs(s.win[1] - s.win[0]) >= 0.5)
     .sort((x, y) => x[1].rank[1] - y[1].rank[1]);
   const hint = r.build_after.filter(c => !punted(c));
+  const base = r.free.length || r.their_free.length ? `<div class="panel-b small muted" style="padding:8px 16px;border-bottom:1px solid var(--line)">
+      ${r.free.length ? `Compared with just making the waiver moves that need no trade: ${freeList(r.free)}.` : ""}
+      ${r.their_free.length ? `${them} is measured after its own best waiver moves: ${freeList(r.their_free.slice(0, 2), r.their_free.length - 2)}.` : ""}</div>` : "";
   const sides = [...r.give.map(p => ({ ...p, side: "You give" })), ...r.get.map(p => ({ ...p, side: "You get" }))];
   const moveCol = { h: "Move", v: p => p.move ? `<span class="tag ${p.move === "drop" ? "out" : ""}">${MOVE[p.move]}</span>` : "" };
   return `<div class="panel" id="result"><div class="panel-h"><div class="verdict">
@@ -564,7 +571,7 @@ function tradeResultOdds(r) {
         <div><dt>Projected finish</dt><dd>${ord(r.rank)} → ${ord(r.rank_after)}</dd></div>
         <div><dt title="Mostly how it looks to them, a little how it really helps them">Will they say yes</dt><dd>${acceptPill(r.accept)}</dd></div></dl></div>
       <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div></div>
-    ${cats}
+    ${base}${cats}
     <div class="panel-b small muted" style="border-top:1px solid var(--line)">${WIN().h} = ${WIN().def}, with both rosters updated. ${moves}
       ${r.their_view > 0.3 && r.their_net < 0 ? "They'd likely see this as a win on hype alone." : ""}
       ${hint.length ? `After this you'd win ${hint.map(lab).join(" and ")} under 35% of weeks: worth thinking about punting ${hint.length > 1 ? "them" : "it"}.` : ""}</div></div>
@@ -593,7 +600,7 @@ const SKEL = `<div class="skel"></div><div class="skel"></div><div class="skel">
 const dealKey = x => [...x.give].sort() + "|" + [...x.get].sort();  // search puts pinned players first
 const isSaved = x => S.saved.list.some(s => dealKey(s) === dealKey(x));
 const opt = (v, h, cur) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(h)}</option>`;
-const findParams = () => { const F = S.find; return { tier: F.tier, goal: F.goal, cats: F.cats, vs: F.vs, size: F.size, healthy: F.healthy, shape: F.shape || null, lock: [...S.locks] }; };
+const findParams = () => { const F = S.find; return { tier: F.tier, goal: F.goal, cats: F.cats, vs: F.vs, size: F.size, healthy: F.healthy, their_free: F.theirs, shape: F.shape || null, lock: [...S.locks] }; };
 function findTitle() {
   if (isPoints()) return "Trade finder";
   const g = [...S.trade.give], r = [...S.trade.get];
@@ -607,6 +614,8 @@ function findPanel() {
     : title === "Complete this trade" ? `Deals that keep everyone checked, up to ${n}-for-${n}.`
     : pinned ? `What ${esc(T.team)} might take for ${T.get.size > 1 ? "them" : "him"}, from your whole roster.` : "Every team that might bite, and what they'd send back.";
   const locks = S.locks.size && !isPoints() ? ` ${S.locks.size} locked player${S.locks.size > 1 ? "s" : ""} left out.` : "";
+  const fr = isPoints() ? [] : st.waivers.free || [];
+  const free = fr.length ? ` Scored as if you'd already added ${and(fr.map(m => esc(m.add)))} off waivers${F.theirs ? ", and each partner had made its own best waiver moves" : ""}.` : "";
   const tiers = isPoints() ? ["fair", "finesse"] : Object.keys(TIER);
   const controls = `<div class="seg" role="group" aria-label="Difficulty">${tiers.map(k => `<button data-tier="${k}" aria-pressed="${F.tier === k}" title="${TIER[k]}">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div>
     ${isPoints() ? "" : `<label class="field">Optimize for <select id="f-goal">${opt("win", "Win %", F.goal)}${opt("cats", "Categories…", F.goal)}${opt("team", "Beat a team…", F.goal)}</select></label>
@@ -614,7 +623,8 @@ function findPanel() {
       ${F.goal === "team" ? `<select id="f-vs" aria-label="Team to beat">${others.map(t => opt(t, t, F.vs)).join("")}</select>` : ""}
       <label class="field">Max size <select id="f-size">${[1, 2, 3].map(k => opt(String(k), `${k}-for-${k}`, String(F.size))).join("")}</select></label>
       <label class="field" title="Consolidate: you send more players than you get. Depth: you get more.">Shape <select id="f-shape">${opt("", "Any", F.shape)}${opt("consolidate", "Consolidate", F.shape)}${opt("depth", "Depth", F.shape)}</select></label>
-      <label class="field"><input type="checkbox" id="f-healthy" ${F.healthy ? "checked" : ""}>Healthy only</label>`}
+      <label class="field"><input type="checkbox" id="f-healthy" ${F.healthy ? "checked" : ""}>Healthy only</label>
+      <label class="field" title="On: the other team is measured against the waiver moves it could make instead. Off: it's judged on the trade alone, the way most managers look at an offer."><input type="checkbox" id="f-theirs" ${F.theirs ? "checked" : ""}>Count their waiver moves</label>`}
     <select id="f-team" aria-label="Limit to team" ${pinned ? `disabled title="Set by the player you're asking for"` : ""}>${opt("", "All teams", team)}${others.map(t => opt(t, t, team)).join("")}</select>`;
   const can = !F.busy && !(F.goal === "cats" && !F.cats.length && !isPoints());
   const body = F.busy ? SKEL : !F.list ? `<div class="empty"><b>${isPoints() ? "Search every roster" : "Aim the search with checkboxes"}</b>${isPoints()
@@ -622,7 +632,7 @@ function findPanel() {
       : "Check their player to find offers for him, yours to find buyers, both to complete the trade, or none to search every roster. Lock anyone you won't move."}</div>`
     : !F.list.length ? `<div class="empty"><b>No deals cleared the ${F.tier} bar</b>${isPoints() ? "Try the other mode, a different punt, or all teams." : "Try another difficulty, a bigger size, or fewer locks."}</div>`
     : (F.ran !== title ? `<div class="panel-b small muted" style="padding:8px 16px;border-bottom:1px solid var(--line)">Showing results for “${esc(F.ran)}”.</div>` : "") + dealTable(F.list, "find");
-  return `<div class="panel" id="find"><div class="panel-h"><div><h2>${esc(title)}</h2><p>${desc}${locks}</p></div>
+  return `<div class="panel" id="find"><div class="panel-h"><div><h2>${esc(title)}</h2><p>${desc}${locks}${free}</p></div>
       <button class="btn primary" data-act="find" ${can ? "" : "disabled"}>${F.busy ? "Searching…" : "Find trades"}</button></div>
     <div class="toolbar" style="padding:10px 16px;border-bottom:1px solid var(--line)">${controls}</div>${body}</div>`;
 }
@@ -678,7 +688,7 @@ async function evaluate() {
   const T = S.trade;
   T.busy = true; render();
   try {
-    const r = T.result = await api("/api/trade", { give: [...T.give], get: [...T.get] });
+    const r = T.result = await api("/api/trade", { give: [...T.give], get: [...T.get], their_free: S.find.theirs });
     T.give = new Set(r.give.map(p => p.name)); T.get = new Set(r.get.map(p => p.name));  // deep links may use short names
     if (r.other_team) T.team = r.other_team;
     if (S.view === "trades") history.replaceState(null, "", "#trades?" + ["give", "get"].map(k => k + "=" + [...T[k]].map(encodeURIComponent).join(",")).join("&"));
@@ -721,7 +731,7 @@ async function loadSaved() {
   const E = S.saved.evals;  // replaced on punt change / refresh, so late answers land in the old object
   S.saved.loading = true;
   await Promise.all(S.saved.list.filter(s => !E[dealKey(s)]).map(async s => {
-    try { E[dealKey(s)] = await api("/api/trade", { give: s.give, get: s.get }); } catch (e) { E[dealKey(s)] = { error: e.message }; }
+    try { E[dealKey(s)] = await api("/api/trade", { give: s.give, get: s.get, their_free: S.find.theirs }); } catch (e) { E[dealKey(s)] = { error: e.message }; }
   }));
   S.saved.loading = false;
   if (S.view === "trades") render();
@@ -751,10 +761,10 @@ function viewWaivers() {
   const w = S.state.waivers;
   const odds = w.free_agents[0]?.fit !== undefined;
   const moves = w.moves.length ? `<div class="tw"><table><thead><tr><th>Add</th><th>Drop</th><th class="n">${odds ? WIN().h : "Gain"}</th></tr></thead><tbody>
-    ${w.moves.map(m => `<tr><td class="pname">${esc(m.add)}</td><td>${esc(m.drop)}</td><td class="n pos val">${delta(m.gain, m.unit)}</td></tr>`).join("")}</tbody></table></div>`
+    ${w.moves.map(m => `<tr><td class="pname">${esc(m.add)}</td><td>${m.drop ? esc(m.drop) : `<span class="muted">Open spot</span>`}</td><td class="n pos val">${delta(m.gain, m.unit)}</td></tr>`).join("")}</tbody></table></div>`
     : `<div class="empty"><b>No clear upgrades</b>Nobody on waivers beats your weakest healthy player by enough to bother.</div>`;
   return `<div class="head"><div><h1>Waivers</h1><p class="sub">${odds ? `Free agents ranked by how much they'd raise your ${WIN().of}, swapped for your best drop.` : "Free agents ranked on your build."} Injured players on your roster are never suggested as drops.</p></div></div>
-    <div class="grid2"><div class="panel"><div class="panel-h"><div><h2>Suggested moves</h2><p>${odds ? `Add/drop pairs that clearly raise your ${WIN().of}.` : "Add/drop pairs worth at least +0.3."}</p></div></div>${moves}</div>
+    <div class="grid2"><div class="panel"><div class="panel-h"><div><h2>Suggested moves</h2><p>${odds ? `Add/drop pairs that clearly raise your ${WIN().of}.` : "Add/drop pairs worth at least +0.3."}${w.free?.length ? ` Trades are scored as if you'd made these first: ${freeList(w.free)}.` : ""}</p></div></div>${moves}</div>
       <div class="panel"><div class="panel-h"><div><h2>Drop candidates</h2><p>${odds ? "The healthy players you'd miss least." : "Your three weakest healthy players."}</p></div></div>${playerTable(w.drop_candidates)}</div></div>
     <div class="panel"><div class="panel-h"><div><h2>Best available</h2><p>Top ${w.free_agents.length} free agents.</p></div></div>${playerTable(w.free_agents, { extra: [...(odds ? [{ h: "If added", v: p => `<span class="${tone(p.fit)} val">${delta(p.fit, "win%")}</span>` }] : []),
       ...(w.free_agents.some(p => p.owned != null) ? [{ h: `<span title="Share of Yahoo leagues that roster him">Owned</span>`, v: p => p.owned != null ? `${p.owned}%` : "" }] : []),
@@ -883,6 +893,11 @@ document.addEventListener("change", async e => {
       toast(`You're ${t.value} now`);
     } catch (err) { toast(err.message); }
     return render();
+  }
+  if (t.id === "f-theirs") {  // changes every trade number, not just the finder's
+    S.find.theirs = t.checked; store.set("theirs", t.checked);
+    S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {};
+    return S.trade.result ? evaluate() : render();
   }
   if (t.id.startsWith("f-")) {  // finder toolbar: f-goal, f-vs, f-size, f-shape, f-healthy, f-team
     const F = S.find, k = t.id.slice(2), prof = S.state.profile;

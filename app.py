@@ -36,14 +36,14 @@ def api(path, q, body):
     if path == "/api/team":
         return {"team": body["team"], "roster": lg.team_roster(body["team"], punt), "build": lg.build(body["team"])}
     if path == "/api/trade":
-        return lg.trade(body["give"], body["get"], punt)
+        return lg.trade(body["give"], body["get"], punt, their_free=bool(body.get("their_free")))
     if path == "/api/ideas":
         return lg.ideas(body.get("mode", "fair"), punt, body.get("team") or None)
     if path == "/api/search":
         return lg.search(body.get("give", []), body.get("get", []), body.get("lock", []), body.get("team") or None,
                          int(body.get("size", 3)), body.get("tier", "fair"), body.get("goal", "win"),
                          body.get("cats", []), body.get("vs"), bool(body.get("healthy")), body.get("shape"), punt,
-                         limit=30)
+                         limit=30, their_free=bool(body.get("their_free")))
     if path == "/api/players":
         return sorted(({"name": n, "team": t} for t, ks in lg.rosters.items() for n in lg.names(ks)), key=lambda p: p["name"])
     if path == "/api/me":  # which team is yours

@@ -15,6 +15,9 @@ expected share of games played. In 9-cat, trades, trade ideas and waiver moves a
 Categories league (league_overview "scoring": "categories") win % is the share of categories won in a typical week,
 which is how the standings count (each category is a W or L); in One Win it's the chance to win the weekly matchup.
 "their_net" is the same for the other team; "odds" are per-category win-chance changes.
+Trades and find_trades are scored on top of the waiver moves the user could make without a trade ("free", also
+listed by waivers), so a deal gets no credit for a pickup. Say so, e.g. "compared with just adding Vucevic for
+Achiuwa (+1.2)". The other team is judged on the trade alone. A waiver move with "drop": null fills an open spot.
 league_overview has projected standings, per-category win odds and the user's odds vs each team. A category the
 user can't win or already dominates barely moves their odds, so explain punts from that. "their_view" is how a
 deal looks on this season's hype (what Yahoo ranks show them); "accept" is how likely they say yes.

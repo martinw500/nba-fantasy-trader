@@ -28,6 +28,7 @@ Python lives in `.venv` (Homebrew Python blocks global pip): use `.venv/bin/pyth
 - "cur"/"Now" = perceived per-game value (`HYPE` shrink). `their_view` uses `perceived()`: that over the games a player plays (`effective()`), floored at waiver level, and an incoming extra player costs the team its weakest players. This drives finesse trades and sell-high.
 - `effective()` is the only right way to weight value by availability: values are mostly negative (relative to the rostered average), so `value * avail` would rank an injured player above a healthy one.
 - Uneven trades always subtract `n * replacement()`. Replacement = top-5 FA average.
+- 9-cat `trade()` and `search()` score on top of `after_free()`: your `free_moves()` (greedy add/drop or open-spot add while one clears `MOVE`) are made first, so a deal gets no credit for a free pickup. The partner is judged on the trade alone (Martin: managers look at the deal, not their waiver options) unless `their_free=True` (Trades toolbar: "Count their waiver moves"). Your pickups are never offered, and the players a deal sends are never dropped (`keep`). `free=False` scores on today's rosters.
 - `build()` = a team's weak spots (categories it wins <35% of weeks, `WEAK`). Points-mode trades value opponents on it.
 - Player lookup always goes through `League.find()` (accents, Jr/III, typos).
 - `SEASON`s are `OLDER`/`LAST`/`CUR` at the top of `model.py`; bump them each October. The baseline blends `LAST` and `OLDER` (`baseline()`). Delete `data/stats_*.csv` to refetch.

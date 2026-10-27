@@ -99,6 +99,7 @@ Classic pairings: big men punt FT%, high-usage guards punt TO, wings punt AST.
 ### "Is this trade good?"
 **Trades** tab: check players under *You give*, pick their team, check players under *You get*, then **Evaluate**. You see:
 - **Your win %**: before → after, with both rosters updated. If you take back more players, you drop your weakest; if you send more, you pick up the best free agent. So 2 scrubs for a star scores correctly.
+- **Compared with waivers.** Your number starts from the waiver moves you could make without a trade (the note under the verdict names them, e.g. "Nikola Vučević for Precious Achiuwa (+1.2%)"), so a 2-for-1 gets no credit for a pickup you'd make anyway: its open spot gets the next-best free agent. The finder works the same way. The other team is judged on the trade alone, since that's what managers look at. Tick **Count their waiver moves** in the finder toolbar to measure them against their own waiver moves too (remembered in this browser).
 - **Them**: their win % before → after. A trade can help both teams when the categories fit.
 - **How it looks to them**: the deal on this season's hot and cold starts, which is what Yahoo's rankings show them. "Looks good" means they'll probably accept.
 - **Projected finish**: your league rank before → after.
@@ -159,7 +160,7 @@ Points leagues keep the simpler finder: Fair or Finesse, 1-for-1 up to 2-for-2, 
 
 Category win % moves about 2.5× less than One Win odds per move (a +2.7 trade there is about +1.1 here), so the cutoffs (trade tiers, verdicts, waiver moves) scale with the format (`CAT_SCALE` in `model.py`). Projected standings run tighter too: about 40–61% on the real league, against 26–77% scored as One Win.
 
-A trade, add or drop is judged by how much it changes your win %, with both rosters updated: extra players get dropped, open spots get the best free agent. This is what makes it account for:
+A trade, add or drop is judged by how much it changes your win %, with both rosters updated: extra players get dropped, open spots get the best free agent. Your side of a trade starts from your free moves: the best add/drop (or plain add into an open spot), repeated while one still raises win % by 0.2 or more (0.5 in One Win). Waivers lists yours. This is what makes it account for:
 - **Your strengths and weaknesses.** Extra rebounds barely help if you already win REB 90% of weeks, and they help a lot if you're at 50%.
 - **What everyone else has.** Odds are computed against every real roster in your league.
 - **Punting.** A category you can't win stops mattering on its own. The Punt chips make it explicit: punted categories count as automatic losses, so the advice optimizes for the other categories.
