@@ -15,7 +15,7 @@ To pick this up in Claude Code: *"Read ROADMAP.md and do Trade lab T3"*.
 - `python test_model.py` passes, and every view was clicked through in a real browser.
 
 **Built but never run for real:**
-- [ ] **Yahoo pull** (`python yahoo.py`). Written against yfpy 17's documented fields, but never run against a real league. Expect small fixes on the first run (see "First real Yahoo pull" below).
+- [ ] **Yahoo pull** (`python yahoo.py`). Written against yfpy 17's documented fields, but never run against a real league. Expect small fixes on the first run (see "First real Yahoo pull" below). **Blocked (Oct 26):** since summer 2026, Yahoo grants Fantasy API access only to applications it approves (sports.yahoo.com/developer/access), with no published timeline, and old apps reportedly get 403s. Workaround in use: `python yahoo.py import mchc-fantasy-snapshot-v3.txt "fatty zhou"` (Instinct's text snapshot, with real free agents, roster % and waiver dates). It ran on the real MCHC league: 164 players and 88 free agents. One player is left out (AJ Dybantsa, rookie, no NBA games yet). Instinct's v3 dropped every apostrophe name (De'Aaron Fox, Day'Ron Sharpe, Kel'el Ware); they were added back by hand, so check for this in new snapshots.
 - [ ] **AI GM chat** (`ai.py`). Needs an `ANTHROPIC_API_KEY`. The tool definitions build correctly, but no real conversation has run. `/gm` in Claude Code is the no-key alternative.
 
 **Known gaps in the model:** listed under "Model accuracy" below.
@@ -156,7 +156,10 @@ Built as planned, plus:
 
 ## Build next (highest impact for 9-cat first)
 
-### 1. This week's NBA schedule
+### 1. This week's NBA schedule ✅ done Oct 26
+
+Built: `model.schedule()` (nba_api `ScheduleLeagueV2`, cached as `data/schedule_<season>.json` for a day), `League.games_week`, `League.week_vec()`, and a "Wk" column in every player table. NBA team = the league snapshot's `nba` field, falling back to the stats team. The test covers 4 games vs 2.
+Not done: Yahoo's actual week dates (weeks are assumed to run Monday–Sunday until a real Yahoo pull stores `week_start`/`week_end`). `week_vec` isn't used by any advice yet; task 2 is where it pays off.
 
 **Why:** H2H is weekly. A player with 4 games this week is worth about twice one with 2 games. The model currently assumes 3.4 games for everyone.
 
@@ -184,7 +187,9 @@ Built as planned, plus:
 
 **Done when:** the view shows the real opponent and live category totals, and the streaming list changes when a free agent has more games.
 
-### 3. Injury notes, ownership %, transactions, real standings
+### 3. Injury notes, ownership %, transactions, real standings (partly done Oct 26)
+
+Done without Yahoo: injury notes on hover (ESPN), plus "Owned" % and "claim by <date>" in Waivers (from the text snapshot). Not done: recently dropped list, real W-L next to projected (the snapshot has records in team headings, but the parser ignores them).
 
 **Why:** cheap context the API already has.
 
@@ -208,7 +213,11 @@ Built as planned, plus:
 
 **Done when:** a test with a fake projections file changes a player's ROS line, and players missing from the file fall back to last season.
 
-### 5. Injury return dates (needs scraping)
+### 5. Injury return dates ✅ done Oct 26 (ESPN, not Rotowire)
+
+Built: `model.injuries()` reads ESPN's public JSON (`site.api.espn.com/.../nba/injuries`: status, note and `returnDate`), cached in `data/injuries.json` for 3 hours. Rotowire's injury table came back nearly empty to plain requests, and ESPN's notes carry the same news. A return date replaces the status multiplier: rest-of-season availability = history rate × share of remaining games after the return date, and `week_vec` counts no games before it. Hovering an injury tag shows the note and "back <date>". This is an unofficial endpoint used for personal purposes; if ESPN changes it, it goes quiet and the league's tags still work.
+
+Original plan:
 
 **Why:** availability currently comes from games-played history plus Yahoo's tag. "Out 4–6 weeks" should mean 0 games for 4–6 weeks, then normal.
 

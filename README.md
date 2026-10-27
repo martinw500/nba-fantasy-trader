@@ -13,7 +13,24 @@ python app.py
 
 That opens http://localhost:8765 with a **demo league**: 12 fake teams drafted from real NBA stats. Everything works on it, so you can try the app before connecting Yahoo.
 
-### Connect your Yahoo league
+### Load your league without the Yahoo API
+
+Since summer 2026, Yahoo only gives Fantasy API access to applications it approves, and approval has no timeline. Until then, load the league from a text snapshot:
+
+1. Get a snapshot of the league as a text file. Instinct's "MCHC FANTASY BASKETBALL - FULL LEAGUE SNAPSHOT" works as-is: numbered team headings, one fixed-width row per player (`PG    Cade Cunningham    DET - PG,SG  [O: Out]`), and free-agent and waiver sections with roster % and claim dates. A hand-typed list works too:
+   ```
+   ## Toronto blue jays
+   Cade Cunningham
+   Ivica Zubac (O)
+   ```
+2. Run `python yahoo.py import mchc-fantasy-snapshot-v3.txt "fatty zhou"`. It lists any player it couldn't match to NBA stats (usually rookies who haven't played yet).
+3. Restart `python app.py`. When there's a new snapshot, run the import again with the new file. Refresh re-reads the last file you imported.
+
+Pick your team from the dropdown under the league name in the top bar. Snapshot files (`*snapshot*.txt`) are gitignored.
+
+When the file lists free agents, those are used, with roster % and "claim by" dates in Waivers. Otherwise free agents are the best players nobody rosters.
+
+### Connect your Yahoo league (needs approved API access)
 
 1. Go to https://developer.yahoo.com/apps/create and make an app:
    - API permissions: **Fantasy Sports → Read**
@@ -123,7 +140,11 @@ Points leagues keep the simpler finder: Fair or Finesse, 1-for-1 up to 2-for-2, 
 
 **Player lines.** Every player has a rest-of-season per-game line. It starts from last season (2025-26) and shifts toward this season as games pile up: this season's weight is `GP / (GP + 20)`. Rookies start from a fringe-roster line, so three hot games don't make them stars.
 
-**Plays %.** The share of games a player is expected to suit up for. It comes from games played last season plus this season, shrunk halfway toward 85% (one bad injury year shouldn't count fully), then cut by Yahoo's injury tag (GTD 90%, O 70%, INJ 60%, IL 50%). Missed games are half-covered by a waiver-level fill-in, the way a bench player or streamer would cover them.
+**Plays %.** The share of games a player is expected to suit up for. It comes from games played last season plus this season, shrunk halfway toward 85% (one bad injury year shouldn't count fully), then cut by the injury tag (GTD 90%, O 70%, INJ 60%, IL 50%). When ESPN's injury report has an expected return date, that replaces the tag: the player counts for the share of remaining games after that date. Missed games are half-covered by a waiver-level fill-in, the way a bench player or streamer would cover them.
+
+**Wk.** Games left this week (Monday to Sunday) from the NBA schedule, counting only games after a return date. `League.week_vec()` turns that into this week's expected totals. Trades and the season-long odds still use an average 3.4-game week.
+
+**Injury news.** ESPN's public injury report (refreshed every 3 hours) adds the latest note and the expected return date. Hover an injury tag to read it. The league's own tag wins when they disagree.
 
 **Value (the table columns).** z-scores against the top `teams × roster` players by minutes. FG% and FT% are weighted by volume, so a 60% shooter on 2 shots barely counts, and TO counts against you. This is the quick player-ranking view.
 
@@ -146,8 +167,7 @@ A trade, add or drop is judged by how much it changes your win odds, with both r
 - The weekly-randomness settings are educated guesses, not fitted to real Yahoo results. Odds are directionally right, but read 55% vs 58% as "about the same".
 - Not modelled yet:
   - positions and roster slots (daily lineup limits)
-  - each week's actual NBA schedule
-  - injury return dates
+  - this week's schedule in the weekly matchup itself (it's shown, and available as `week_vec`, but trades and odds use an average week)
   - keeper or dynasty value
 
 The settings live at the top of `model.py` if you want to tune them.

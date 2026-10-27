@@ -39,8 +39,22 @@ def api(path, q, body):
                          limit=30)
     if path == "/api/players":
         return sorted(({"name": n, "team": t} for t, ks in lg.rosters.items() for n in lg.names(ks)), key=lambda p: p["name"])
+    if path == "/api/me":  # which team is yours; saved in the snapshot so it survives restarts and refreshes
+        if body.get("team") not in lg.rosters:
+            raise KeyError(f"Unknown team: {body.get('team')}")
+        snap = json.loads(yahoo.OUT.read_text(encoding="utf-8"))
+        snap["me"] = body["team"]
+        yahoo.OUT.write_text(json.dumps(snap, indent=1, ensure_ascii=False), encoding="utf-8")
+        lg, gm = model.load(), None
+        return lg.state(punt)
     if path == "/api/refresh":
-        yahoo.snapshot() if os.environ.get("YAHOO_LEAGUE_ID") else yahoo.demo()
+        if os.environ.get("YAHOO_LEAGUE_ID"):
+            yahoo.snapshot()
+        elif lg.snap.get("text"):  # imported from a roster file: re-read it (and refetch injuries)
+            yahoo.from_text(lg.snap["text"], lg.me)
+            (model.DATA / "injuries.json").unlink(missing_ok=True)
+        else:
+            yahoo.demo()
         lg, gm = model.load(), None
         return lg.state(punt)
     if path == "/api/chat":
@@ -88,7 +102,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search","/api/players", "/api/refresh", "/api/chat"}
+API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/players", "/api/me", "/api/refresh", "/api/chat"}
 
 if __name__ == "__main__":
     # ponytail: localhost-only, single user; no auth because it never listens on the network

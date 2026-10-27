@@ -4,7 +4,8 @@ Local Yahoo NBA fantasy GM app. Python 3.13 + pandas backend, one-file vanilla H
 
 ## Files
 - `model.py`: the engine (`League` class) plus a JSON CLI. All numbers come from here: UI, AI chat and the `/gm` skill.
-- `yahoo.py`: Yahoo snapshot → `data/league.json` (read-only, yfpy). `python yahoo.py demo` builds a fake league from real stats.
+- `yahoo.py`: league snapshot → `data/league.json`. Yahoo API (read-only, yfpy; access now needs Yahoo's approval), `python yahoo.py import <snapshot>.txt "Team"` (Instinct-style league snapshot or a hand-typed list, `parse_text`; Refresh re-reads the file; the top-bar dropdown switches your team via `/api/me`), or `python yahoo.py demo` (fake league from real stats).
+- `model.py` also fetches the NBA schedule (`nba_api`, cached a day) and ESPN's injury feed (cached 3h) in `load()`. `League` built directly (tests) gets neither, so it stays offline.
 - `app.py`: stdlib `ThreadingHTTPServer` on 127.0.0.1:8765, routes in `api()`.
 - `ai.py`: Claude GM via `client.beta.messages.tool_runner`, tools wrap `League` methods, model `claude-opus-5-5`.
 - `web/index.html`: the whole UI. State in `S`, views are `view*()` functions returning HTML strings, event delegation via `data-act` / `data-view` / `data-punt`.

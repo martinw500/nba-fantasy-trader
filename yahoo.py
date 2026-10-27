@@ -2,13 +2,16 @@
 
   python yahoo.py            # uses YAHOO_LEAGUE_ID from .env
   python yahoo.py demo       # fake 12-team league drafted from real stats, no Yahoo needed
+  python yahoo.py import snapshot.txt "My team"   # league from a text snapshot, no Yahoo API (format: parse_text)
 
 One-time setup: see README.md -> "Connect Yahoo".
 """
 import json
 import os
 import random
+import re
 import sys
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +20,8 @@ OUT = ROOT / "data" / "league.json"
 YAHOO_STAT = {"3PTM": "FG3M", "ST": "STL", "TO": "TOV", "FG%": "FG%", "FT%": "FT%", "PTS": "PTS", "REB": "REB",
               "AST": "AST", "BLK": "BLK", "FGM": "FGM", "FGA": "FGA", "FTM": "FTM", "FTA": "FTA"}
 BENCH_ONLY = {"IL", "IL+", "NA"}
+STATUS = {"out": "O", "o": "O", "questionable": "GTD", "q": "GTD", "gtd": "GTD", "dtd": "DTD", "d": "DTD", "day-to-day": "DTD",
+          "probable": "", "p": "", "inj": "INJ", "il": "IL", "il+": "IL+", "susp": "SUSP", "na": "NA"}
 
 
 def save(snap):
@@ -69,13 +74,90 @@ def snapshot(league_id=None):
                               "cats": list(by_id.values()), "points": points}})
 
 
-def demo(seed=7):
-    """12 teams snake-drafted (with some randomness) from players who've played this season."""
+PLAYER = re.compile(r"(\S+(?: \S+)*?)\s{2,}([A-Z]{2,4}) - ([A-Z,]+)(.*)")  # "Cade Cunningham    DET - PG,SG  [O: Out]"
+SLOTS = {"PG", "SG", "G", "SF", "PF", "F", "C", "Util", "BN", "IL", "IL+", "NA"}
+
+
+def parse_text(text):
+    """A league snapshot as text (e.g. Instinct's "MCHC FANTASY BASKETBALL - FULL LEAGUE SNAPSHOT"), or a hand-typed list:
+
+        1. Toronto blue jays  (4-5-0, 7th place)        or   ## Toronto blue jays
+           PG    Cade Cunningham    DET - PG,SG                Cade Cunningham (Q)
+           C     Ivica Zubac        IND - C  [O: Out]
+        PART 3 - TOP 75 FREE AGENTS ...                 or   ## Free agents
+        1   117   135   98    Daniel Gafford    DAL - C           34%
+
+    Injury tags O / Q / P / D / NA (or [O: Out]); % = Yahoo roster %; "W Oct 28" = on waivers until then.
+    Sections about injured players are skipped (those players are already on the rosters).
+    Returns (league name, {team: [player]}, [free agent])."""
+    name, teams, fa, cur, mode = "", {}, {}, None, "teams"
+    for raw in text.splitlines():
+        line = "".join(c for c in raw if unicodedata.category(c) != "Co").strip()  # some exports add invisible glyphs
+        if m := re.search(r'league "([^"]+)"', line) or re.fullmatch(r"# (.+)", line):
+            name = name or m[1]
+        head = re.fullmatch(r"(?:PART \d+ - |## )(.+)", line)
+        if head:  # section heading: teams, injured (skip), or free agents / waivers
+            h = head[1].lower()
+            mode = "skip" if "injur" in h else "teams" if "roster" in h and "%" not in h else "fa" if (
+                "free" in h or "waiver" in h or "%" in h) else "teams"
+            if line.startswith("## ") and mode == "teams":
+                cur = teams.setdefault(head[1].split(" · ")[0].strip(), [])
+            continue
+        if mode == "teams" and (m := re.fullmatch(r"\d+\.\s+(.+?)\s+\(\d+-\d+.*", line)):
+            cur = teams.setdefault(m[1], [])
+            continue
+        if mode == "skip" or not re.search(r"[A-Za-z]", line):
+            continue
+        if m := PLAYER.search(line):
+            tag = re.match(r"\s+(?:\[)?(O|Q|P|D|NA|GTD|DTD|INJ|SUSP)\b", m[4])
+            p = {"name": m[1], "nba": m[2], "pos": m[3], "status": STATUS.get(tag[1].lower(), tag[1]) if tag else ""}
+            if mode == "teams" and cur is not None:
+                slot = line.split()[0]
+                cur.append({**p, **({"slot": slot} if slot in SLOTS else {})})
+            elif mode == "fa":
+                pct, w = re.search(r"(\d+)%", line), re.search(r"(?:^|W )([A-Z][a-z]{2} \d{1,2})\b", line)
+                fa.setdefault(p["name"], p).update({"owned": int(pct[1])} if pct else {}, **({"waiver": w[1]} if w else {}))
+        elif mode == "teams" and cur is not None and len(line.split()) <= 4 and not re.search(r"\d", line):
+            m = re.fullmatch(r"(.+?)\s*\((\S+)\)", line)  # hand-typed "Name" or "Name (O)"
+            cur.append({"name": m[1] if m else line, "pos": "", "nba": "",
+                        "status": STATUS.get(m[2].lower(), m[2].upper()) if m else ""})
+    return name, teams, list(fa.values())
+
+
+def from_text(path, me):
+    """league.json from a league text file (parse_text). Free agents come from the file when it lists them,
+    otherwise they're the best players nobody rosters (then players on waivers count as free)."""
+    import model
+    name, teams, listed = parse_text(Path(path).read_text(encoding="utf-8"))
+    me = next((t for t in teams if t.lower() == me.lower()), None)
+    if not me:
+        raise SystemExit(f"No team called that. Teams: {', '.join(teams)}")
+    line, val = _pool()
+    roster = max(sum(p.get("slot") not in BENCH_ONLY for p in ps) for ps in teams.values())
+    snap = {"name": name or Path(path).stem, "me": me, "teams": teams, "text": str(path), "free_agents": [],
+            "settings": {"teams": len(teams), "roster": roster, "mode": "9cat", "cats": model.CATS}}
+    lg = model.League(snap)  # matches names the way the app will ("N. Alexander-Walker", accents, Jr.)
+    if missed := [p["name"] for ps in teams.values() for p in ps if not lg.find(p["name"], strict=False)]:
+        print(f"Left out (no NBA stats yet, or a name to fix in {path}): {', '.join(missed)}")
+    taken = {k for ks in lg.rosters.values() for k in ks}
+    fa = [k for k in val.sort_values(ascending=False).index if k not in taken][:100]
+    snap["free_agents"] = listed or [{"name": line.at[k, "PLAYER_NAME"], "pos": "", "status": "",
+                                      "nba": line.at[k, "TEAM_ABBREVIATION"]} for k in fa]
+    return save(snap)
+
+
+def _pool():
+    """ROS line and z-value of everyone who's played this season."""
     import model
     base, cur = model.fetch(model.LAST), model.fetch(model.CUR, max_age_hours=12)
     line = model.ros(base, cur)
     line = line[line.index.isin(cur.index)]
-    val = model.zscores(line, 156).sum(axis=1)
+    return line, model.zscores(line, 156).sum(axis=1)
+
+
+def demo(seed=7):
+    """12 teams snake-drafted (with some randomness) from players who've played this season."""
+    line, val = _pool()
     rng = random.Random(seed)
     order = sorted(line.index, key=lambda k: -(val[k] + rng.gauss(0, 1.2)))
     names = ["You", "Ball Don't Lie", "Brunson Burner", "Wemby's World", "Tatum Tots", "Dame Time",
@@ -103,5 +185,6 @@ def demo(seed=7):
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
-    snap = demo() if sys.argv[1:] == ["demo"] else snapshot(*sys.argv[1:])
+    a = sys.argv[1:]
+    snap = demo() if a == ["demo"] else from_text(*a[1:3]) if a[:1] == ["import"] else snapshot(*a)
     print(f"Saved {OUT}: {len(snap['teams'])} teams, {len(snap['free_agents'])} free agents, you = {snap['me']}")

@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 
 import model
+import yahoo
 
 
 def line(name, i, gp=60, **over):
@@ -86,7 +87,7 @@ def test_all():
 
     # injuries: an "INJ" tag lowers a player's expected weekly contribution
     lg.meta["player 199"] = {**lg.meta["player 199"], "status": "INJ"}
-    assert lg._availability(base, cur)["player 199"] < lg.avail["player 199"]
+    assert lg._availability(base, cur)[1]["player 199"] < lg.avail["player 199"]
 
     # finder honours its own rules
     for idea in lg.ideas("fair"):
@@ -122,6 +123,42 @@ def test_all():
     keys = [k for k in lg.rosters["Me"] if k != "player 198"] + ["player 151", "player 155", "player 159"]
     c = lg._contrib("Me", keys)
     assert r["you_drop"] == lg.names(sorted(keys, key=c.get)[:2])
+
+    # schedule: identical twins, one with 4 games left this week and one with 2; a return date wipes this week
+    # and cuts rest-of-season availability to the share of games after it
+    twins = model.keyed(pd.DataFrame([line("Twin A", 180), line("Twin B", 180), line("Twin C", 180)]))
+    week = ["2026-10-26", "2026-10-28", "2026-10-30", "2026-11-01", "2026-11-03", "2026-11-05"]
+    snap = {**lg.snap, "teams": {**lg.snap["teams"], "Me": lg.snap["teams"]["Me"] + [
+        {"name": "Twin A", "nba": "AAA"}, {"name": "Twin B", "nba": "BBB"}, {"name": "Twin C", "nba": "AAA"}]}}
+    sl = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
+                      sched={"AAA": week, "BBB": week[:1] + week[3:]},
+                      inj={"Twin C": {"status": "O", "note": "Ankle.", "return": "2026-11-03"}})
+    assert sl.games_week["twin a"] == 4 and sl.games_week["twin b"] == 2 and sl.games_week["twin c"] == 0
+    assert sl.week_vec(["twin a"])[model.RAW.index("PTS")] > sl.week_vec(["twin b"])[model.RAW.index("PTS")]
+    assert abs(sl.avail["twin c"] / sl.rate["twin c"] - 2 / 6) < 1e-9 and sl.player("twin c")["injury"] == "Ankle."
+
+    # league text import: Instinct-style snapshot (numbered teams, fixed-width rows, [O: Out], invisible glyphs,
+    # injured section skipped, FA section with roster % and waiver dates) and a hand-typed "## Team" list
+    name, teams, fa = yahoo.parse_text("""Yahoo league "mchc fantasy" (ID 1)
+PART 1 - ALL 12 TEAM ROSTERS
+1. Toronto blue jays\ue002  (4-5-0, 7th place)
+-------------------
+   C     Ivica Zubac                 IND - C  [O: Out]
+   Util  De'Aaron Fox                SAS - PG
+PART 2 - INJURED PLAYERS ON ROSTERS (all 12 teams)
+Out           Ivica Zubac                 IND - C            (Toronto blue jays, C)
+PART 4 - EVERYTHING 15%+ ROSTERED, SORTED BY ROSTER %
+1   63%   Keegan Murray                SAC - SF,PF       O    W Oct 28   189    no (waivers)
+5   37%   Sandro Mamukelashvili        LAL - PF,C             FA         150    YES
+## Sharks
+Chet Holmgren (Q)
+Sharks has an open SF slot.""")
+    assert name == "mchc fantasy" and list(teams) == ["Toronto blue jays", "Sharks"]
+    assert teams["Toronto blue jays"][0] == {"name": "Ivica Zubac", "nba": "IND", "pos": "C", "status": "O", "slot": "C"}
+    assert teams["Toronto blue jays"][1]["name"] == "De'Aaron Fox"
+    assert teams["Sharks"] == [{"name": "Chet Holmgren", "pos": "", "nba": "", "status": "GTD"}]
+    assert fa[0] == {"name": "Keegan Murray", "nba": "SAC", "pos": "SF,PF", "status": "O", "owned": 63, "waiver": "Oct 28"}
+    assert fa[1]["owned"] == 37 and "waiver" not in fa[1] and fa[1]["status"] == ""
 
     w = lg.waivers()
     assert all(m["gain"] > 0.5 for m in w["moves"])

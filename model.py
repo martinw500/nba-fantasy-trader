@@ -26,6 +26,8 @@ import re
 import sys
 import time
 import unicodedata
+import urllib.request
+from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -79,6 +81,50 @@ def fetch(season, max_age_hours=None):
         DATA.mkdir(exist_ok=True)
         df[["PLAYER_NAME", "TEAM_ABBREVIATION", "GP", "MIN"] + RAW].to_csv(cache, index=False)
     return keyed(pd.read_csv(cache))
+
+
+TRICODE = {"GS": "GSW", "NY": "NYK", "SA": "SAS", "NO": "NOP", "PHO": "PHX", "WSH": "WAS", "UTAH": "UTA", "BRK": "BKN",
+           "CHO": "CHA"}  # Yahoo/ESPN short forms -> NBA tricodes
+
+
+def _cached(cache, hours, get):
+    """Read a JSON cache, refreshing it with get() when older than `hours`. Offline: the stale cache, or {}."""
+    if not cache.exists() or time.time() - cache.stat().st_mtime > hours * 3600:
+        try:
+            DATA.mkdir(exist_ok=True)
+            cache.write_text(json.dumps(get(), ensure_ascii=False), encoding="utf-8")
+        except Exception as e:
+            print(f"Couldn't refresh {cache.name} ({e}); using {'the old copy' if cache.exists() else 'nothing'}.",
+                  file=sys.stderr)
+    return json.loads(cache.read_text(encoding="utf-8")) if cache.exists() else {}
+
+
+def schedule(season=CUR):
+    """{NBA tricode: sorted game dates "YYYY-MM-DD"} from stats.nba.com, cached in data/ for a day."""
+    def get():
+        from nba_api.stats.endpoints import scheduleleaguev2
+        d = scheduleleaguev2.ScheduleLeagueV2(season=season, timeout=60).get_data_frames()[0]
+        day = pd.to_datetime(d.gameDate).dt.strftime("%Y-%m-%d")
+        out = {}
+        for side in ("homeTeam_teamTricode", "awayTeam_teamTricode"):
+            for t, dt in zip(d[side], day):
+                out.setdefault(t, []).append(dt)
+        return {t: sorted(ds) for t, ds in out.items()}
+    return _cached(DATA / f"schedule_{season}.json", 24, get)
+
+
+def injuries():
+    """{player name: {status, note, return}} from ESPN's public injury feed, cached for 3 hours.
+    ponytail: unofficial endpoint (personal use); if ESPN changes it, this goes quiet and Yahoo's status tags still work."""
+    def get():
+        url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries"
+        with urllib.request.urlopen(url, timeout=30) as r:
+            feed = json.load(r)
+        status = {"Out": "O", "Day-To-Day": "DTD", "Suspension": "SUSP"}
+        return {i["athlete"]["displayName"]: {"status": status.get(i.get("status"), ""), "note": i.get("shortComment", ""),
+                                              "return": i.get("details", {}).get("returnDate", "")}
+                for team in feed.get("injuries", []) for i in team.get("injuries", [])}
+    return _cached(DATA / "injuries.json", 3, get)
 
 
 def keyed(df):
@@ -154,7 +200,7 @@ def match_prob(p):
 class League:
     """A league snapshot (see yahoo.py) joined with NBA stats."""
 
-    def __init__(self, snap, base=None, cur=None):
+    def __init__(self, snap, base=None, cur=None, sched=None, inj=None, today=None):
         s = snap["settings"]
         self.snap, self.teams_n, self.roster_n = snap, s.get("teams", 12), s.get("roster", 13)
         self.mode = s.get("mode", "9cat")
@@ -177,7 +223,21 @@ class League:
         for team, players in snap["teams"].items():
             self.rosters[team] = self._keys(players)
         self.fa = self._keys(snap.get("free_agents", []))
-        self.avail = self._availability(base, cur)
+        # NBA schedule + injury news: games left this week, and return dates for availability
+        self.sched, self.inj = sched or {}, {}
+        self.today = (today or date.today()).isoformat()
+        sunday = (date.fromisoformat(self.today) + timedelta(6 - date.fromisoformat(self.today).weekday())).isoformat()
+        nba = cur.TEAM_ABBREVIATION.combine_first(base.TEAM_ABBREVIATION).to_dict()
+        nba.update({k: m["nba"] for k, m in self.meta.items() if m.get("nba")})  # the league's view is more current
+        self.nba = {k: TRICODE.get(str(t).upper(), str(t).upper()) for k, t in nba.items()}
+        for name, i in (inj or {}).items():
+            if k := self.find(name, strict=False):
+                self.inj[k] = i
+                m = self.meta.setdefault(k, {})
+                m["status"] = m.get("status") or i["status"]  # the league's own tag wins
+        self.rate, self.avail = self._availability(base, cur)
+        # ponytail: Yahoo NBA weeks run Monday-Sunday; the snapshot doesn't carry the league's week dates yet
+        self.games_week = pd.Series({k: self.games_left(k, sunday) for k in self.p.index}, dtype=float)
         # expected weekly contribution: games played at his line, missed games partly covered at waiver level
         fill = self.p.loc[self._waiver_level(self.value()), RAW].mean()
         a = self.avail.to_numpy()[:, None]
@@ -192,15 +252,27 @@ class League:
                 keys.append(k)
         return keys
 
+    def games_left(self, k, end="9999"):
+        """Games k's NBA team plays from today (or his return date, if later) through `end`."""
+        start = max(self.today, self.inj.get(k, {}).get("return") or "")
+        return sum(start <= d <= end for d in self.sched.get(self.nba.get(k), ()))
+
     def _availability(self, base, cur):
         """Share of games a player suits up for: GP rate over last season + this one, shrunk halfway toward 85%
-        (one bad injury year shouldn't count fully), then cut by Yahoo injury status."""
+        (one bad injury year shouldn't count fully), then cut by injury status. Returns (rate, rest-of-season).
+        A known return date replaces the status guess: rest of season he plays the share of remaining games after it."""
         played = base.GP.reindex(self.p.index).fillna(0) + cur.GP.reindex(self.p.index).fillna(0)
         possible = base.GP.max() + cur.GP.max()
         a = (played + 0.85 * possible / 2) / (possible * 1.5)
         a[~self.p.index.isin(base.index)] = 0.85  # rookies: no history
         status = pd.Series({k: STATUS_AVAIL.get(m.get("status", ""), 1.0) for k, m in self.meta.items()}, dtype=float)
-        return a * status.reindex(a.index).fillna(1.0)
+        share = pd.Series(1.0, index=a.index)
+        for k, i in self.inj.items():
+            rest = [d for d in self.sched.get(self.nba.get(k), ()) if d >= self.today]
+            if (i.get("return") or "") > self.today and rest and k in share.index:
+                status[k], share[k] = 1.0, sum(d >= i["return"] for d in rest) / len(rest)
+        rate = a * status.reindex(a.index).fillna(1.0)
+        return rate, rate * share
 
     def find(self, name, strict=True):
         k = norm(name)
@@ -250,11 +322,23 @@ class League:
                 "value_now": round(float(self.value([k], punt, "cur").iloc[0]), 2),
                 "fp": round(float(self.fp[k]), 1), "gp": int(self.p.at[k, "GP_CUR"]),
                 "avail": round(float(self.avail[k]), 2),
+                **({"games": int(self.games_week[k])} if self.sched else {}),
+                **({"injury": self.inj[k]["note"], "return": self.inj[k]["return"]} if k in self.inj else {}),
+                **{f: m[f] for f in ("owned", "waiver") if f in m},  # Yahoo roster % / on waivers until
                 "z": {c: round(float(self.z.at[k, c]), 2) for c in self.cats}}
 
     # --- matchup model (9-cat) -----------------------------------------------
     def vec(self, keys):
         return self.week.reindex(list(keys)).fillna(0).sum().to_numpy()
+
+    def week_vec(self, keys):
+        """This week's expected totals: per-game line x games left this week (none before a return date) x
+        availability. Without a schedule it's the season-average week, vec()."""
+        if not self.sched:
+            return self.vec(keys)
+        keys = [k for k in keys if k in self.p.index]
+        g = (self.games_week.reindex(keys) * self.rate.reindex(keys)).to_numpy()[:, None]
+        return (g * self.p.loc[keys, RAW].to_numpy()).sum(0)
 
     @functools.cached_property
     def vecs(self):
@@ -675,7 +759,7 @@ def load(path=DATA / "league.json"):
     if not Path(path).exists():
         import yahoo
         yahoo.demo()
-    return League(json.loads(Path(path).read_text(encoding="utf-8")))
+    return League(json.loads(Path(path).read_text(encoding="utf-8")), sched=schedule(), inj=injuries())
 
 
 def main():

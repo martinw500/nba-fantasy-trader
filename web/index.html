@@ -84,6 +84,7 @@ svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-widt
 .league { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
 .league b { font-size: 15px; font-weight: 650; white-space: nowrap; }
 .league span { color: var(--muted); font-size: 12px; }
+select.me { field-sizing: content; border: 0; background: none; padding: 0 2px; font-size: 12px; color: var(--accent-ink); font-weight: 600; cursor: pointer; }
 .punts { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-left: auto; }
 .punts > span { color: var(--muted); font-size: 12px; margin-right: 4px; }
 .chip { border: 1px solid var(--line-strong); background: var(--panel); border-radius: 999px; padding: 2px 9px; font-size: 12px; font-weight: 550; cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
@@ -339,19 +340,22 @@ function heat(v) {
 const punted = c => S.punt.includes(c);
 const LABEL = { FG3M: "3PM", TOV: "TO" };
 const lab = c => LABEL[c] || c;
-const statusTag = p => p.status ? `<span class="tag ${OUT.has(p.status) ? "out" : ""}">${esc(p.status)}</span>` : "";
+const mdy = d => new Date(d + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const statusTag = p => p.status || p.injury ? `<span class="tag ${OUT.has(p.status) ? "out" : ""}"${p.injury ? ` title="${esc(p.injury)}"` : ""}>${esc(p.status || "News")}${p.return && p.return >= new Date().toISOString().slice(0, 10) ? ` · back ${mdy(p.return)}` : ""}</span>` : "";
 const gpNote = p => p.gp < 3 ? ` title="Only ${p.gp} games this season"` : "";
 
 function playerTable(players, { extra = [], empty = "No players." } = {}) {
   if (!players?.length) return `<div class="empty">${empty}</div>`;
   const cats = S.state.cats;
-  const head = `<tr><th>Player</th>${extra.map(x => `<th class="n">${x.h}</th>`).join("")}<th class="n">GP</th>
+  const wk = players.some(p => p.games !== undefined);
+  const head = `<tr><th>Player</th>${extra.map(x => `<th class="n">${x.h}</th>`).join("")}${wk ? `<th class="n" title="Games left this week (Monday to Sunday), after any return date">Wk</th>` : ""}<th class="n">GP</th>
     <th class="n" title="Expected share of remaining games played (games-played history + Yahoo injury status)">Plays</th>
     <th class="n" title="Rest-of-season value on your build">Value</th><th class="n" title="How this season looks so far (what Yahoo ranks show)">Now</th>
     ${isPoints() ? `<th class="n">FP/G</th>` : cats.map(c => `<th class="n z ${punted(c) ? "punted-col" : ""}" style="text-align:center">${lab(c)}</th>`).join("")}</tr>`;
   const rows = players.map(p => `<tr>
     <td><span class="pname">${esc(p.name)}</span>${statusTag(p)}${p.pos ? ` <span class="muted small">${esc(p.pos)}</span>` : ""}</td>
     ${extra.map(x => `<td class="n">${x.v(p)}</td>`).join("")}
+    ${wk ? `<td class="n ${p.games >= 4 ? "pos" : p.games <= 1 ? "neg" : ""}">${p.games ?? ""}</td>` : ""}
     <td class="n muted"${gpNote(p)}>${p.gp}</td>
     <td class="n ${p.avail < 0.6 ? "neg" : "muted"}">${pct(p.avail)}</td>
     <td class="n val">${Number(p.value).toFixed(isPoints() ? 1 : 2)}</td>
@@ -691,7 +695,9 @@ function viewWaivers() {
   return `<div class="head"><div><h1>Waivers</h1><p class="sub">${odds ? "Free agents ranked by how much they'd raise your weekly win odds, swapped for your best drop." : "Free agents ranked on your build."} Injured players on your roster are never suggested as drops.</p></div></div>
     <div class="grid2"><div class="panel"><div class="panel-h"><div><h2>Suggested moves</h2><p>${odds ? "Add/drop pairs that raise your weekly win odds by at least 0.5%." : "Add/drop pairs worth at least +0.3."}</p></div></div>${moves}</div>
       <div class="panel"><div class="panel-h"><div><h2>Drop candidates</h2><p>${odds ? "The healthy players you'd miss least." : "Your three weakest healthy players."}</p></div></div>${playerTable(w.drop_candidates)}</div></div>
-    <div class="panel"><div class="panel-h"><div><h2>Best available</h2><p>Top ${w.free_agents.length} free agents.</p></div></div>${playerTable(w.free_agents, { extra: odds ? [{ h: "If added", v: p => `<span class="${tone(p.fit)} val">${delta(p.fit, "win%")}</span>` }] : [], empty: "No free agent data. Refresh from Yahoo." })}</div>`;
+    <div class="panel"><div class="panel-h"><div><h2>Best available</h2><p>Top ${w.free_agents.length} free agents.</p></div></div>${playerTable(w.free_agents, { extra: [...(odds ? [{ h: "If added", v: p => `<span class="${tone(p.fit)} val">${delta(p.fit, "win%")}</span>` }] : []),
+      ...(w.free_agents.some(p => p.owned != null) ? [{ h: `<span title="Share of Yahoo leagues that roster him">Owned</span>`, v: p => p.owned != null ? `${p.owned}%` : "" }] : []),
+      ...(w.free_agents.some(p => p.waiver) ? [{ h: "Add", v: p => p.waiver ? `<span class="tag" title="On waivers: put in a claim">claim by ${esc(p.waiver)}</span>` : `<span class="muted">now</span>` }] : [])], empty: "No free agent data. Refresh from Yahoo." })}</div>`;
 }
 
 function viewMovers() {
@@ -729,7 +735,8 @@ function renderShell() {
   const st = S.state;
   document.querySelectorAll(".nav").forEach(b => b.dataset.view === S.view ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
   if (!st) return;
-  $("#league").innerHTML = `<b>${esc(st.league)}</b><span>${st.mode === "points" ? "Points" : st.cats.length + "-cat"} · ${st.teams.length} teams${st.demo ? " · demo data" : ""}</span>`;
+  $("#league").innerHTML = `<b>${esc(st.league)}</b><span>${st.mode === "points" ? "Points" : st.cats.length + "-cat"} · ${st.teams.length} teams${st.demo ? " · demo data" : ""} ·
+    <select id="me-team" class="me" aria-label="Your team" title="Which team is yours">${st.teams.map(t => opt(t, t, st.me)).join("")}</select></span>`;
   $("#fetched").textContent = st.fetched ? "Rosters as of " + st.fetched : "";
   $("#punts").innerHTML = st.mode === "points" ? "" : `<span>Punt</span>${st.cats.map(c => `<button class="chip" data-punt="${c}" aria-pressed="${punted(c)}" title="${punted(c) ? "Stop punting" : "Punt"} ${lab(c)}">${lab(c)}</button>`).join("")}`;
 }
@@ -799,11 +806,21 @@ document.addEventListener("click", async e => {
   }
   if (act === "reset-chat") { S.chat = []; store.set("chat", []); try { await api("/api/chat", { reset: true }); } catch {} return render(); }
 });
-document.addEventListener("change", e => {
+document.addEventListener("change", async e => {
   const t = e.target;
   if (t.dataset.pick) { const set = S.trade[t.dataset.pick]; t.checked ? set.add(t.value) : set.delete(t.value); S.trade.result = null; return render(); }
   if (t.id === "trade-team") { S.trade.team = t.value; S.trade.get.clear(); S.trade.result = null; return render(); }
   if (t.id === "find-player") return pickPlayer(t.value);
+  if (t.id === "me-team") {  // switch which team is yours: everything team-specific starts over
+    t.disabled = true;
+    try {
+      S.state = await api("/api/me", { team: t.value });
+      Object.assign(S.trade, { give: new Set(), get: new Set(), team: null, roster: null, result: null });
+      S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null;
+      toast(`You're ${t.value} now`);
+    } catch (err) { toast(err.message); }
+    return render();
+  }
   if (t.id.startsWith("f-")) {  // finder toolbar: f-goal, f-vs, f-size, f-shape, f-healthy, f-team
     const F = S.find, k = t.id.slice(2), prof = S.state.profile;
     F[k] = t.type === "checkbox" ? t.checked : k === "size" ? +t.value : t.value;
