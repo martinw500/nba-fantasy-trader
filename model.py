@@ -14,6 +14,7 @@ CLI (prints JSON, used by Claude Code and for quick checks):
   python model.py trade --give "A" --get "B, C"
   python model.py ideas --mode finesse      # fair | finesse
   python model.py search --get "Wembanyama" --tier easy --lock "Jokic"   # offers for a target, see --help
+                                            # every trade and search result is priced on the market too
   python model.py waivers                   # trades and search are scored on top of the free moves it lists
   python model.py movers                    # sell-high / buy-low
   python model.py week --vs "Team"          # this week's matchup (--vs defaults to the snapshot's opponent)
@@ -62,10 +63,18 @@ FILL = 0.5                                         # share of a sat-out player's
                                                    # (not in backtest.py: its rosters never change, so nobody fills in)
 STATUS_AVAIL = {"GTD": 0.9, "DTD": 0.9, "O": 0.7, "SUSP": 0.8, "INJ": 0.6, "IL": 0.5, "IL+": 0.4, "NA": 0.0}
 
-# Trade search difficulty: (min gain for you, min gain for them, both win %; min "looks to them" in value units).
-# A gradual ladder: they clearly gain / both gain / they lose a little but it looks good / you gain big, needs a pitch.
+# Trade market: what managers pay for a player, from his market rank (League.market): 100 x MARKET^(rank - 1).
+# Steep, so a star is worth more than the sum of spare parts: rank 1 = 100, 25 = 48, 50 = 22, 100 = 5, 150 = 1.
+# ponytail: starting guess; tune with the trade log (N6).
+MARKET = 0.97
+EVEN = 5  # market gap (%) that still reads as "even"
+# Trade search difficulty: (min gain for you, min gain for them, both win %; market gap range, % you gain on market).
+# easy: they win on market and you still gain. fair: market within 15% (or FAIR_FIT, below). finesse: market even or
+# in their favour, but the fit is strongly yours. hard: you win on market, needs a pitch. No tier overpays over 30%.
 # ponytail: starting guesses like the knobs above; tune once real offers get accepted or turned down.
-TIERS = {"easy": (0.5, 1, 0.3), "fair": (1, 0, -0.5), "finesse": (1.5, -2.5, 0.3), "hard": (3, -6, -1)}
+TIERS = {"easy": (0.5, -1, -30, -EVEN), "fair": (1, -np.inf, -15, 15), "finesse": (1.5, -2.5, -30, EVEN),
+         "hard": (3, -6, EVEN, np.inf)}
+FAIR_FIT = 30  # fair's second route: both teams gain in real odds and the market is within this (Martin, Oct 26)
 VERDICT, MOVE, GUARD = 0.5, 0.5, 1  # trade accept/decline beyond +-; waiver move worth listing; most a cats/team goal
                                     # search may cost you
 # The win-% cutoffs above (and accept()'s) are in One Win terms. A categories league's win % moves about 2.5x less
@@ -73,11 +82,20 @@ VERDICT, MOVE, GUARD = 0.5, 0.5, 1  # trade accept/decline beyond +-; waiver mov
 CAT_SCALE = 0.4
 
 
-def accept(their_net, their_view, u=1.0, s=1.0):
-    """How likely the other manager says yes: they mostly judge on how it looks (Yahoo ranks), a little on real fit."""
-    if their_view > 0.3 * u and their_net > -s:
+def accept(mkt, their_net, s=1.0):
+    """How likely the other manager says yes: mostly on market value (priced()'s diff_pct), a little on real fit.
+    Anything fair-priced (TIERS, FAIR_FIT) is at least a Maybe."""
+    if mkt <= -EVEN and their_net > -s:
         return "Likely yes"
-    return "Long shot" if their_view < -0.5 * u else "Maybe"
+    return "Maybe" if mkt <= TIERS["fair"][3] or (their_net > 0 and mkt <= FAIR_FIT) else "Long shot"
+
+
+def priced(give, get):
+    """A trade on the market, from the market value each side ends up with (roster spots included). diff_pct: what
+    you gain as a share of the bigger side, so a deal is the same size from both ends (+20% for you = -20% for them)."""
+    d = round(100 * (get - give) / max(give, get, 1), 1)
+    return {"give": round(give, 1), "get": round(get, 1), "diff_pct": d,
+            "verdict": "even" if abs(d) < EVEN else f"you overpay {-d:.0f}%" if d < 0 else f"they overpay {d:.0f}%"}
 
 
 def norm(name):
@@ -390,6 +408,31 @@ class League:
         cv = float(raw[self._waiver_level(raw)].mean())
         return cv, raw.clip(lower=cv)
 
+    @functools.cached_property
+    def market(self):
+        """Every player's trade-market rank and value (MARKET curve). Rank: Yahoo's preseason rank blended with its
+        season-to-date one, weighted GP / (GP + HYPE) as in perceived value (Cur is noise early, and injured players
+        sink to 600+), then re-ranked. Players Yahoo didn't rank take the model's perceived rank (yahoo False)."""
+        rank = self.effective(frame="cur").rank(ascending=False)
+        yahoo = [k for k, m in self.meta.items() if m.get("rank")]
+        for k in yahoo:
+            w = self.p.at[k, "GP_CUR"] / (self.p.at[k, "GP_CUR"] + HYPE)
+            rank[k] = (1 - w) * self.meta[k]["rank"]["pre"] + w * self.meta[k]["rank"]["cur"]
+        rank = rank.rank(method="first")
+        return pd.DataFrame({"rank": rank.astype(int), "value": 100 * MARKET ** (rank - 1),
+                             "yahoo": rank.index.isin(yahoo)})
+
+    def _tier(self, tier, you, them, mkt, max_overpay=None):
+        """Which deals clear a difficulty tier (TIERS): win-% gains for you and them, market gap in % (priced()).
+        max_overpay (%) can only tighten a tier's floor. Works on scalars and arrays."""
+        y, t, lo, hi = TIERS[tier]
+        floor = -np.inf if max_overpay is None else -max_overpay
+        gain = you > y * self.s
+        ok = gain & (them > t * self.s) & (mkt >= max(lo, floor)) & (mkt <= hi)
+        if tier == "fair":  # or both teams gain and the gap is moderate: you may send slightly lesser players
+            ok = ok | (gain & (them > 0) & (mkt >= max(-FAIR_FIT, floor)) & (mkt <= FAIR_FIT))
+        return ok
+
     def weakest(self, team, m, pv):
         """Perceived cost of the m players `team` would drop to make room: its weakest by perceived value."""
         return float(pv.reindex(self.rosters[team]).nsmallest(m).sum()) if m > 0 else 0.0
@@ -417,6 +460,8 @@ class League:
                 "value_now": round(float(self.value([k], punt, "cur").iloc[0]), 2),
                 "fp": round(float(self.fp[k]), 1), "gp": int(self.p.at[k, "GP_CUR"]),
                 "avail": round(float(self.avail[k]), 2),
+                "mkt": round(float(self.market.at[k, "value"]), 1), "mkt_rank": int(self.market.at[k, "rank"]),
+                **({} if self.market.at[k, "yahoo"] else {"mkt_model": True}),  # no Yahoo rank: the model's own
                 **({"games": int(self.games_week[k])} if self.sched else {}),
                 **({"injury": self.inj[k]["note"], "return": self.inj[k]["return"]} if k in self.inj else {}),
                 **{f: m[f] for f in ("owned", "waiver") if f in m},  # Yahoo roster % / on waivers until
@@ -596,6 +641,15 @@ class League:
         flags += [f"{t} gains more than you ({100 * (sa[t]['win'] - sb[t]['win']):+.1f}% vs {100 * mine_d:+.1f}%)"
                   + (", and they're your trade partner." if t == other else f", and they're projected {sb[t]['rank']}.")
                   for t in sorted(rival, key=lambda t: sb[t]["rank"])]
+        # the market: what each side ends up with, net of the players it drops and the free agents it picks up
+        mv = lambda ks: float(self.market["value"].reindex(list(ks)).sum())
+        mkt = priced(mv(give) - mv(td) + mv(ta), mv(get) - mv(md) + mv(ma))
+        d, fair = mkt["diff_pct"], TIERS["fair"][3]
+        if d < -fair:
+            flags.append(f"You overpay on the market: you send {mkt['give']:.0f} in market value for {mkt['get']:.0f}.")
+        elif d > fair:
+            flags.append(f"Lowball on the market: you get {mkt['get']:.0f} in market value for {mkt['give']:.0f}. "
+                         "Expect a no unless the fit sells it.")
         out.update({
             "cats_detail": cats_detail,
             "vs": {t: [pct1(b["vs"][t]), pct1(a["vs"][t])] for t in b["vs"]},
@@ -609,8 +663,9 @@ class League:
             "their_win": round(100 * tb, 1), "their_win_after": round(100 * tw, 1),
             "rank": sb[self.me]["rank"], "rank_after": sa[self.me]["rank"],
             "odds": {c: round(100 * (a["odds"][c] - b["odds"][c]), 1) for c in self.cats},
-            "you_drop": name(md), "you_add": name(ma), "they_drop": name(td), "they_add": name(ta),
-            "accept": accept(100 * (tw - tb), seen, self.u, self.s),
+            "you_drop": name(md), "you_add": name(ma), "they_drop": name(td), "they_add": name(ta), "market": mkt,
+            "tiers": [t for t in TIERS if self._tier(t, net, 100 * (tw - tb), d)],
+            "accept": accept(d, 100 * (tw - tb), self.s),
             "verdict": "accept" if net > VERDICT * self.s else "decline" if net < -VERDICT * self.s else "toss-up"})
         return out
 
@@ -652,14 +707,15 @@ class League:
 
     def search(self, give=(), get=(), lock=(), team=None, size=3, tier="fair", goal="win", goal_cats=(),
                goal_team=None, healthy_only=False, shape=None, punt=(), limit=20, depth=10, free=True,
-               their_free=False):
+               their_free=False, max_overpay=None):
         """9-cat trade search scored by the matchup model, vectorized over every give/get combo per team.
 
         give / get: players every deal must include. Pinning a get fixes the team and searches both whole rosters,
                otherwise it's your top `depth` vs theirs.
         lock:  players never offered or asked for.
-        tier:  how likely they say yes (TIERS, scaled by self.s). easy: both gain and it looks good to them. fair: both gain.
-               finesse: they *look* like winners on hot starts but lose a little. hard: you gain big, needs a pitch.
+        tier:  how likely they say yes (TIERS: your gain, theirs, and the market gap). easy: they win on market, you
+               still gain. fair: market within 15%, or 30% when both gain. finesse: market even or in their favour,
+               the fit strongly yours. hard: you win on market. max_overpay (%): tightens the tier's market floor.
         goal:  "win" (weekly win %), "cats" (your odds in goal_cats) or "team" (head-to-head vs goal_team).
                The last two skip deals that cost you more than GUARD win %.
         shape: "consolidate" (you send more players) or "depth" (you get more).
@@ -681,7 +737,8 @@ class League:
             for t in [x for x in self.rosters if x != self.me] if each else [team or (self.owner(get[0]) if get else None)]:
                 lt = lg.after_free(keep=get, team=t) if their_free and t else lg
                 out += lt.search(give, get, [*lock, *(a for ms in lt.free.values() for a, _, _ in ms)], t, size, tier,
-                                 goal, goal_cats, goal_team, healthy_only, shape, punt, limit, depth, free=False)
+                                 goal, goal_cats, goal_team, healthy_only, shape, punt, limit, depth, free=False,
+                                 max_overpay=max_overpay)
             return self._rank(out, tier, team, limit)
         if max(len(give), len(get)) > size:
             raise KeyError(f"More than {size} pinned players on one side")
@@ -690,11 +747,10 @@ class League:
                 raise KeyError(f"{self.names(get)[0]} plays for {self.owner(get[0])}, not {team}")
             team = self.owner(get[0])
         lock = {self.find(n) for n in lock} - set(give) - set(get)
-        u, cats, me, wide = self.u, self.cats, self.me, bool(get)
+        cats, me, wide = self.cats, self.me, bool(get)
         cv, pv = self.perceived()
         vg, vc, vm = self.value().to_dict(), pv.to_dict(), self.value(punt=punt).to_dict()
-        t0, t1, t2 = TIERS[tier]
-        t0, t1 = t0 * self.s, t1 * self.s
+        mv = self.market["value"].to_dict()
 
         def combos(keys, pins, v, skip=()):
             free = sorted((k for k in keys if k not in lock and k not in pins and k not in skip), key=lambda k: -v[k])
@@ -702,32 +758,34 @@ class League:
             return [tuple(pins) + c for s in range(max(1, len(pins)), size + 1)
                     for c in itertools.combinations(free, s - len(pins))]
 
-        def stack(cs):  # summed weekly vectors, player counts, summed perceived value
+        def stack(cs):  # summed weekly vectors, player counts, summed perceived and market value
             return (np.stack([sum(self.rows[k] for k in c) for c in cs]), np.array([len(c) for c in cs]),
-                    np.array([sum(vc[k] for k in c) for c in cs]))
+                    np.array([sum(vc[k] for k in c) for c in cs]), np.array([sum(mv[k] for k in c) for c in cs]))
 
-        def low2(groups, c):  # per group: the 2 players the team would miss least (padded with inf) and their vectors
-            vals, vecs = np.full((len(groups), 2), np.inf), np.zeros((len(groups), 2, len(RAW)))
+        def low2(groups, c):  # per group: the 2 players the team would miss least (padded with inf), vectors, market
+            vals, vecs, mk = np.full((len(groups), 2), np.inf), np.zeros((len(groups), 2, len(RAW))), np.zeros((len(groups), 2))
             for i, g in enumerate(groups):
                 for j, k in enumerate(sorted(g, key=c.get)[:2]):
-                    vals[i, j], vecs[i, j] = c[k], self.rows[k]
-            return vals, vecs
+                    vals[i, j], vecs[i, j], mk[i, j] = c[k], self.rows[k], mv[k]
+            return vals, vecs, mk
 
-        def drops(A, B, n):  # weekly vector of the n (0-2) cheapest of A's pair (per give combo) and B's (per get combo)
+        def drops(A, B, n):  # vector and market value of the n (0-2) cheapest of A's pair (per give combo) and B's
             a, b = len(A[0]), len(B[0])
-            vals = np.concatenate([np.broadcast_to(A[0][:, None], (a, b, 2)), np.broadcast_to(B[0][None], (a, b, 2))], -1)
-            vecs = np.concatenate([np.broadcast_to(A[1][:, None], (a, b, 2, len(RAW))),
-                                   np.broadcast_to(B[1][None], (a, b, 2, len(RAW)))], 2)
-            cut = np.take_along_axis(vecs, np.argsort(vals, -1)[..., :2, None], 2)
-            return (n >= 1)[..., None] * cut[:, :, 0] + (n >= 2)[..., None] * cut[:, :, 1]
+            pair = lambda x, y: np.concatenate([np.broadcast_to(x[:, None], (a, b) + x.shape[1:]),
+                                                np.broadcast_to(y[None], (a, b) + y.shape[1:])], 2)
+            pick = np.argsort(pair(A[0], B[0]), -1)[..., :2]
+            cut, mk = np.take_along_axis(pair(A[1], B[1]), pick[..., None], 2), np.take_along_axis(pair(A[2], B[2]), pick, 2)
+            one, two = n >= 1, n >= 2
+            return one[..., None] * cut[:, :, 0] + two[..., None] * cut[:, :, 1], one * mk[..., 0] + two * mk[..., 1]
 
-        fa = np.zeros((3, len(RAW)))  # the best 0, 1 or 2 free agents, for whoever ends up with open spots
-        for i, k in enumerate(self.best_fa(2)):
+        fa, fam = np.zeros((3, len(RAW))), np.zeros(3)  # the best 0, 1 or 2 free agents (vectors, market value), for
+        for i, k in enumerate(self.best_fa(2)):         # whoever ends up with open spots
             fa[i + 1:] += self.rows[k]
+            fam[i + 1:] += mv[k]
 
         roster = self.rosters[me]
         mine = combos(roster, give, vm)
-        GV, gn, gseen = stack(mine)
+        GV, gn, gseen, gmk = stack(mine)
         my_rest = low2([[k for k in roster if k not in c] for c in mine], self._contrib(me, roster, punt))
         before = self.outlook(me, punt=punt)
         out = []
@@ -738,14 +796,17 @@ class League:
             theirs = combos(keys, get, vg, hurt)
             if not theirs:
                 continue
-            RV, rn, rseen = stack(theirs)
+            RV, rn, rseen, rmk = stack(theirs)
             c_in = self._contrib(me, {k for c in theirs for k in c}, punt)  # what their players would add for you
             c_t = self._contrib(t, set(keys) | {k for c in mine for k in c})
             n = rn[None] - gn[:, None]  # extra players you receive
-            me_after = (self.vecs[me] - GV[:, None] + RV[None] - drops(my_rest, low2(theirs, c_in), n)
-                        + fa[np.clip(-n, 0, 2)])
-            them_after = (self.vecs[t] - RV[None] + GV[:, None] + fa[np.clip(n, 0, 2)]
-                          - drops(low2(mine, c_t), low2([[k for k in keys if k not in c] for c in theirs], c_t), -n))
+            my_drop, my_drop_m = drops(my_rest, low2(theirs, c_in), n)
+            their_drop, their_drop_m = drops(low2(mine, c_t), low2([[k for k in keys if k not in c] for c in theirs], c_t), -n)
+            me_after = self.vecs[me] - GV[:, None] + RV[None] - my_drop + fa[np.clip(-n, 0, 2)]
+            them_after = self.vecs[t] - RV[None] + GV[:, None] - their_drop + fa[np.clip(n, 0, 2)]
+            give_m = gmk[:, None] - their_drop_m + fam[np.clip(n, 0, 2)]  # market value each side ends up with
+            get_m = rmk[None] - my_drop_m + fam[np.clip(-n, 0, 2)]
+            mkt = 100 * (get_m - give_m) / np.maximum(np.maximum(give_m, get_m), 1)  # as in priced()
             names, O = self._others(me, t)
             k = len(O) + 1
             p_mt = cat_probs(me_after, them_after, cats)
@@ -765,7 +826,7 @@ class League:
                 score = 100 * (odds - np.mean([before["odds"][c] for c in goal_cats]))
             else:
                 score = dme
-            ok = (score > t0) & (dthem > t1) & (seen > t2 * u)
+            ok = self._tier(tier, score, dthem, mkt, max_overpay)
             if goal != "win":
                 ok &= dme > -GUARD * self.s
             if shape == "consolidate":
@@ -776,10 +837,11 @@ class League:
             rank = np.minimum(score, dthem)[G, R] if tier in ("easy", "fair") else score[G, R]
             top = np.argsort(-rank)[:limit]
             for gi, ri in zip(G[top], R[top]):
+                m = priced(float(give_m[gi, ri]), float(get_m[gi, ri]))
                 out.append({"team": t, "give": self.names(mine[gi]), "get": self.names(theirs[ri]),
                             "net": round(float(dme[gi, ri]), 1), "their_net": round(float(dthem[gi, ri]), 1),
-                            "their_view": round(float(seen[gi, ri]), 2), "unit": "win%",
-                            "accept": accept(dthem[gi, ri], seen[gi, ri], u, self.s),
+                            "their_view": round(float(seen[gi, ri]), 2), "unit": "win%", "market": m,
+                            "accept": accept(m["diff_pct"], dthem[gi, ri], self.s),
                             **({"score": round(float(score[gi, ri]), 1)} if goal != "win" else {})})
         return self._rank(out, tier, team, limit)
 
@@ -1030,6 +1092,7 @@ def main():
     ap.add_argument("--size", type=int, default=3, help="search: max players per side")
     ap.add_argument("--healthy", action="store_true", help="search: skip injured players you'd get")
     ap.add_argument("--shape", choices=["consolidate", "depth"])
+    ap.add_argument("--max-overpay", type=float, help="search: most you'd overpay on the market, in %%")
     a = ap.parse_args()
     split = lambda s: [x.strip() for x in s.split(",") if x.strip()]
     lg, punt = load(), split(a.punt)
@@ -1037,7 +1100,7 @@ def main():
            "trade": lambda: lg.trade(split(a.give), split(a.get), punt),
            "ideas": lambda: lg.ideas(a.mode, punt, a.team),
            "search": lambda: lg.search(split(a.give), split(a.get), split(a.lock), a.team, a.size, a.tier, a.goal,
-                                       split(a.cats), a.vs, a.healthy, a.shape, punt),
+                                       split(a.cats), a.vs, a.healthy, a.shape, punt, max_overpay=a.max_overpay),
            "waivers": lambda: lg.waivers(punt),
            "movers": lambda: lg.movers(punt),
            "week": lambda: lg.this_week(a.vs, punt),

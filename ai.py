@@ -19,11 +19,14 @@ Trades and find_trades are scored on top of the waiver moves the user could make
 listed by waivers), so a deal gets no credit for a pickup. Say so, e.g. "compared with just adding Vucevic for
 Achiuwa (+1.2)". The other team is judged on the trade alone. A waiver move with "drop": null fills an open spot.
 league_overview has projected standings, per-category win odds and the user's odds vs each team. A category the
-user can't win or already dominates barely moves their odds, so explain punts from that. "their_view" is how a
-deal looks on this season's hype (what Yahoo ranks show them); "accept" is how likely they say yes.
+user can't win or already dominates barely moves their odds, so explain punts from that. "market" prices a deal the
+way managers do, from Yahoo's ranks (give / get in market value, diff_pct = what the user gains on market, verdict
+like "you overpay 35%"); "accept" is how likely they say yes, mostly on that. "their_view" is only how it reads on
+this season's hot and cold starts.
 evaluate_trade also returns cats_detail (both teams' category totals and odds, before -> after), vs (user's odds
 against each team), standings (flag "rival": partner or a top-4 team gaining more than the user), flags (injury,
-small sample, buying at peak hype) and build_after (categories the user would win under 35% of weeks, a punt hint).
+small sample, buying at peak hype, overpaying or lowballing on the market), tiers (finder difficulties it clears)
+and build_after (categories the user would win under 35% of weeks, a punt hint).
 Use find_trades for "who can I get for X", "who wants Y", "fix my steals" or "beat team Z"; offer a harder tier
 when nothing clears the bar. Use this_week for "how's my matchup" and streaming: "score" is the expected
 categories won-lost this week (lead with it in a categories league), "win" the chance to win more categories, stream
@@ -63,28 +66,31 @@ class GM:
         @beta_tool
         def find_trades(give: list[str] | None = None, get: list[str] | None = None, lock: list[str] | None = None,
                         tier: str = "fair", goal: str = "win", goal_cats: list[str] | None = None,
-                        goal_team: str | None = None, size: int = 3, team: str | None = None) -> str:
+                        goal_team: str | None = None, size: int = 3, team: str | None = None,
+                        max_overpay: float | None = None) -> str:
             """Search for trades, up to size-for-size. Pin players to aim it: get = offers for their player,
             give = buyers for yours, both = complete that trade, neither = open search. Each result has "accept"
-            (Likely yes / Maybe / Long shot).
+            (Likely yes / Maybe / Long shot) and "market" (how managers would price it).
 
             Args:
                 give: user's players every deal must include
                 get: other team's players every deal must include (all from one team)
                 lock: players never offered or asked for
-                tier: how likely they say yes. "easy": both gain and it looks good to them. "fair": both gain.
-                    "finesse": they look like winners on hot starts but lose a little. "hard": user gains a lot.
+                tier: how likely they say yes, by market value. "easy": they win on market, the user still gains.
+                    "fair": market within 15% (30% when both teams gain). "finesse": market even or in their favour,
+                    but the fit is strongly the user's. "hard": the user wins on market, needs a pitch.
                 goal: "win" (weekly win odds), "cats" (user's odds in goal_cats) or "team" (head-to-head vs goal_team)
                 goal_cats: categories for goal "cats", e.g. ["STL", "AST"]
                 goal_team: exact team name for goal "team"
                 size: max players per side, 1-3
                 team: only search this opponent (exact team name), or omit for all
+                max_overpay: most the user will overpay on the market, in % (tightens the tier)
             """
             if lg.mode == "points":  # points leagues keep the simple finder
                 return dump(lg.ideas("finesse" if tier == "finesse" else "fair", gm.punt, team, limit=12))
             try:
                 return dump(lg.search(give or [], get or [], lock or [], team, size, tier, goal, goal_cats or [],
-                                      goal_team, punt=gm.punt, limit=12))
+                                      goal_team, punt=gm.punt, limit=12, max_overpay=max_overpay))
             except KeyError as e:
                 return f"Error: {e}"
 

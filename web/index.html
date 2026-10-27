@@ -297,7 +297,7 @@ const S = {
   week: {},  // { data, loading }; replaced on punt / team / refresh, so late answers land in the old object
   trade: { give: new Set(), get: new Set(), team: null, roster: null, result: null, busy: false },
   locks: new Set(store.get("locks", [])),
-  find: { tier: "fair", goal: "win", cats: [], vs: "", size: 3, healthy: false, theirs: store.get("theirs", false), shape: "", team: "", list: null, busy: false, ran: "", sort: null },
+  find: { tier: "fair", goal: "win", cats: [], vs: "", size: 3, healthy: false, theirs: store.get("theirs", false), shape: "", overpay: "", team: "", list: null, busy: false, ran: "", sort: null },
   improve: { kind: null, list: null, busy: false, sort: null },
   saved: { list: store.get("saved", []), evals: {}, loading: false },
   players: null,
@@ -357,6 +357,11 @@ const lab = c => LABEL[c] || c;
 const mdy = d => new Date(d + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const statusTag = p => p.status || p.injury ? `<span class="tag ${OUT.has(p.status) ? "out" : ""}"${p.injury ? ` title="${esc(p.injury)}"` : ""}>${esc(p.status || "News")}${p.return && p.return >= new Date().toISOString().slice(0, 10) ? ` · back ${mdy(p.return)}` : ""}</span>` : "";
 const gpNote = p => p.gp < 3 ? ` title="Only ${p.gp} games this season"` : "";
+// trade market (Yahoo ranks): a player's value + rank (* = Yahoo hasn't ranked him, the model's rank), a deal's gap
+const mktCell = p => `${Math.round(p.mkt)} <span class="muted small"${p.mkt_model ? ` title="Yahoo hasn't ranked him: the model's own rank"` : ""}>#${p.mkt_rank}${p.mkt_model ? "*" : ""}</span>`;
+const mktTone = d => Math.abs(d) < 5 ? "" : tone(d);
+const mktDeal = m => `<span class="muted small">${Math.round(m.give)} → ${Math.round(m.get)}</span> <span class="${mktTone(m.diff_pct)}">${(m.diff_pct > 0 ? "+" : "") + Math.round(m.diff_pct)}%</span>`;
+const MKT_TIP = "Market value you send → get (100 = the market's top player, from Yahoo's preseason and current ranks), roster spots included. % = what you gain on market, as a share of the bigger side";
 
 function playerTable(players, { extra = [], empty = "No players." } = {}) {
   if (!players?.length) return `<div class="empty">${empty}</div>`;
@@ -365,6 +370,7 @@ function playerTable(players, { extra = [], empty = "No players." } = {}) {
   const head = `<tr><th>Player</th>${extra.map(x => `<th class="n">${x.h}</th>`).join("")}${wk ? `<th class="n" title="Games left this week (Monday to Sunday), after any return date">Wk</th>` : ""}<th class="n">GP</th>
     <th class="n" title="Expected share of remaining games played (games-played history + Yahoo injury status)">Plays</th>
     <th class="n" title="Rest-of-season value on your build">Value</th><th class="n" title="How this season looks so far (what Yahoo ranks show)">Now</th>
+    <th class="n" title="Trade-market value (100 = the market's top player) and market rank: Yahoo's preseason rank blended with this season's, weighted by games played">Mkt</th>
     ${isPoints() ? `<th class="n">FP/G</th>` : cats.map(c => `<th class="n z ${punted(c) ? "punted-col" : ""}" style="text-align:center">${lab(c)}</th>`).join("")}</tr>`;
   const rows = players.map(p => `<tr>
     <td><span class="pname">${esc(p.name)}</span>${statusTag(p)}${p.pos ? ` <span class="muted small">${esc(p.pos)}</span>` : ""}</td>
@@ -374,6 +380,7 @@ function playerTable(players, { extra = [], empty = "No players." } = {}) {
     <td class="n ${p.avail < 0.6 ? "neg" : "muted"}">${pct(p.avail)}</td>
     <td class="n val">${Number(p.value).toFixed(isPoints() ? 1 : 2)}</td>
     <td class="n ${tone(p.value_now - p.value)}">${Number(p.value_now).toFixed(isPoints() ? 1 : 2)}</td>
+    <td class="n">${p.mkt == null ? "" : mktCell(p)}</td>
     ${isPoints() ? `<td class="n">${p.fp.toFixed(1)}</td>` : cats.map(c => `<td class="z ${punted(c) ? "punted-col" : ""}" style="--c:${heat(p.z[c])}"><span>${p.z[c].toFixed(1)}</span></td>`).join("")}
   </tr>`).join("");
   return `<div class="tw"><table><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
@@ -567,13 +574,13 @@ function tradeResultOdds(r) {
       <dl class="side-by">
         <div><dt title="${cap(WIN().def)}">Your ${WIN().of}</dt><dd><span class="${tone(r.net)}">${delta(r.net, "win%")}</span> <span class="muted small">${r.win}% → ${r.win_after}%</span></dd></div>
         <div><dt>${them}</dt><dd><span class="${tone(r.their_net)}">${delta(r.their_net, "win%")}</span> <span class="muted small">${r.their_win}% → ${r.their_win_after}%</span></dd></div>
-        <div><dt title="On this season's hot and cold starts, what Yahoo's ranks show them">How it looks to them</dt><dd class="${tone(r.their_view)}">${r.their_view > 0.3 ? "Looks good" : r.their_view < -0.3 ? "Looks bad" : "Looks even"} <span class="muted small">${sign(r.their_view)}</span></dd></div>
+        <div><dt title="${MKT_TIP}">Market</dt><dd><span class="${mktTone(r.market.diff_pct)}">${cap(r.market.verdict)}</span> <span class="muted small">give ${Math.round(r.market.give)} · get ${Math.round(r.market.get)}</span></dd></div>
         <div><dt>Projected finish</dt><dd>${ord(r.rank)} → ${ord(r.rank_after)}</dd></div>
-        <div><dt title="Mostly how it looks to them, a little how it really helps them">Will they say yes</dt><dd>${acceptPill(r.accept)}</dd></div></dl></div>
+        <div><dt title="Mostly the market, a little how it really helps them">Will they say yes</dt><dd>${acceptPill(r.accept)}</dd></div></dl></div>
       <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div></div>
     ${base}${cats}
     <div class="panel-b small muted" style="border-top:1px solid var(--line)">${WIN().h} = ${WIN().def}, with both rosters updated. ${moves}
-      ${r.their_view > 0.3 && r.their_net < 0 ? "They'd likely see this as a win on hype alone." : ""}
+      On this season's hot and cold starts alone it looks ${r.their_view > 0.3 ? "good" : r.their_view < -0.3 ? "bad" : "even"} to them (${sign(r.their_view)}).
       ${hint.length ? `After this you'd win ${hint.map(lab).join(" and ")} under 35% of weeks: worth thinking about punting ${hint.length > 1 ? "them" : "it"}.` : ""}</div></div>
     ${improvePanel()}
     <div class="grid2">
@@ -594,13 +601,14 @@ function tradeResultOdds(r) {
     </div>`;
 }
 // ---------- trade finder (9-cat: search() with the checked players as pins; points: today's ideas()) ----------
-const TIER = { easy: "Both teams gain and it looks good to them", fair: "Both teams gain", finesse: "They look like the winner on hot starts, but you gain more", hard: "You gain a lot. Needs a good pitch" };
+const TIER = { easy: "They win on market value and you still gain", fair: "Market value within 15%, or within 30% when both teams gain", finesse: "Even on market value or in their favour, but the fit is strongly yours", hard: "You win on market value. Needs a good pitch" };
+const TIER_PTS = { fair: "Both teams gain", finesse: "They look like the winner on hot starts, but you gain more" };
 const ACC_RANK = { "Likely yes": 2, "Maybe": 1, "Long shot": 0 };
 const SKEL = `<div class="skel"></div><div class="skel"></div><div class="skel"></div>`;
 const dealKey = x => [...x.give].sort() + "|" + [...x.get].sort();  // search puts pinned players first
 const isSaved = x => S.saved.list.some(s => dealKey(s) === dealKey(x));
 const opt = (v, h, cur) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(h)}</option>`;
-const findParams = () => { const F = S.find; return { tier: F.tier, goal: F.goal, cats: F.cats, vs: F.vs, size: F.size, healthy: F.healthy, their_free: F.theirs, shape: F.shape || null, lock: [...S.locks] }; };
+const findParams = () => { const F = S.find; return { tier: F.tier, goal: F.goal, cats: F.cats, vs: F.vs, size: F.size, healthy: F.healthy, their_free: F.theirs, shape: F.shape || null, max_overpay: F.overpay === "" ? null : +F.overpay, lock: [...S.locks] }; };
 function findTitle() {
   if (isPoints()) return "Trade finder";
   const g = [...S.trade.give], r = [...S.trade.get];
@@ -617,12 +625,13 @@ function findPanel() {
   const fr = isPoints() ? [] : st.waivers.free || [];
   const free = fr.length ? ` Scored as if you'd already added ${and(fr.map(m => esc(m.add)))} off waivers${F.theirs ? ", and each partner had made its own best waiver moves" : ""}.` : "";
   const tiers = isPoints() ? ["fair", "finesse"] : Object.keys(TIER);
-  const controls = `<div class="seg" role="group" aria-label="Difficulty">${tiers.map(k => `<button data-tier="${k}" aria-pressed="${F.tier === k}" title="${TIER[k]}">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div>
+  const controls = `<div class="seg" role="group" aria-label="Difficulty">${tiers.map(k => `<button data-tier="${k}" aria-pressed="${F.tier === k}" title="${(isPoints() ? TIER_PTS : TIER)[k]}">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div>
     ${isPoints() ? "" : `<label class="field">Optimize for <select id="f-goal">${opt("win", "Win %", F.goal)}${opt("cats", "Categories…", F.goal)}${opt("team", "Beat a team…", F.goal)}</select></label>
       ${F.goal === "cats" ? `<span class="sugs" role="group" aria-label="Categories to improve">${st.cats.map(c => `<button class="chip pick ${punted(c) ? "punted-col" : ""}" data-goalcat="${c}" aria-pressed="${F.cats.includes(c)}">${lab(c)}</button>`).join("")}</span>` : ""}
       ${F.goal === "team" ? `<select id="f-vs" aria-label="Team to beat">${others.map(t => opt(t, t, F.vs)).join("")}</select>` : ""}
       <label class="field">Max size <select id="f-size">${[1, 2, 3].map(k => opt(String(k), `${k}-for-${k}`, String(F.size))).join("")}</select></label>
       <label class="field" title="Consolidate: you send more players than you get. Depth: you get more.">Shape <select id="f-shape">${opt("", "Any", F.shape)}${opt("consolidate", "Consolidate", F.shape)}${opt("depth", "Depth", F.shape)}</select></label>
+      <label class="field" title="The most you'll overpay on market value. Each difficulty allows up to 30%">Max overpay <select id="f-overpay">${opt("", "Default", F.overpay)}${["20", "10", "0"].map(k => opt(k, k + "%", F.overpay)).join("")}</select></label>
       <label class="field"><input type="checkbox" id="f-healthy" ${F.healthy ? "checked" : ""}>Healthy only</label>
       <label class="field" title="On: the other team is measured against the waiver moves it could make instead. Off: it's judged on the trade alone, the way most managers look at an offer."><input type="checkbox" id="f-theirs" ${F.theirs ? "checked" : ""}>Count their waiver moves</label>`}
     <select id="f-team" aria-label="Limit to team" ${pinned ? `disabled title="Set by the player you're asking for"` : ""}>${opt("", "All teams", team)}${others.map(t => opt(t, t, team)).join("")}</select>`;
@@ -630,28 +639,28 @@ function findPanel() {
   const body = F.busy ? SKEL : !F.list ? `<div class="empty"><b>${isPoints() ? "Search every roster" : "Aim the search with checkboxes"}</b>${isPoints()
       ? "Fair finds deals that help both teams. Finesse finds deals where they look like the winner on hot starts but you gain more."
       : "Check their player to find offers for him, yours to find buyers, both to complete the trade, or none to search every roster. Lock anyone you won't move."}</div>`
-    : !F.list.length ? `<div class="empty"><b>No deals cleared the ${F.tier} bar</b>${isPoints() ? "Try the other mode, a different punt, or all teams." : "Try another difficulty, a bigger size, or fewer locks."}</div>`
+    : !F.list.length ? `<div class="empty"><b>No deals cleared the ${F.tier} bar</b>${isPoints() ? "Try the other mode, a different punt, or all teams." : "Try another difficulty, a bigger size, a higher max overpay, or fewer locks."}</div>`
     : (F.ran !== title ? `<div class="panel-b small muted" style="padding:8px 16px;border-bottom:1px solid var(--line)">Showing results for “${esc(F.ran)}”.</div>` : "") + dealTable(F.list, "find");
   return `<div class="panel" id="find"><div class="panel-h"><div><h2>${esc(title)}</h2><p>${desc}${locks}${free}</p></div>
       <button class="btn primary" data-act="find" ${can ? "" : "disabled"}>${F.busy ? "Searching…" : "Find trades"}</button></div>
     <div class="toolbar" style="padding:10px 16px;border-bottom:1px solid var(--line)">${controls}</div>${body}</div>`;
 }
 function dealTable(list, src) {
-  const s = S[src].sort, F = S.find, goal = list.some(x => "score" in x), acc = list.some(x => x.accept);
+  const s = S[src].sort, F = S.find, goal = list.some(x => "score" in x), acc = list.some(x => x.accept), mk = list.some(x => x.market);
   const u = list[0].unit === "win%" ? WIN().of : "value";
-  const v = (x, k) => k === "accept" ? ACC_RANK[x.accept] : x[k];
+  const v = (x, k) => k === "accept" ? ACC_RANK[x.accept] : k === "mkt" ? x.market.diff_pct : x[k];
   const rows = list.map((x, i) => [x, i]);
   if (s) rows.sort(([a], [b]) => (v(a, s.k) > v(b, s.k) ? 1 : v(a, s.k) < v(b, s.k) ? -1 : 0) * s.dir);
   const th = (k, h, tip, cls = "n") => `<th class="${cls}" title="${esc(tip)}"${s?.k === k ? ` aria-sort="${s.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="sort" data-sort="${k}" data-src="${src}">${esc(h)}${s?.k === k ? `<svg class="i${s.dir > 0 ? " up" : ""}"><use href="#i-caret"/></svg>` : ""}</button></th>`;
   const head = `<tr>${th("team", "Team", "Trade partner", "")}<th>You give</th><th>You get</th>
     ${goal ? th("score", F.goal === "cats" ? F.cats.map(lab).join(" + ") : "vs " + F.vs, F.goal === "cats" ? "Change in your average odds in these categories" : oneWin() ? "Change in your chance to beat them" : "Change in your share of categories vs them") : ""}
     ${th("net", "You", "Change in your " + u)}${th("their_net", "Them", "Change in their " + u)}
-    ${th("their_view", "Looks to them", "On this season's hot and cold starts, what Yahoo's ranks show them")}
-    ${acc ? th("accept", "Will they say yes", "Mostly how it looks to them, a little how it really helps them", "") : ""}<th></th></tr>`;
+    ${mk ? th("mkt", "Market", MKT_TIP) : th("their_view", "Looks to them", "On this season's hot and cold starts, what Yahoo's ranks show them")}
+    ${acc ? th("accept", "Will they say yes", "Mostly the market, a little how it really helps them", "") : ""}<th></th></tr>`;
   const body = rows.map(([x, i]) => `<tr><td>${esc(x.team)}</td><td class="names">${x.give.map(esc).join(", ")}</td><td class="names">${x.get.map(esc).join(", ")}</td>
     ${goal ? `<td class="n val ${tone(x.score)}">${delta(x.score, "win%")}</td>` : ""}
     <td class="n ${goal ? "" : "val"} ${tone(x.net)}">${delta(x.net, x.unit)}</td><td class="n ${tone(x.their_net)}">${delta(x.their_net, x.unit)}</td>
-    <td class="n ${tone(x.their_view)}">${sign(x.their_view)}</td>${acc ? `<td>${acceptPill(x.accept)}</td>` : ""}
+    ${mk ? `<td class="n">${mktDeal(x.market)}</td>` : `<td class="n ${tone(x.their_view)}">${sign(x.their_view)}</td>`}${acc ? `<td>${acceptPill(x.accept)}</td>` : ""}
     <td class="n"><button class="btn ghost" data-act="load-deal" data-src="${src}" data-i="${i}">Load</button><button class="btn ghost" data-act="save-deal" data-src="${src}" data-i="${i}" ${isSaved(x) ? "disabled" : ""}>${isSaved(x) ? "Saved" : "Save"}</button></td></tr>`).join("");
   return `<div class="tw deals"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
 }
@@ -676,7 +685,7 @@ function savedPanel() {
       <tr><td>You give</td>${L.map(s => `<td>${names(s.give)}</td>`).join("")}</tr><tr><td>You get</td>${L.map(s => `<td>${names(s.get)}</td>`).join("")}</tr>
       ${row("You", r => `<span class="val ${tone(r.net)}">${delta(r.net, r.unit)}</span>${r.win != null ? ` <span class="muted small">${r.win}% → ${r.win_after}%</span>` : ""}`)}
       ${row("Them", r => `<span class="${tone(r.their_net)}">${delta(r.their_net, r.unit)}</span>`)}
-      ${row("Looks to them", r => `<span class="${tone(r.their_view)}">${sign(r.their_view)}</span>`)}
+      ${isPoints() ? row("Looks to them", r => `<span class="${tone(r.their_view)}">${sign(r.their_view)}</span>`) : row("Market", r => mktDeal(r.market))}
       ${row("Projected finish", r => r.rank ? `${ord(r.rank)} → ${ord(r.rank_after)}` : "—")}
       ${row("Will they say yes", r => r.accept ? acceptPill(r.accept) : "—")}
       ${S.state.cats.map(c => row(lab(c), r => { const d = (r.unit === "win%" ? r.odds : r.cats)[c]; return `<span class="${tone(d)}">${delta(d, r.unit)}</span>`; }, punted(c) ? "punted-col" : "")).join("")}
@@ -899,7 +908,7 @@ document.addEventListener("change", async e => {
     S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {};
     return S.trade.result ? evaluate() : render();
   }
-  if (t.id.startsWith("f-")) {  // finder toolbar: f-goal, f-vs, f-size, f-shape, f-healthy, f-team
+  if (t.id.startsWith("f-")) {  // finder toolbar: f-goal, f-vs, f-size, f-shape, f-overpay, f-healthy, f-team
     const F = S.find, k = t.id.slice(2), prof = S.state.profile;
     F[k] = t.type === "checkbox" ? t.checked : k === "size" ? +t.value : t.value;
     if (F.goal === "cats" && !F.cats.length) F.cats = Object.entries(prof.odds).filter(([c]) => !punted(c)).sort((a, b) => a[1] - b[1]).slice(0, 2).map(([c]) => c);

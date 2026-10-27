@@ -43,7 +43,8 @@ def api(path, q, body):
         return lg.search(body.get("give", []), body.get("get", []), body.get("lock", []), body.get("team") or None,
                          int(body.get("size", 3)), body.get("tier", "fair"), body.get("goal", "win"),
                          body.get("cats", []), body.get("vs"), bool(body.get("healthy")), body.get("shape"), punt,
-                         limit=30, their_free=bool(body.get("their_free")))
+                         limit=30, their_free=bool(body.get("their_free")),
+                         max_overpay=None if body.get("max_overpay") is None else float(body["max_overpay"]))
     if path == "/api/players":
         return sorted(({"name": n, "team": t} for t, ks in lg.rosters.items() for n in lg.names(ks)), key=lambda p: p["name"])
     if path == "/api/me":  # which team is yours

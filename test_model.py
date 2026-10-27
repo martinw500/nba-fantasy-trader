@@ -99,19 +99,51 @@ def test_all():
 
     # finder honours its own rules
     for idea in lg.ideas("fair"):
-        assert idea["net"] > 1 * lg.s and idea["their_net"] > 0
+        d = idea["market"]["diff_pct"]
+        assert idea["net"] >= lg.s - 0.05 and (abs(d) <= 15 or idea["their_net"] > 0 and abs(d) <= model.FAIR_FIT)
     for idea in lg.ideas("finesse"):
-        assert idea["net"] > 1.5 * lg.s and idea["their_view"] > 0.3
+        assert idea["net"] >= 1.5 * lg.s - 0.05 and idea["market"]["diff_pct"] <= model.EVEN
 
-    # search: tier thresholds hold. This 2-team league is zero-sum with z-scores spread +-46, so the real tiers find
-    # little; the mechanics (pins always in, locks never in, 3-player sides, filters) run on a loose test-only tier
-    for tier, (t0, t1, t2) in model.TIERS.items():
-        for x in lg.search(tier=tier, limit=200):
-            assert x["net"] >= t0 * lg.s and x["their_net"] >= t1 * lg.s and x["their_view"] >= t2, (tier, x)
-    model.TIERS["hard"], hard = (0.5, -20, -999), model.TIERS["hard"]
+    # tiers: your gain, theirs (win %) and the market gap (% you gain on market). Fair has two routes (Martin, Oct 26):
+    # the market within 15%, or both teams gaining and within 30%. No tier overpays over 30%; max_overpay only tightens
+    s = lg.s
+    assert lg._tier("fair", 2 * s, -5 * s, -14) and not lg._tier("fair", 2 * s, -5 * s, -20)
+    assert lg._tier("fair", 2 * s, 0.1, 25) and not lg._tier("fair", 2 * s, 0.1, 35)
+    assert not lg._tier("fair", 2 * s, 0.1, -12, max_overpay=10) and lg._tier("fair", 2 * s, 0.1, -8, max_overpay=10)
+    assert lg._tier("easy", s, 0, -20) and not lg._tier("easy", s, 0, 0)  # easy: they win on market
+    assert lg._tier("hard", 4 * s, -5 * s, 60) and not lg._tier("hard", 4 * s, 0, 0)  # hard: you do
+    assert lg._tier("finesse", 2 * s, -2 * s, 0) and not lg._tier("finesse", 2 * s, -2 * s, 10)
+    assert not any(lg._tier(t, 9, 9, -31) for t in model.TIERS)
+    assert model.accept(-10, 0) == "Likely yes" and model.accept(25, 0.1) == "Maybe" and model.accept(25, -0.1) == "Long shot"
+    assert model.priced(100, 65)["verdict"] == "you overpay 35%" and model.priced(65, 100)["diff_pct"] == 35
+    assert model.priced(50, 52)["verdict"] == "even" and model.priced(0, 0)["diff_pct"] == 0
+
+    # market: Yahoo's preseason rank blended with its current one by GP / (GP + HYPE) (5 games: a third), re-ranked;
+    # players Yahoo didn't rank take the model's. Value = 100 x MARKET^(rank - 1)
+    rk = lambda ps, name, pre, now: [{**p, "rank": {"pre": pre, "cur": now}} if p["name"] == name else p for p in ps]
+    mk = model.League({**lg.snap, "teams": {"Me": rk(lg.snap["teams"]["Me"], "Player 170", 1, 400),
+                                            "Them": rk(lg.snap["teams"]["Them"], "Player 171", 60, 60)}}, base, cur)
+    m = mk.market
+    assert m.at["player 170", "yahoo"] and not m.at["player 174", "yahoo"] and mk.player("player 174")["mkt_model"]
+    assert m.at["player 171", "rank"] < m.at["player 170", "rank"]  # 2/3 x 1 + 1/3 x 400 = 134, behind 60
+    assert sorted(m["rank"]) == list(range(1, len(m) + 1)) and np.allclose(m.value, 100 * model.MARKET ** (m["rank"] - 1))
+    # drop cost: the side taking more players gives up its drops' market value, the other adds its pickups'
+    r = lg.trade(["Player 198"], ["Player 151", "Player 155"])
+    mv = lambda ns: sum(lg.market.at[lg.find(n), "value"] for n in ns)
+    assert abs(r["market"]["get"] - (mv(["Player 151", "Player 155"]) - mv(r["you_drop"]))) < 0.1
+    assert r["they_add"] and abs(r["market"]["give"] - (mv(["Player 198"]) + mv(r["they_add"]))) < 0.1
+    assert any(f.startswith("You overpay on the market") for f in lg.trade(["Player 198"], ["Player 151"])["flags"])
+    assert any(f.startswith("Lowball") for f in lg.trade(["Player 150"], ["Player 199"])["flags"])
+
+    # search: this 2-team league is zero-sum with z-scores spread +-46, so the real tiers find little; the mechanics
+    # (pins always in, locks never in, 3-player sides, filters) run on a loose test-only tier
+    model.TIERS["hard"], hard = (0.5, -20, -np.inf, np.inf), model.TIERS["hard"]
     hits = lg.search(get=["Player 199"], lock=["Player 198"], tier="hard", limit=200)
     assert hits and all("Player 199" in x["get"] and "Player 198" not in x["give"] for x in hits)
     assert any(len(x["give"]) == 3 for x in hits)
+    # search prices a deal like trade() does (same drops and pickups), 3-for-1s included
+    for x in [h for h in hits if len(h["give"]) == 3][:3] + hits[:3]:
+        assert lg.trade(x["give"], x["get"])["market"] == x["market"], x
     shop = lg.search(give=["Player 150"], get=["Player 199"], tier="hard")
     assert shop and all("Player 150" in x["give"] for x in shop)
     cons = lg.search(get=["Player 199"], tier="hard", shape="consolidate")
@@ -167,7 +199,7 @@ def test_all():
     assert short.trade(["Player 198"], ["Player 151"])["their_free"] == []
     assert [m["drop"] for m in short.trade(["Player 198"], ["Player 151"], their_free=True)["their_free"]] == [None]
     assert short.search(tier="hard", their_free=True, limit=200) == short.search(team="Them", tier="hard",
-                                                                                 their_free=True, limit=200)
+                                                                                 their_free=True, limit=200)[:3]
 
     # schedule: identical twins, one with 4 games left this week and one with 2; a return date wipes this week
     # and cuts rest-of-season availability to the share of games after it

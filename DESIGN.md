@@ -216,7 +216,7 @@ Equal columns per category: label, rank `n / 12`, signed total, and a 4px bar. T
 
 ### Do:
 - Do show the reason with every verdict: per-category deltas next to the net number.
-- Do show both sides of a trade (you, them, how it looks to them).
+- Do show both sides of a trade (you, them, the market).
 - Do use empty states that explain what the panel will show and how to fill it.
 - Do keep transitions at 120–200ms and only on state changes.
 

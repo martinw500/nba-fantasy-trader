@@ -105,7 +105,7 @@ Classic pairings: big men punt FT%, high-usage guards punt TO, wings punt AST.
 - **Your win %**: before → after, with both rosters updated. If you take back more players, you drop your weakest; if you send more, you pick up the best free agent. So 2 scrubs for a star scores correctly.
 - **Compared with waivers.** Your number starts from the waiver moves you could make without a trade (the note under the verdict names them, e.g. "Nikola Vučević for Precious Achiuwa (+1.2%)"), so a 2-for-1 gets no credit for a pickup you'd make anyway: its open spot gets the next-best free agent. The finder works the same way. The other team is judged on the trade alone, since that's what managers look at. Tick **Count their waiver moves** in the finder toolbar to measure them against their own waiver moves too (remembered in this browser).
 - **Them**: their win % before → after. A trade can help both teams when the categories fit.
-- **How it looks to them**: the deal on this season's hot and cold starts, which is what Yahoo's rankings show them. "Looks good" means they'll probably accept.
+- **Market**: how managers would price it, from Yahoo's ranks (see "Market value" below): what you send and get in market value, and a verdict like "you overpay 35%" or "even". **Will they say yes** reads mostly off this. The note under the verdict says how the deal looks on this season's hot and cold starts alone.
 - **Projected finish**: your league rank before → after.
 - Your odds change in each category.
 
@@ -121,11 +121,12 @@ The finder panel sits under the builder. The players you check aim the search, a
 - Check **nobody**: **Open search** across every team.
 
 The padlock on a player means the finder never uses him. Deals go up to 3-for-3. Toolbar:
-- **Difficulty**, i.e. how likely they say yes. **Easy**: both teams gain and it looks good to them. **Fair**: both teams gain. **Finesse**: they *look* like the winner on hot starts but lose a little in reality, which is how sell-high works. **Hard**: you gain a lot, so it needs a good pitch.
+- **Difficulty**, i.e. how likely they say yes, priced on the market. **Easy**: they win on market value and you still gain. **Fair**: market value within 15%, or within 30% when both teams gain in real odds (you may send slightly lesser players if the fit helps them). **Finesse**: even on market value or in their favour, but the fit is strongly yours: they pay market price for players worth more to you. **Hard**: you win on market value, so it needs a good pitch. No difficulty lets you overpay by more than 30%.
+- **Max overpay**: the most you'll overpay on market value (20%, 10% or 0%). It only tightens the difficulty.
 - **Optimize for**: overall win %, your odds in chosen **categories**, or your head-to-head odds against **one team** (e.g. a playoff rival). The last two skip deals that cost you more than 0.4% win % (1% in One Win leagues).
 - **Max size**, **Shape** (consolidate: you send more players; depth: you get more), **Healthy only**, and a team filter.
 
-Columns sort on click. **Load** evaluates a deal in the builder, and **Save** keeps it.
+Every deal shows its **Market** column: market value you send → get and the gap. Columns sort on click. **Load** evaluates a deal in the builder, and **Save** keeps it.
 
 Points leagues keep the simpler finder: Fair or Finesse, 1-for-1 up to 2-for-2, no checkboxes or locks.
 
@@ -169,13 +170,15 @@ A trade, add or drop is judged by how much it changes your win %, with both rost
 - **What everyone else has.** Odds are computed against every real roster in your league.
 - **Punting.** A category you can't win stops mattering on its own. The Punt chips make it explicit: punted categories count as automatic losses, so the advice optimizes for the other categories.
 
-**Now / How it looks to them.** The same line weighted harder toward this season (`GP / (GP + 10)`: 23% after 3 games), roughly what Yahoo's rankings show other managers. For trades, a player's look is counted over the games he actually plays (managers remember who missed a season) and never below what the best free agents look like. A manager taking back extra players feels the loss of the players they'd drop. Finesse trades and sell-high use it.
+**Now / How it looks to them.** The same line weighted harder toward this season (`GP / (GP + 10)`: 23% after 3 games). For trades, a player's look is counted over the games he actually plays (managers remember who missed a season) and never below what the best free agents look like. A manager taking back extra players feels the loss of the players they'd drop. Sell-high uses it; trades show it as a note.
+
+**Market value (Mkt).** What other managers pay for a player comes from outside the model: Yahoo's preseason rank blended with its current (season-to-date) rank, the current one weighted `GP / (GP + 10)` because it's noise early (injured players sink to 600+), then re-ranked. A player Yahoo hasn't ranked uses the model's own rank, marked `*`. Value = `100 × 0.97^(rank − 1)`: rank 1 = 100, 25 = 48, 50 = 22, 100 = 5, 150 = 1, so a star is worth more than the sum of spare parts. A trade's market counts roster spots: the side taking more players loses the market value of the ones it drops, and the side with open spots gains the free agents it picks up. Trade tiers and "Will they say yes" run on it.
 
 **Points leagues** use the league's scoring weights and per-game values (no matchup model).
 
 **Honest limits:**
 - The weekly-randomness settings are fitted to real 2025-26 box scores (`python backtest.py`: 20 simulated leagues, each week predicted from what was known that Monday). Category odds come true at the rate they say, within a few points (what a categories league runs on); whole-matchup odds within about 3 points. Still, read 55% vs 58% as "about the same".
-- How "looks to them" works is a judgment call. There's no data on which offers real managers accept.
+- The market curve (`MARKET` in `model.py`) and the tier cutoffs are starting guesses. There's no data yet on which offers real managers accept.
 - Not modelled yet:
   - positions and roster slots (daily lineup limits)
   - the real schedule in trades and season odds: they use an average 3.4-game week (This week uses the real one)
