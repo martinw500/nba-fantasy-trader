@@ -330,6 +330,11 @@ async function loadState() {
 
 // ---------- formatting ----------
 const isPoints = () => S.state?.mode === "points";
+const oneWin = () => S.state?.scoring === "one_win";
+// 9-cat's headline number: share of categories won (categories leagues, where each one counts in the standings) or the chance to win the week
+const WIN = () => oneWin() ? { h: "Win odds", of: "weekly win odds", def: "chance to win a typical week vs the league" }
+  : { h: "Win %", of: "win %", def: "share of categories you'd win in a typical week vs the league, the way the standings count them" };
+const cap = s => s[0].toUpperCase() + s.slice(1);
 const sign = v => (v > 0 ? "+" : "") + Number(v).toFixed(2);
 const sign1 = v => (v > 0 ? "+" : "") + Number(v).toFixed(1);
 const pct = v => Math.round(v * 100) + "%";
@@ -385,7 +390,7 @@ function viewTeam() {
     const rows = Object.entries(prof.vs).sort((a, b) => b[1].pct - a[1].pct);
     const fav = rows.filter(([, r]) => r.pct > 0.5).length;
     vs = `<div class="panel"><div class="panel-h"><div><h2>Head-to-head vs every team</h2>
-      <p>Chance you win the week against each team, and the categories you'd expect to take. Favoured against ${fav} of ${rows.length}.</p></div></div>
+      <p>${oneWin() ? "Chance you win the week against each team, and the categories you'd expect to take." : "Share of categories you'd expect to take from each team in a week, and the score."} Favoured against ${fav} of ${rows.length}.</p></div></div>
       <div class="vs">${rows.map(([t, r]) => `<div class="vs-row"><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">
         <span class="dot" style="background:${oddsColor(r.pct)}"></span>${esc(t)}</button>
         <span><span class="rec">${pct(r.pct)}</span> <span class="muted small">${r.win.toFixed(1)}–${r.loss.toFixed(1)}</span></span></div>`).join("")}</div></div>`;
@@ -393,10 +398,10 @@ function viewTeam() {
   const moves = st.waivers.moves.slice(0, 3), sells = st.movers.sell_high.slice(0, 3);
   const todo = (moves.length || sells.length) ? `<div class="panel"><div class="panel-h"><div><h2>Worth doing now</h2><p>Top waiver upgrades and sell-high candidates on your build.</p></div></div>
     <div class="tw"><table class="wrap"><tbody>
-      ${moves.map(m => `<tr><td>Add <b>${esc(m.add)}</b>, drop ${esc(m.drop)}</td><td class="n pos val" title="${m.unit === "win%" ? "Change in your weekly win odds" : "Value gain"}">${delta(m.gain, m.unit)}</td><td class="n"><button class="btn ghost" data-go="waivers">Waivers</button></td></tr>`).join("")}
+      ${moves.map(m => `<tr><td>Add <b>${esc(m.add)}</b>, drop ${esc(m.drop)}</td><td class="n pos val" title="${m.unit === "win%" ? "Change in your " + WIN().of : "Value gain"}">${delta(m.gain, m.unit)}</td><td class="n"><button class="btn ghost" data-go="waivers">Waivers</button></td></tr>`).join("")}
       ${sells.map(p => `<tr><td>Sell high on <b>${esc(p.name)}</b>: playing ${sign(p.gap)} above real value</td><td class="n muted">${p.gp} GP</td><td class="n"><button class="btn ghost" data-act="shop" data-name="${esc(p.name)}">Find a buyer</button></td></tr>`).join("")}
     </tbody></table></div></div>` : "";
-  const outlook = prof ? `Projected ${ord(prof.rank)} of ${n} · wins ${pct(prof.win)} of weekly matchups · ` : "";
+  const outlook = prof ? `Projected ${ord(prof.rank)} of ${n} · wins ${pct(prof.win)} of ${oneWin() ? "weekly matchups" : "categories"} · ` : "";
   return `<div class="head"><div><h1>${esc(st.me)}</h1><p class="sub">${outlook}${st.roster.length} players${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}</p></div></div>
     ${strip}${todo}
     <div class="panel"><div class="panel-h"><div><h2>Roster</h2><p>Category cells are z-scores vs a typical rostered player. Green helps you, red hurts.</p></div></div>${playerTable(st.roster)}</div>
@@ -418,22 +423,25 @@ function viewWeek() {
   const verdict = w.win >= 60 ? ["accept", "Favoured"] : w.win <= 40 ? ["decline", "Underdog"] : ["toss-up", "Toss-up"];
   const tot = c => v => v == null ? "—" : c.endsWith("%") ? v.toFixed(1) + "%" : v.toFixed(0);
   const side = (c, [now, fin]) => w.live ? ba([now, fin], tot(c)) : tot(c)(fin);
-  const games = w.games ? `<div><dt title="Player-games left this week, players in IL slots excluded">Games left</dt><dd>${w.games.you} <span class="muted small">vs ${w.games.them}</span></dd></div>` : "";
+  const winOdds = `<div><dt title="Chance you win more categories than you lose, from the score so far and the games left">Win odds</dt><dd>${Math.round(w.win)}%</dd></div>`;
+  const score = `<div><dt title="Categories you'd expect to win and lose${oneWin() ? "" : ". Each one counts in the standings"}">Expected score</dt><dd>${w.score[0].toFixed(1)}–${w.score[1].toFixed(1)}</dd></div>`;
+  const yg = w.yahoo_games;
+  const games = (w.games ? `<div><dt title="Player-games left this week if your best 10 with a game start each day, players in IL slots excluded">Games left</dt><dd>${w.games.you} <span class="muted small">vs ${w.games.them}</span></dd></div>` : "")
+    + (yg ? `<div><dt title="Yahoo's count, from the lineups as they're set now. Lower than ours when bench players could fill in on light days">Yahoo games left</dt><dd>${yg.you.left} <span class="muted small">vs ${yg.them.left}</span></dd></div>` : "");
   const advice = [by("chase").length && `Chase ${by("chase").join(", ")}.`, by("lost").length && `Don't chase ${by("lost").join(", ")}: you're unlikely to catch up.`,
     by("safe").length && `You're ahead in ${by("safe").join(", ")}.`].filter(Boolean).join(" ");
   const claim = w.streams.some(p => p.waiver) ? [{ h: "Add", v: p => p.waiver ? `<span class="tag" title="On waivers: he only counts from the day the claim clears">claim by ${esc(p.waiver)}</span>` : `<span class="muted">now</span>` }] : [];
-  const streamCols = [{ h: `<span title="Change in your chance to win this week">This week</span>`, v: p => `<span class="val ${tone(p.gain)}">${delta(p.gain, "win%")}</span>` },
-    { h: "Drop", v: p => esc(p.drop) }, { h: `<span title="Change in your season-long weekly win odds if you keep him">Season</span>`, v: p => `<span class="${tone(p.season)}">${delta(p.season, "win%")}</span>` }, ...claim];
+  const streamCols = [{ h: `<span title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}">This week</span>`, v: p => `<span class="val ${tone(p.gain)}">${delta(p.gain, "win%")}</span>` },
+    { h: "Drop", v: p => esc(p.drop) }, { h: `<span title="Change in your season-long ${WIN().of} if you keep him">Season</span>`, v: p => `<span class="${tone(p.season)}">${delta(p.season, "win%")}</span>` }, ...claim];
   return head(`Week ends ${end}${w.live ? "" : " · no live score yet"}${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}`) + `
     <div class="panel"><div class="panel-h"><div class="verdict"><span class="pill ${verdict[0]}" style="text-transform:none">${verdict[1]}</span>
-      <dl class="side-by"><div><dt title="Chance you win the week, from the score so far and the games left">Win odds</dt><dd>${Math.round(w.win)}%</dd></div>
-        <div><dt title="Categories you'd expect to win and lose">Expected score</dt><dd>${w.score[0].toFixed(1)}–${w.score[1].toFixed(1)}</dd></div>${games}</dl></div></div>
+      <dl class="side-by">${oneWin() ? winOdds + score : score + winOdds}${games}</dl></div></div>
       <div class="tw"><table><thead><tr><th>Category</th><th class="n" title="${w.live ? "So far → projected final" : "Projected final"}">You</th><th class="n">${esc(w.opponent)}</th>
         <th class="n" title="Chance you win the category this week">Your odds</th><th>Call</th></tr></thead><tbody>
       ${cats.map(([c, d]) => `<tr class="${punted(c) ? "punted-col" : ""}"><td class="pname">${lab(c)}</td><td class="n">${side(c, d.you)}</td><td class="n">${side(c, d.them)}</td>
         <td class="n val"><span class="dot" style="background:${oddsColor(d.odds / 100)}"></span>${Math.round(d.odds)}%</td>
         <td><span class="tag ${d.call === "safe" ? "safe" : d.call === "lost" ? "out" : d.call}" title="${CALL_TIP[d.call]}">${CALL[d.call]}</span></td></tr>`).join("")}</tbody></table></div>
-      <div class="panel-b small muted" style="border-top:1px solid var(--line)">${advice} Projected = ${w.live ? "the score so far plus " : ""}each player's games left × his per-game line × his chance of playing. Players in IL slots sit.
+      <div class="panel-b small muted" style="border-top:1px solid var(--line)">${advice} ${yg ? `Games played so far: ${yg.you.played} vs ${yg.them.played}.` : ""} Projected = ${w.live ? "the score so far plus " : ""}each player's games left × his per-game line × his chance of playing. Players in IL slots sit.
         ${w.live ? "" : "No live score yet, so this assumes nothing has been played, which is right on Monday. A Yahoo pull adds the real score."}</div></div>
     <div class="panel"><div class="panel-h"><div><h2>Streaming adds</h2><p>Free agents who most raise your odds this week, each swapped for whichever of your three cheapest healthy players helps most. Season shows what keeping him does long-term.</p></div></div>
       ${playerTable(w.streams, { extra: streamCols, empty: "<b>No stream helps this week</b>Nobody on waivers raises your odds by 0.1% or more over your weakest players." })}</div>`;
@@ -449,7 +457,7 @@ function viewLeague() {
   const st = S.state, team = S.league.team || (st.profile ? Object.keys(st.profile.standings).find(t => t !== st.me) : st.teams.find(t => t !== st.me));
   const prof = st.profile;
   const order = prof ? Object.keys(prof.standings) : st.teams;
-  const list = `<div class="tw"><table><thead><tr>${prof ? `<th class="n">#</th>` : ""}<th>Team</th>${prof ? `<th class="n" title="Chance to win a typical week vs the league">Win odds</th><th>Weak spots</th><th class="n" title="Your chance to beat them">You win</th>` : ""}</tr></thead><tbody>
+  const list = `<div class="tw"><table><thead><tr>${prof ? `<th class="n">#</th>` : ""}<th>Team</th>${prof ? `<th class="n" title="${cap(WIN().def)}">${WIN().h}</th><th>Weak spots</th><th class="n" title="${oneWin() ? "Your chance to beat them" : "Share of categories you'd take from them"}">You win</th>` : ""}</tr></thead><tbody>
     ${order.map(t => `<tr${t === team ? ` style="background:var(--accent-soft)"` : ""}>
       ${prof ? `<td class="n muted">${prof.standings[t].rank}</td>` : ""}
       <td><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button>${t === st.me ? ` <span class="tag">you</span>` : ""}</td>
@@ -464,7 +472,7 @@ function viewLeague() {
     ${order.map(t => `<tr${t === st.me ? ` style="background:var(--accent-soft)"` : ""}><td><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button>${t === st.me ? ` <span class="tag">you</span>` : ""}</td>
       ${st.cats.map(c => { const p = prof.cat_odds[t][c]; return `<td class="z ${punted(c) ? "punted-col" : ""}" style="--c:${heat((p - 0.5) * 6)}" title="${esc(t)}: ${pct(p)} to win ${lab(c)}, ${ord(prof.ranks[t][c])} in the league"><span>${pct(p)} <small class="muted">${prof.ranks[t][c]}</small></span></td>`; }).join("")}</tr>`).join("")}
     </tbody></table></div></div>` : "";
-  return `<div class="head"><div><h1>League</h1><p class="sub">${prof ? "Projected standings from every team's weekly win odds against the rest of the league. Weak spots are categories a team wins under 35% of weeks." : "Every roster, valued on your build."}</p></div></div>
+  return `<div class="head"><div><h1>League</h1><p class="sub">${prof ? `Projected standings from every team's ${WIN().of} against the rest of the league. Weak spots are categories a team wins under 35% of weeks.` :"Every roster, valued on your build."}</p></div></div>
     <div class="grid2" style="grid-template-columns: minmax(300px, 420px) 1fr">
       <div class="panel" style="align-self:start">${list}</div>
       <div class="panel"><div class="panel-h"><div><h2>${esc(team)}</h2><p>${d && d.team === team && d.build.length ? `Weak in ${d.build.map(lab).join(", ")}` : "&nbsp;"}</p></div>
@@ -550,23 +558,23 @@ function tradeResultOdds(r) {
   return `<div class="panel" id="result"><div class="panel-h"><div class="verdict">
       <span class="pill ${r.verdict}">${r.verdict}</span>
       <dl class="side-by">
-        <div><dt title="Chance to win a typical week vs the league">Your win odds</dt><dd><span class="${tone(r.net)}">${delta(r.net, "win%")}</span> <span class="muted small">${r.win}% → ${r.win_after}%</span></dd></div>
+        <div><dt title="${cap(WIN().def)}">Your ${WIN().of}</dt><dd><span class="${tone(r.net)}">${delta(r.net, "win%")}</span> <span class="muted small">${r.win}% → ${r.win_after}%</span></dd></div>
         <div><dt>${them}</dt><dd><span class="${tone(r.their_net)}">${delta(r.their_net, "win%")}</span> <span class="muted small">${r.their_win}% → ${r.their_win_after}%</span></dd></div>
         <div><dt title="On this season's hot and cold starts, what Yahoo's ranks show them">How it looks to them</dt><dd class="${tone(r.their_view)}">${r.their_view > 0.3 ? "Looks good" : r.their_view < -0.3 ? "Looks bad" : "Looks even"} <span class="muted small">${sign(r.their_view)}</span></dd></div>
         <div><dt>Projected finish</dt><dd>${ord(r.rank)} → ${ord(r.rank_after)}</dd></div>
         <div><dt title="Mostly how it looks to them, a little how it really helps them">Will they say yes</dt><dd>${acceptPill(r.accept)}</dd></div></dl></div>
       <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div></div>
     ${cats}
-    <div class="panel-b small muted" style="border-top:1px solid var(--line)">Win odds = chance to win a typical week against the league, with both rosters updated. ${moves}
+    <div class="panel-b small muted" style="border-top:1px solid var(--line)">${WIN().h} = ${WIN().def}, with both rosters updated. ${moves}
       ${r.their_view > 0.3 && r.their_net < 0 ? "They'd likely see this as a win on hype alone." : ""}
       ${hint.length ? `After this you'd win ${hint.map(lab).join(" and ")} under 35% of weeks: worth thinking about punting ${hint.length > 1 ? "them" : "it"}.` : ""}</div></div>
     ${improvePanel()}
     <div class="grid2">
-      <div class="panel"><div class="panel-h"><div><h2>Head-to-head</h2><p>Your chance to beat each team in a week, before → after. Biggest gains first.</p></div></div>
+      <div class="panel"><div class="panel-h"><div><h2>Head-to-head</h2><p>${oneWin() ? "Your chance to beat each team in a week" : "Share of categories you'd take from each team in a week"}, before → after. Biggest gains first.</p></div></div>
         <div class="vs">${h2h.map(([t, o]) => `<div class="vs-row"><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button>
           <span>${ba(o, v => Math.round(v) + "%")} <span class="small ${tone(o[1] - o[0])}">${delta(o[1] - o[0], "win%")}</span>${flip(o)}</span></div>`).join("")}</div></div>
-      <div class="panel" style="align-self:start"><div class="panel-h"><div><h2>Standings movers</h2><p>Teams whose projected finish or win odds move. Flagged: your partner or a top-4 team gaining more than you.</p></div></div>
-        <div class="tw"><table><thead><tr><th class="n">#</th><th>Team</th><th class="n">Win odds</th><th class="n"></th></tr></thead><tbody>
+      <div class="panel" style="align-self:start"><div class="panel-h"><div><h2>Standings movers</h2><p>Teams whose projected finish or ${WIN().of} move. Flagged: your partner or a top-4 team gaining more than you.</p></div></div>
+        <div class="tw"><table><thead><tr><th class="n">#</th><th>Team</th><th class="n">${WIN().h}</th><th class="n"></th></tr></thead><tbody>
         ${st.map(([t, s]) => `<tr${t === S.state.me ? ` style="background:var(--accent-soft)"` : ""}><td class="n">${ba(s.rank)}</td><td>${esc(t)}${t === S.state.me ? ` <span class="tag">you</span>` : ""}${s.rival ? ` <span class="tag out">gains more than you</span>` : ""}</td>
           <td class="n">${ba(s.win, v => v.toFixed(1) + "%")}</td><td class="n val ${tone(s.win[1] - s.win[0])}">${delta(s.win[1] - s.win[0], "win%")}</td></tr>`).join("")}</tbody></table></div></div>
     </div>
@@ -620,13 +628,13 @@ function findPanel() {
 }
 function dealTable(list, src) {
   const s = S[src].sort, F = S.find, goal = list.some(x => "score" in x), acc = list.some(x => x.accept);
-  const u = list[0].unit === "win%" ? "weekly win odds" : "value";
+  const u = list[0].unit === "win%" ? WIN().of : "value";
   const v = (x, k) => k === "accept" ? ACC_RANK[x.accept] : x[k];
   const rows = list.map((x, i) => [x, i]);
   if (s) rows.sort(([a], [b]) => (v(a, s.k) > v(b, s.k) ? 1 : v(a, s.k) < v(b, s.k) ? -1 : 0) * s.dir);
   const th = (k, h, tip, cls = "n") => `<th class="${cls}" title="${esc(tip)}"${s?.k === k ? ` aria-sort="${s.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="sort" data-sort="${k}" data-src="${src}">${esc(h)}${s?.k === k ? `<svg class="i${s.dir > 0 ? " up" : ""}"><use href="#i-caret"/></svg>` : ""}</button></th>`;
   const head = `<tr>${th("team", "Team", "Trade partner", "")}<th>You give</th><th>You get</th>
-    ${goal ? th("score", F.goal === "cats" ? F.cats.map(lab).join(" + ") : "vs " + F.vs, F.goal === "cats" ? "Change in your average odds in these categories" : "Change in your chance to beat them") : ""}
+    ${goal ? th("score", F.goal === "cats" ? F.cats.map(lab).join(" + ") : "vs " + F.vs, F.goal === "cats" ? "Change in your average odds in these categories" : oneWin() ? "Change in your chance to beat them" : "Change in your share of categories vs them") : ""}
     ${th("net", "You", "Change in your " + u)}${th("their_net", "Them", "Change in their " + u)}
     ${th("their_view", "Looks to them", "On this season's hot and cold starts, what Yahoo's ranks show them")}
     ${acc ? th("accept", "Will they say yes", "Mostly how it looks to them, a little how it really helps them", "") : ""}<th></th></tr>`;
@@ -742,11 +750,11 @@ async function loadTradeRoster() {
 function viewWaivers() {
   const w = S.state.waivers;
   const odds = w.free_agents[0]?.fit !== undefined;
-  const moves = w.moves.length ? `<div class="tw"><table><thead><tr><th>Add</th><th>Drop</th><th class="n">${odds ? "Win odds" : "Gain"}</th></tr></thead><tbody>
+  const moves = w.moves.length ? `<div class="tw"><table><thead><tr><th>Add</th><th>Drop</th><th class="n">${odds ? WIN().h : "Gain"}</th></tr></thead><tbody>
     ${w.moves.map(m => `<tr><td class="pname">${esc(m.add)}</td><td>${esc(m.drop)}</td><td class="n pos val">${delta(m.gain, m.unit)}</td></tr>`).join("")}</tbody></table></div>`
     : `<div class="empty"><b>No clear upgrades</b>Nobody on waivers beats your weakest healthy player by enough to bother.</div>`;
-  return `<div class="head"><div><h1>Waivers</h1><p class="sub">${odds ? "Free agents ranked by how much they'd raise your weekly win odds, swapped for your best drop." : "Free agents ranked on your build."} Injured players on your roster are never suggested as drops.</p></div></div>
-    <div class="grid2"><div class="panel"><div class="panel-h"><div><h2>Suggested moves</h2><p>${odds ? "Add/drop pairs that raise your weekly win odds by at least 0.5%." : "Add/drop pairs worth at least +0.3."}</p></div></div>${moves}</div>
+  return `<div class="head"><div><h1>Waivers</h1><p class="sub">${odds ? `Free agents ranked by how much they'd raise your ${WIN().of}, swapped for your best drop.` : "Free agents ranked on your build."} Injured players on your roster are never suggested as drops.</p></div></div>
+    <div class="grid2"><div class="panel"><div class="panel-h"><div><h2>Suggested moves</h2><p>${odds ? `Add/drop pairs that clearly raise your ${WIN().of}.` : "Add/drop pairs worth at least +0.3."}</p></div></div>${moves}</div>
       <div class="panel"><div class="panel-h"><div><h2>Drop candidates</h2><p>${odds ? "The healthy players you'd miss least." : "Your three weakest healthy players."}</p></div></div>${playerTable(w.drop_candidates)}</div></div>
     <div class="panel"><div class="panel-h"><div><h2>Best available</h2><p>Top ${w.free_agents.length} free agents.</p></div></div>${playerTable(w.free_agents, { extra: [...(odds ? [{ h: "If added", v: p => `<span class="${tone(p.fit)} val">${delta(p.fit, "win%")}</span>` }] : []),
       ...(w.free_agents.some(p => p.owned != null) ? [{ h: `<span title="Share of Yahoo leagues that roster him">Owned</span>`, v: p => p.owned != null ? `${p.owned}%` : "" }] : []),

@@ -2,7 +2,9 @@
 
 What works, what's untested, and what to build next, in priority order. Each task lists where the data comes from, roughly what to change, and when it counts as done.
 
-To pick this up in Claude Code: *"Read ROADMAP.md and do P1"*. Work through **Do first** (P1–P4) before **Next up**. Martin's league decisions are under "For you" → **Decisions**.
+To pick this up in Claude Code: *"Read ROADMAP.md and do P3"*. Work through **Do first** (P1–P4) before **Next up**. Martin's league decisions are under "For you" → **Decisions**.
+
+**Effort (always Opus):** each open task ends with the effort to start its session with: `xhigh` → `claude --effort xhigh`, `high` → `claude --effort high`, `medium` → `claude --effort medium`. Claude can't change its own effort mid-session, so set it when you start. Rule of thumb: engine maths, calibration and wrong-number bugs get xhigh; features, fixes and parser work get high; only really easy jobs (wording, docs, small UI tweaks, commits, snapshot imports) get medium. When starting a task, Claude says its tag in one line.
 
 ---
 
@@ -15,7 +17,7 @@ To pick this up in Claude Code: *"Read ROADMAP.md and do P1"*. Work through **Do
 - `python test_model.py` passes, and every view was clicked through in a real browser.
 
 **Built but never run for real:**
-- [ ] **Yahoo pull** (`python yahoo.py`). Written against yfpy 17's documented fields, but never run against a real league. Expect small fixes on the first run (see "First real Yahoo pull" below). **Blocked (Oct 26):** since summer 2026, Yahoo grants Fantasy API access only to applications it approves (sports.yahoo.com/developer/access), with no published timeline, and old apps reportedly get 403s. Workaround in use: Instinct's text snapshots. `data/league.json` holds the Oct 26 import (`python yahoo.py import mchc-fantasy-snapshot-2026-10-26.txt`: 167 of 168 players, 213 free agents, AJ Dybantsa left out with no NBA games yet).
+- [ ] **Yahoo pull** (`python yahoo.py`). Written against yfpy 17's documented fields, but never run against a real league. Expect small fixes on the first run (see "First real Yahoo pull" below). **Blocked (Oct 26):** since summer 2026, Yahoo grants Fantasy API access only to applications it approves (sports.yahoo.com/developer/access), with no published timeline, and old apps reportedly get 403s. Workaround in use: Instinct's text snapshots. `data/league.json` holds the Oct 27 import (`python yahoo.py import mchc-fantasy-snapshot-2026-10-27.txt`, pulled 12:55 PM MST before any Oct 27 game: 167 players, 214 free agents, AJ Dybantsa left out with no NBA games yet). That file adds Yahoo's games played and games left per team to Part 6, shown on This week next to ours (35 vs 32 ours, 32 vs 27 Yahoo's: Yahoo counts the lineups as set now). Its header ("No Oct 27 games had started ... earlier games were final") made the parser skip today's games; fixed Oct 27.
 - [x] **Oct 26 snapshot imported** (P1, Oct 27): `mchc-fantasy-snapshot-2026-10-26.txt`, re-pulled Oct 26, 11:37 PM MST, after every game was final. League settings, Pre/Cur/Ros ranks, this week's matchups, 30 transactions, Yahoo projections, adds used, waiver priority and the season schedule are all in `data/league.json`.
 - [ ] **AI GM chat** (`ai.py`). Needs an `ANTHROPIC_API_KEY`. The tool definitions build correctly, but no real conversation has run. `/gm` in Claude Code is the no-key alternative.
 
@@ -128,7 +130,15 @@ Found by reading the whole codebase against the real league on Oct 26. Unless ma
 - This week shows fatty zhou vs kobe colorado with the live totals.
 - `test_model.py` parses a trimmed copy of each new part (same inline-text pattern as the v3 test), including an unknown part that must be skipped.
 
-### P2. Scoring format: H2H Categories (confirmed by Martin, Oct 26)
+### P2. Scoring format: H2H Categories (confirmed by Martin, Oct 26) ✅ done Oct 27 (branch `trade-lab`)
+**Result:** `League._score(p)` (share of categories won, or `match_prob` when `settings.scoring` is `"one_win"`) replaces `match_prob` in `_contrib`, `outlook`, `_waivers_matchup`, `search` and This week's streams. `scoring` defaults to `"categories"` (Yahoo's H2H default); the text import reads it from `Scoring type:` (P1), the Yahoo pull from `scoring_type` (`headone` = one win). One-win cutoffs stay at the top of `model.py` (`TIERS`, `VERDICT`, `MOVE`, `GUARD`, `accept()`), scaled by `CAT_SCALE = 0.4` through `League.s`.
+- Measured Oct 27 on the real league: the same trades score 0.42× as much (IQR 0.40–0.45, 54 deals), waiver fits 0.44×. Standings run 40–61% (fatty zhou 58.4%, 3rd), against 26–77% as One Win. Snake-drafted demo: 47–52% (42–55% as One Win).
+- Best fair 2-for-1s are now about +1.1 for both sides (Kessler + George → Myles Turner, Lillard + Suggs → Mikal Bridges). Vučević for Achiuwa is +1.2 on its own (P3).
+- UI: a `WIN()` helper labels it "Win %" (share of categories won, which is how the standings count) or "Win odds" in One Win. This week leads with the expected score in a categories league. README, `ai.py` SYSTEM, the `/gm` skill and CLAUDE.md say the same. `profile()` and `state()` return `scoring`.
+- Tests cover both formats: categories win % = mean category odds, one-win = `match_prob`, and one-win trade deltas are bigger.
+- Not done: inferring the format from records (the settings line covers it), and scaling the stream floor (0.1 is the display resolution, not a judgment). The backtest needed no change, since odds maths didn't move.
+- N1 re-run: see N1 below.
+
 **Why:** after week 1, every team-heading record adds up to 9 (4-5-0, 9-0-0, 1-7-1), and the opponents pair up: kobe 9-0 vs Big Tuo 0-9, Mumbai 7-1-1 vs Mathmagicians 1-7-1. That's Yahoo's "Head-to-Head – Categories", where each category won counts as a win in the standings.
 
 The engine optimizes `match_prob` (the chance to win 5 of 9), which is the "One Win" goal. For Categories, the regular-season goal is the expected share of categories won (`p.mean(-1)`). `match_prob` only decides playoff matchups.
@@ -154,7 +164,7 @@ The engine optimizes `match_prob` (the chance to win 5 of 9), which is the "One 
 
 **Done when:** standings, trades, search, waivers and This week run on the category goal in a categories league, tests cover both formats, demo standings stay in a sane range, and N1's punt analysis is re-run.
 
-### P3. Score trades against the free pickup (requested by Martin, Oct 26)
+### P3. Score trades against the free pickup (requested by Martin, Oct 26) `xhigh`
 **Why:** T1's known limit ("a trade still gets credit for a waiver pickup you could make anyway") drives the real league's results.
 - All six of fatty zhou's top fair deals were 2-for-1s whose open spot went to Vučević.
 - Dropping Achiuwa for Vučević on its own was worth +3.1, more than any fair trade.
@@ -167,6 +177,8 @@ The engine optimizes `match_prob` (the chance to win 5 of 9), which is the "One 
 | Lillard + George → OG Anunoby | +2.5 | +1.6 |
 | Suggs + Podziemski → Mikal Bridges | +2.7 | +1.7 |
 
+**After P2 (Oct 27):** the numbers above are One Win. Under categories scoring they're about 0.4× (Vučević for Achiuwa is +1.2, the best fair trades about +1.1), so re-measure them first.
+
 **Change:**
 - **Your best free move**: the best add/drop, or a plain add into an open spot, by win-% gain. Use `_waivers_matchup`'s maths; repeat while a move still clears the waiver threshold.
 - **Simplest version** (what the numbers above used): apply that move to your roster and the free-agent pool first, then run `trade()` / `search()` unchanged. The open spot after a 2-for-1 then gets the next-best free agent.
@@ -175,7 +187,7 @@ The engine optimizes `match_prob` (the chance to win 5 of 9), which is the "One 
 
 **Done when:** a test trade whose only gain is the open spot scores about 0, the real-league deals above show their after-waiver numbers, and the Trades view names the pickup it assumed.
 
-### P4. Small fixes
+### P4. Small fixes `high`
 - **Injured free agents in the waiver baseline.** `_waiver_level` ranks free agents on per-game value only, so Kevin Porter Jr. (NA, plays 0% of games) counts as one of the top 5. Replacement is −0.65 with him and −0.83 with healthy players only, and it feeds `replacement()` and the `FILL` line. Skip `OUT` statuses. `effective()` can't be used here: it needs `zfill`, which is built from `_waiver_level`.
 - **Waiver dates and New Year.** Claim dates assume the current year (`this_week` → `games()`), so a "Jan 2" claim read on Dec 30 counts as already cleared. Roll the year forward when the date is more than about two months in the past.
 - **Backtest without the fill-in.** `backtest.py` predicts weekly totals without the `FILL` term that `League.week` adds. Add it, or note it next to the knobs.
@@ -293,8 +305,8 @@ Built as planned, plus:
 
 - ✅ done Oct 26: `find_trades` replaces `trade_ideas` (points leagues fall back to `ideas()`). `evaluate_trade` returns the T2 breakdown with `roster_after` cut to name/value/move (~5k chars, down from ~13k). Tools tested offline; a live chat still needs an API key (see "Built but never run for real").
 - Originally: `ai.py`: replace `trade_ideas` with `find_trades(give, get, lock, tier, goal, goal_cats, goal_team, size)`; `evaluate_trade` returns the T2 breakdown. Document `model.py search` in `.claude/skills/gm/SKILL.md`.
-- Later: playoff mode, which weights likely playoff opponents' weeks (needs task 1's schedule).
-- Later: manager tendencies from Yahoo trade history (needs task 3's transactions). This is a weak signal, since rejected offers aren't visible.
+- Later: playoff mode, which weights likely playoff opponents' weeks (needs task 1's schedule). `xhigh`
+- Later: manager tendencies from Yahoo trade history (needs task 3's transactions). This is a weak signal, since rejected offers aren't visible. `high`
 - Not doing: 3-team trades. Yahoo doesn't support them.
 
 ---
@@ -303,7 +315,7 @@ Built as planned, plus:
 
 One task per session: *"Read ROADMAP.md and do Next up N0"*. Run `python test_model.py` after model changes, and `python backtest.py` after anything that changes projections or odds. Suggested order: Do first (P1–P4), then N0, N1, N2, N3, Q1–Q3, N5, the rest. After P2, every "win %" below means share of categories won.
 
-### N0. Market value: trades priced like real managers price them (requested Oct 26, top priority)
+### N0. Market value: trades priced like real managers price them (requested Oct 26, top priority) `xhigh`
 **Why:** the finder only asks "do both teams' win odds go up?". Category fit ignores what players cost on the trade market, so it suggests deals no manager makes:
 - Precious Achiuwa + Lillard + Kessler for Trae Young came out "Fair" (+3.5% you, +3.7% them). The model ranks Trae ~106th (15 GP last season, bad TO/FG%), but the market sees a star.
 - With `goal="cats"`, Wembanyama + Sengun for Curry can look "worth it" for 3PM/PTS, while giving away far more value than you get.
@@ -336,14 +348,15 @@ One task per session: *"Read ROADMAP.md and do Next up N0"*. Run `python test_mo
 - Tests cover the curve, the drop cost and the tier rules.
 - Fair-tier results on the real league all sit within ±15% market.
 
-### N1. Strategy panel (punt planner)
+### N1. Strategy panel (punt planner) `xhigh`
 **Why:** toggling a punt chip only concedes categories on today's roster, so it always lowers your odds. A punt pays off through the moves it unlocks. The Oct 26 analysis on fatty zhou showed no punt beats staying balanced (best fair trade +3.7% unpunted, +3.6% punting FG%, +0.5% punting FT%+TO), but nothing in the app says that.
 **Change:** `League.strategy()` loops over builds (no punt, each single category, FT%+TO, FG%+TO, FG%+FT%, AST+TO, 3PM+FT%, FG%+3PM). For each build: the best `search(tier="fair", punt=build)` deals and best `waivers(build)` moves, re-scored with `trade()` / `outlook()` on true odds (no concession). Return builds ranked by true win % after the best move. Add a panel on My team with build, best move, true odds after, and a one-line verdict ("Stay balanced" / "Punt X: it unlocks Y"). Also list "cheapest categories to move": the ones near 50%, where a trade or stream changes the odds most.
 **Before building:** redo the Oct 26 analysis after P2 and P3. Its numbers are one-win odds and include free-pickup credit, and under Categories each conceded category is a straight loss in the standings, which makes punting cost more.
+**Re-run after P2 (Oct 27, categories scoring, still with free-pickup credit):** no punt beats staying balanced. The best fair trade found with each build, re-scored on true odds: none +1.2 (Lillard + Suggs → Bridges), PTS +1.2, FG%/AST/TO +1.1, single 3PM/BLK +1.0, FT%+TO +0.4, FT% +0.2, 3PM+FT% −0.1. Conceding a category today costs 3.5 (TO) to 7.9 (AST) points of win %, and pairs 8–13.5, so a punt has to unlock far more than any fair trade offers. Redo after P3.
 **Speed:** 12 builds × an open search. Size 2 takes about 0.2s on the real league and size 3 about 2s on the demo, so use size 2 or run it on demand behind a "thinking" state.
 **Done when:** the panel matches a script run of the same numbers, and the test covers a league where one punt clearly wins.
 
-### N2. AI GM chat through Claude Code (no API key)
+### N2. AI GM chat through Claude Code (no API key) `high`
 **Why:** `ai.py` needs a paid API key (billed separately from a Claude subscription). `claude -p` runs Claude Code headless with your own login.
 **Change:** `/api/chat` shells out to `claude -p "<message>" --output-format json --resume <session_id>`, with `--allowedTools "Bash(.venv/bin/python model.py:*)"`, `--append-system-prompt` from `.claude/skills/gm/SKILL.md`, and the current punt in the prompt. Save the session id per chat. Keep `ai.py` as the fallback when `ANTHROPIC_API_KEY` is set. Show a "thinking" state, since answers take 10–30s.
 **Watch out:**
@@ -351,7 +364,7 @@ One task per session: *"Read ROADMAP.md and do Next up N0"*. Run `python test_mo
 - `claude -p` also loads Martin's user-level settings, hooks (e.g. the ponytail SessionStart hook) and global CLAUDE.md. Check `claude --help` for a way to limit which settings it loads, so none of that leaks into GM answers.
 **Done when:** a chat question in the browser gets an answer quoting `model.py` numbers, a follow-up question remembers context, and New conversation starts fresh.
 
-### N3. Snapshot refresh loop
+### N3. Snapshot refresh loop `high`
 **Why:** the league comes from Instinct text snapshots; re-importing by hand is the main chore.
 **Mostly covered by P1** (Oct 26): Instinct's dated file has the matchup totals, ranks, Yahoo projections, transactions and records, and P1 parses them and makes Refresh pick the newest file.
 **Left:**
@@ -362,7 +375,7 @@ One task per session: *"Read ROADMAP.md and do Next up N0"*. Run `python test_mo
 Keep checking that apostrophe names (De'Aaron Fox) survive in each new file.
 **Done when:** dropping a new snapshot in the folder and pressing Refresh updates everything, including the live score.
 
-### N4. Expert projections (Build next #4)
+### N4. Expert projections (Build next #4) `xhigh`
 **Why:** the baseline is home-made (two seasons + regression). Expert ROS projections know about role changes and rookies.
 **Source arrived Oct 26 (snapshot Part 8, parsed by P1):** Yahoo's ROS projections per game for all 168 rostered players and the top 100 free agents.
 - No MIN column. Keep MIN from our own line, since the z-score pool is picked by minutes.
@@ -372,20 +385,20 @@ Keep checking that apostrophe names (De'Aaron Fox) survive in each new file.
 **Other source found Oct 26:** ESPN's public fantasy API has free rest-of-season projections. `lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/2027/segments/0/leaguedefaults/3?view=kona_player_info` returns 50 players by default; projections are the `stats` entries with `statSourceId 1`, `seasonId 2027`, `statSplitTypeId 0`, in `averageStats` keyed by ESPN stat ids (0 PTS, 1 BLK, 2 STL, 3 AST, 6 REB, 11 TO, 13 FGM, 14 FGA; verify the rest, e.g. FTM/FTA/3PM/MIN). Getting every player needs ESPN's `X-Fantasy-Filter` request header (a paging/filter parameter). It's unofficial, like the ESPN injury feed: cache it daily and degrade quietly. Rotowire projections are behind a paid subscription. Instinct's Part 8 (Yahoo projections) is the alternative.
 **Change:** as in Build next #4, fed by ESPN (above), Instinct, or a CSV. Blend with `baseline()` rather than replace it. Backtesting needs archived projections, so if none exist, start logging this season's projections weekly to compare later.
 
-### N5. Daily lineup cap (This week done Oct 27)
+### N5. Daily lineup cap (This week done Oct 27) `xhigh`
 **Done for This week (Oct 27):** `starts()` counts only the best `lineup` (10, `settings.starters`) players with a game each day, in `week_vec()`, the games-left count and streaming adds. Martin spotted it: the app showed 35 games left for both teams, Yahoo 32 (fatty zhou) and 27 (kobe). It now shows 35 and 32: kobe had 13 players with games on Wednesday. The rest of the gap is lineups set by hand (Yahoo counts each day's set lineup, the app assumes the best players start). Positions are still ignored. Left: the season-average week (`League.week`, trades, standings) and `backtest.py`.
 **Why:** every rostered game counts today, so depth (and streaming the 13th man) is overvalued vs stars, and 3-for-1 deals look better for the side taking 3. Positions now come from the snapshot.
 **Change:** simulate the 10 active slots per day from the NBA schedule (best players start), in `week_vec()` and the season-average week. Add the cap to `backtest.py` and re-fit if the odds shift.
 **Done when:** a 3-for-1 consolidation scores higher than before for the side getting the star, and the backtest stays calibrated.
 
-### N6. Smaller model items
+### N6. Smaller model items `high`
 - Matchup correlation: a shared games-played factor across counting stats (backtest shows ±3 points at the matchup level).
 - Trade log: record offers sent and accepted/declined. That's the only real data for tuning `HYPE`, `TIERS` and `accept()`.
 - (Applying for Yahoo API access moved to "For you".)
 
 ### Quality of life and genuinely useful views (Oct 26 list, rough priority)
 All inline (no modals, per DESIGN.md); every new stat table honours punt dimming.
-- **Q1. Player card.** Click any player name anywhere to open an inline panel:
+- **Q1. Player card.** `high` Click any player name anywhere to open an inline panel:
   - ROS line, this season, and last 7/14 days
   - games this week and the next 3 weeks
   - injury note and return date
@@ -393,20 +406,20 @@ All inline (no modals, per DESIGN.md); every new stat table honours punt dimming
   - buttons: Find offers / Find buyers / Compare
 
   It replaces hunting through tables.
-- **Q2. Recent form.** One `LeagueGameLog` call for the current season (cached daily) gives last-7/14/30-day averages. Show trend arrows in player tables, and rebuild Hot & cold on real windows instead of the hype blend.
-- **Q3. Compare players.** Pick 2–4 players to see per-category value, ROS line, recent form, schedule, availability and market value side by side. For "who do I keep / start / trade for".
-- **Q4. Schedule planner.** Your roster's games per day for this week and the next 3. Overflow days (more than 10 players with games, once N5 exists) and open slots for streaming are highlighted. Also the NBA teams with the most games in the coming weeks, for buying ahead of a heavy schedule (and fantasy playoff weeks).
-- **Q5. Playoff odds.** Actual W-L from the snapshot plus the projected weekly odds for the remaining weeks, simulated to final standings, gives each team's playoff probability. It turns "projected 3rd" into "78% to make the playoffs". The W-L is a category record (P2), so simulate category wins per week. Needs the season's matchup schedule and the playoff format (asked of Instinct, Oct 26).
-- **Q6. Global player search** in the top bar (today it's only on Trades). Opens the player card.
-- **Q7. Custom add/drop evaluator** on Waivers: pick any add and any drop and see the win-% change this week and for the season, like the trade builder.
-- **Q8. Copy offer.** One click copies "I give X, Y for Z" plus a short pitch (via the AI GM / humanizer) to paste into Yahoo. Also logs it to the trade log (N6).
-- **Q9. Freshness.** Show when stats, schedule, injuries and the snapshot were last updated. Warn when the snapshot is older than a day, or the week rolled over since the last import.
-- **Q10. Daily brief.** A scheduled routine (`/schedule`) that writes a morning summary:
+- **Q2. Recent form.** `high` One `LeagueGameLog` call for the current season (cached daily) gives last-7/14/30-day averages. Show trend arrows in player tables, and rebuild Hot & cold on real windows instead of the hype blend.
+- **Q3. Compare players.** `high` Pick 2–4 players to see per-category value, ROS line, recent form, schedule, availability and market value side by side. For "who do I keep / start / trade for".
+- **Q4. Schedule planner.** `high` Your roster's games per day for this week and the next 3. Overflow days (more than 10 players with games, once N5 exists) and open slots for streaming are highlighted. Also the NBA teams with the most games in the coming weeks, for buying ahead of a heavy schedule (and fantasy playoff weeks).
+- **Q5. Playoff odds.** `xhigh` Actual W-L from the snapshot plus the projected weekly odds for the remaining weeks, simulated to final standings, gives each team's playoff probability. It turns "projected 3rd" into "78% to make the playoffs". The W-L is a category record (P2), so simulate category wins per week. Needs the season's matchup schedule and the playoff format (asked of Instinct, Oct 26).
+- **Q6. Global player search** in the top bar (today it's only on Trades). Opens the player card. `medium`
+- **Q7. Custom add/drop evaluator** on Waivers: pick any add and any drop and see the win-% change this week and for the season, like the trade builder. `high`
+- **Q8. Copy offer.** `medium` One click copies "I give X, Y for Z" plus a short pitch (via the AI GM / humanizer) to paste into Yahoo. Also logs it to the trade log (N6).
+- **Q9. Freshness.** `medium` Show when stats, schedule, injuries and the snapshot were last updated. Warn when the snapshot is older than a day, or the week rolled over since the last import.
+- **Q10. Daily brief.** `medium` A scheduled routine (`/schedule`) that writes a morning summary:
   - injuries on your team
   - waiver claims clearing today
   - This week's chase/behind calls
   - the best stream for today
-- **Q11. Weekly add limit.** The league allows **4 adds per week** (Martin, Oct 26). Streaming adds count how many you have left this week (from `transactions`, or the per-team count Instinct was asked for) and save the last one for the best day.
+- **Q11. Weekly add limit.** `high` The league allows **4 adds per week** (Martin, Oct 26). Streaming adds count how many you have left this week (from `transactions`, or the per-team count Instinct was asked for) and save the last one for the best day.
 - **Q12. Yahoo's weekly projection next to ours.** ❌ Not available: Yahoo shows no projected totals for this league (Oct 26 file). If that changes: when the snapshot has Yahoo's projected end-of-week totals per team, show them beside This week's projection and note big gaps. It's a cheap check on `week_vec`, and a sign of what the other manager sees.
 
 ## Build next (highest impact for 9-cat first)
@@ -451,7 +464,7 @@ Original plan:
 
 **Done when:** the view shows the real opponent and live category totals, and the streaming list changes when a free agent has more games. (The Oct 26 snapshot has both; P1.)
 
-### 3. Injury notes, ownership %, transactions, real standings (partly done Oct 26)
+### 3. Injury notes, ownership %, transactions, real standings (partly done Oct 26) `medium`
 
 Done without Yahoo: injury notes on hover (ESPN), plus "Owned" % and "claim by <date>" in Waivers (from the text snapshot). Not done: recently dropped list, real W-L next to projected. P1 parses both (`transactions`, `records`); the UI part is still to do.
 
@@ -469,7 +482,7 @@ Done without Yahoo: injury notes on hover (ESPN), plus "Owned" % and "claim by <
 
 **Done when:** all four show up on a real league pull.
 
-### 4. Bring back projections import
+### 4. Bring back projections import `xhigh`
 
 **Why:** expert ROS projections (Hashtag Basketball, FantasyPros) beat a last-season blend, especially for rookies and role changes. (The first draft had this as `trade.py --proj`; it was dropped in the engine rewrite.)
 

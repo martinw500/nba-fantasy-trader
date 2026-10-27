@@ -83,13 +83,13 @@ Then see [ROADMAP.md](ROADMAP.md) for what's next.
 ## Workflows
 
 ### "Who do I pick up / drop?"
-**Waivers** tab. Every free agent is tried against every healthy player on your roster. **Suggested moves** shows the add/drop pairs that raise your weekly win odds the most. Injured players are never suggested as drops. The top 3 moves also show on **My team** under "Worth doing now".
+**Waivers** tab. Every free agent is tried against every healthy player on your roster. **Suggested moves** shows the add/drop pairs that raise your win % the most. Injured players are never suggested as drops. The top 3 moves also show on **My team** under "Worth doing now".
 
 ### "Where do I stand?"
-**My team** shows your projected finish and your chance of winning a typical week. It also shows your odds in each category and your head-to-head odds against every team. **League** shows projected standings for everyone.
+**My team** shows your projected finish and your win %: the share of categories you'd win in a typical week (see "The 9-cat matchup model" for One Win leagues). It also shows your odds in each category and your head-to-head odds against every team. **League** shows projected standings for everyone.
 
 ### "How's my matchup this week? Who do I stream?"
-**This week** tab. Pick your opponent once (it's saved until the week ends on Sunday). You get your chance to win the week, each category's projected total and odds with a call (*Safe*, *Chase*, *Lost*), and **Streaming adds**: free agents ranked by how much they raise this week's odds, with games left, who to drop, and what keeping him does to your season-long odds. Projections count each player's games left this week, but only the 10 best players with a game each day (Yahoo scores starters only, so a bench player's game counts only on a light day). Games left shows the same count. Yahoo's own number counts the lineups you've actually set, so it can be lower. Players in IL slots sit, and a waiver claim counts only from the day it clears. A snapshot with a matchups section (or a Yahoo pull) fills in the opponent and the score so far, and when it was pulled after that day's games started, the rest of the week counts from the next day. Without one, totals start at zero (right on Mondays). CLI: `python model.py week --vs "Team"`.
+**This week** tab. Pick your opponent once (it's saved until the week ends on Sunday). You get the expected score (categories won–lost), your chance to win more categories than you lose, each category's projected total and odds with a call (*Safe*, *Chase*, *Lost*), and **Streaming adds**: free agents ranked by how much they raise this week's win %, with games left, who to drop, and what keeping him does to your season-long win %. Projections count each player's games left this week, but only the 10 best players with a game each day (Yahoo scores starters only, so a bench player's game counts only on a light day). Games left shows the same count. When the snapshot has them, Yahoo's own games left (and games played so far) show next to it. Yahoo counts the lineups as they're set now, so its number is usually lower. Players in IL slots sit, and a waiver claim counts only from the day it clears. A snapshot with a matchups section (or a Yahoo pull) fills in the opponent and the score so far, and when it was pulled after that day's games started, the rest of the week counts from the next day. Without one, totals start at zero (right on Mondays). CLI: `python model.py week --vs "Team"`.
 
 ### "Should I punt something?"
 **My team** shows your odds in each category. Categories you win under 35% of weeks get a **Punt …** suggestion. You can also toggle any category with the **Punt** chips in the top bar. A punted column greys out in every table, and trades, waivers and ideas re-optimize with that category treated as a loss.
@@ -98,8 +98,8 @@ Classic pairings: big men punt FT%, high-usage guards punt TO, wings punt AST.
 
 ### "Is this trade good?"
 **Trades** tab: check players under *You give*, pick their team, check players under *You get*, then **Evaluate**. You see:
-- **Your win odds**: before → after, with both rosters updated. If you take back more players, you drop your weakest; if you send more, you pick up the best free agent. So 2 scrubs for a star scores correctly.
-- **Them**: their win odds before → after. A trade can help both teams when the categories fit.
+- **Your win %**: before → after, with both rosters updated. If you take back more players, you drop your weakest; if you send more, you pick up the best free agent. So 2 scrubs for a star scores correctly.
+- **Them**: their win % before → after. A trade can help both teams when the categories fit.
 - **How it looks to them**: the deal on this season's hot and cold starts, which is what Yahoo's rankings show them. "Looks good" means they'll probably accept.
 - **Projected finish**: your league rank before → after.
 - Your odds change in each category.
@@ -117,7 +117,7 @@ The finder panel sits under the builder. The players you check aim the search, a
 
 The padlock on a player means the finder never uses him. Deals go up to 3-for-3. Toolbar:
 - **Difficulty**, i.e. how likely they say yes. **Easy**: both teams gain and it looks good to them. **Fair**: both teams gain. **Finesse**: they *look* like the winner on hot starts but lose a little in reality, which is how sell-high works. **Hard**: you gain a lot, so it needs a good pitch.
-- **Optimize for**: overall win %, your odds in chosen **categories**, or your head-to-head odds against **one team** (e.g. a playoff rival). The last two skip deals that cost you more than 1% win odds.
+- **Optimize for**: overall win %, your odds in chosen **categories**, or your head-to-head odds against **one team** (e.g. a playoff rival). The last two skip deals that cost you more than 0.4% win % (1% in One Win leagues).
 - **Max size**, **Shape** (consolidate: you send more players; depth: you get more), **Healthy only**, and a team filter.
 
 Columns sort on click. **Load** evaluates a deal in the builder, and **Save** keeps it.
@@ -154,10 +154,12 @@ Points leagues keep the simpler finder: Fair or Finesse, 1-for-1 up to 2-for-2, 
 **The 9-cat matchup model (what the advice uses).**
 1. Each team's expected weekly totals = Σ players' per-game lines × 3.4 games × their Plays %.
 2. For every pair of teams and every category: the chance team A beats team B that week. This uses the gap between their totals and realistic weekly randomness (box-score noise, schedule swings, shooting variance on actual attempts).
-3. Chance to win the matchup = chance of winning more categories than you lose (5 of 9).
-4. **Win odds** = average of that against every other team. **Projected standings** rank every team by their win odds.
+3. What the week is worth in the standings. **Head-to-Head Categories** (the default, and Yahoo's): every category counts as a win or loss, so it's the expected share of categories won. **One Win**: only the matchup counts, so it's the chance of winning more categories than you lose (5 of 9). The format comes from the snapshot's `Scoring type:` line or Yahoo's `scoring_type`.
+4. **Win %** = average of that against every other team: your projected standings win %. **Projected standings** rank every team by it.
 
-A trade, add or drop is judged by how much it changes your win odds, with both rosters updated: extra players get dropped, open spots get the best free agent. This is what makes it account for:
+Category win % moves about 2.5× less than One Win odds per move (a +2.7 trade there is about +1.1 here), so the cutoffs (trade tiers, verdicts, waiver moves) scale with the format (`CAT_SCALE` in `model.py`). Projected standings run tighter too: about 40–61% on the real league, against 26–77% scored as One Win.
+
+A trade, add or drop is judged by how much it changes your win %, with both rosters updated: extra players get dropped, open spots get the best free agent. This is what makes it account for:
 - **Your strengths and weaknesses.** Extra rebounds barely help if you already win REB 90% of weeks, and they help a lot if you're at 50%.
 - **What everyone else has.** Odds are computed against every real roster in your league.
 - **Punting.** A category you can't win stops mattering on its own. The Punt chips make it explicit: punted categories count as automatic losses, so the advice optimizes for the other categories.
@@ -167,7 +169,7 @@ A trade, add or drop is judged by how much it changes your win odds, with both r
 **Points leagues** use the league's scoring weights and per-game values (no matchup model).
 
 **Honest limits:**
-- The weekly-randomness settings are fitted to real 2025-26 box scores (`python backtest.py`: 20 simulated leagues, each week predicted from what was known that Monday). Category odds come true at the rate they say, within a few points; whole-matchup odds within about 3 points. Still, read 55% vs 58% as "about the same".
+- The weekly-randomness settings are fitted to real 2025-26 box scores (`python backtest.py`: 20 simulated leagues, each week predicted from what was known that Monday). Category odds come true at the rate they say, within a few points (what a categories league runs on); whole-matchup odds within about 3 points. Still, read 55% vs 58% as "about the same".
 - How "looks to them" works is a judgment call. There's no data on which offers real managers accept.
 - Not modelled yet:
   - positions and roster slots (daily lineup limits)

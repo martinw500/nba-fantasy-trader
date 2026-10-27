@@ -69,6 +69,14 @@ def test_all():
     # the better roster ("Them" holds the odd-numbered, slightly better players) is favoured and ranked first
     st = lg.standings()
     assert st["Them"]["rank"] == 1 and st["Them"]["win"] > 0.5 > st["Me"]["win"]
+    # scoring: a categories league (the default) scores a week by the share of categories won, a one-win league by
+    # the chance to win the matchup, which moves more per trade (its cutoffs are scaled by CAT_SCALE)
+    o = lg.outlook("Me")
+    assert lg.scoring == "categories" and abs(o["win"] - np.mean(list(o["odds"].values()))) < 1e-9
+    ow = model.League({**lg.snap, "settings": {**lg.snap["settings"], "scoring": "one_win"}}, base, cur)
+    assert ow.s == 1 and lg.s == model.CAT_SCALE
+    assert ow.standings()["Me"]["win"] == round(float(p_ab), 3) != st["Me"]["win"]
+    assert ow.trade(["Player 150"], ["Player 199"])["net"] > lg.trade(["Player 150"], ["Player 199"])["net"] > 0
 
     # trade verdicts come from the matchup model in 9-cat and update both rosters
     r = lg.trade(["Player 150"], ["Player 199"])
@@ -91,15 +99,15 @@ def test_all():
 
     # finder honours its own rules
     for idea in lg.ideas("fair"):
-        assert idea["net"] > 1 and idea["their_net"] > 0
+        assert idea["net"] > 1 * lg.s and idea["their_net"] > 0
     for idea in lg.ideas("finesse"):
-        assert idea["net"] > 1.5 and idea["their_view"] > 0.3
+        assert idea["net"] > 1.5 * lg.s and idea["their_view"] > 0.3
 
     # search: tier thresholds hold. This 2-team league is zero-sum with z-scores spread +-46, so the real tiers find
     # little; the mechanics (pins always in, locks never in, 3-player sides, filters) run on a loose test-only tier
     for tier, (t0, t1, t2) in model.TIERS.items():
         for x in lg.search(tier=tier, limit=200):
-            assert x["net"] >= t0 and x["their_net"] >= t1 and x["their_view"] >= t2, (tier, x)
+            assert x["net"] >= t0 * lg.s and x["their_net"] >= t1 * lg.s and x["their_view"] >= t2, (tier, x)
     model.TIERS["hard"], hard = (0.5, -20, -999), model.TIERS["hard"]
     hits = lg.search(get=["Player 199"], lock=["Player 198"], tier="hard", limit=200)
     assert hits and all("Player 199" in x["get"] and "Player 198" not in x["give"] for x in hits)
@@ -165,12 +173,14 @@ def test_all():
     assert all(s["drop"] != "Twin C" for s in sl.this_week("Them", limit=50)["streams"])  # injured: never dropped
     assert wk["cats"]["FG%"]["you"][0] is None and 0 < wk["cats"]["PTS"]["you"][1] and not wk["live"]
     up = model.League({**snap, "matchup": {"opponent": "Them", "week_end": "2026-11-01",
-                                           "totals": {"Me": {"PTS": 900, "FGM": 40, "FGA": 80}, "Them": {"PTS": 100}}}},
+                                           "totals": {"Me": {"PTS": 900, "FGM": 40, "FGA": 80}, "Them": {"PTS": 100}},
+                                           "games": {"Me": {"played": 7, "left": 32}, "Them": {"played": 10, "left": 27}}}},
                       pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
                       sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week})
     w2 = up.this_week()
     assert w2["opponent"] == "Them" and w2["live"] and w2["cats"]["PTS"]["call"] == "safe" and w2["win"] > wk["win"]
     assert w2["cats"]["PTS"]["you"][0] == 900 and w2["cats"]["FG%"]["you"][0] == 50.0
+    assert w2["yahoo_games"]["them"] == {"played": 10, "left": 27} and "yahoo_games" not in wk
     assert up.this_week(punt=["PTS"])["cats"]["PTS"] == {**w2["cats"]["PTS"], "odds": 0, "call": "punt"}
     stale = model.League({**snap, "matchup": {"opponent": "Them", "week_end": "2026-10-25"}}, pd.concat([base, twins]),
                          pd.concat([cur, twins]), today=model.date(2026, 10, 26))
@@ -228,6 +238,7 @@ PART 6 - THIS WEEK'S MATCHUPS (week 2, Oct 26 - Nov 1)
 Category totals so far this week (as of ~11:37 PM MST, all of Oct 26's games final).
 fatty zhou vs Big Tuo Plumbing Inc.
   fatty zhou             FGM/FGA 36/91   FTM/FTA 15/19   3PTM 13   PTS 100   REB 37   AST 37   ST 5   BLK 5   TO 16
+                         Games played 7   Games remaining 32   (week total 39)
   Big Tuo Plumbing Inc.  FGM/FGA 68/147   FTM/FTA 47/61   3PTM 14   PTS 197   REB 81   AST 37   ST 11   BLK 18   TO 22
 PART 7 - RECENT TRANSACTIONS (last 30, newest first)
   Oct 26 3:08am   fatty zhou            waiver claim  Brandin Podziemski (dropped Jeremiah Fears)
@@ -279,7 +290,8 @@ Sharks has an open SF slot.""")
         "fatty zhou": {"FGM": 36, "FGA": 91, "FTM": 15, "FTA": 19, "FG3M": 13, "PTS": 100, "REB": 37, "AST": 37,
                        "STL": 5, "BLK": 5, "TOV": 16},
         "Big Tuo Plumbing Inc.": {"FGM": 68, "FGA": 147, "FTM": 47, "FTA": 61, "FG3M": 14, "PTS": 197, "REB": 81,
-                                  "AST": 37, "STL": 11, "BLK": 18, "TOV": 22}}}]
+                                  "AST": 37, "STL": 11, "BLK": 18, "TOV": 22}},
+        "games": {"fatty zhou": {"played": 7, "left": 32}}}]
     assert got["transactions"] == [
         {"when": "Oct 26 3:08am", "team": "fatty zhou", "type": "waiver claim", "player": "Brandin Podziemski",
          "dropped": "Jeremiah Fears"},
@@ -294,9 +306,11 @@ Sharks has an open SF slot.""")
     # pulled mid-games: the rest of the week starts tomorrow; pulled before tip-off: today still counts
     assert yahoo.parse_text("Pulled Monday, October 26, 2026, ~8:30 PM MST (UTC-7)")["from"] == "2026-10-27"
     assert yahoo.parse_text("Pulled Saturday, October 31, 2026, 10:00 AM MST (UTC-7)")["from"] == "2026-10-31"
+    assert yahoo.parse_text("Pulled Tuesday, October 27, 2026, 12:55 PM MST (UTC-7) from Yahoo Fantasy. No Oct 27 games "
+                            "had started at pull time; all earlier games were final.")["from"] == "2026-10-27"
 
     w = lg.waivers()
-    assert all(m["gain"] > 0.5 for m in w["moves"])
+    assert all(m["gain"] >= model.MOVE * lg.s for m in w["moves"])
     assert set(lg.profile()["odds"]) == set(model.CATS)
 
 

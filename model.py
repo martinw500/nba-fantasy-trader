@@ -4,12 +4,13 @@ Values are per game, rest of season (ROS): last season (or your projections) shr
 as games pile up. 9-cat uses z-scores vs the rostered pool; points uses the league's scoring weights.
 
 9-cat decisions (trades, waivers, standings) use a matchup model on top of that: each team's expected weekly
-totals -> odds of winning each category vs every other team -> odds of winning the matchup (5 of 9).
-A move is judged by how much it changes your weekly win %, so a category you already dominate or can't win
+totals -> odds of winning each category vs every other team -> what the week is worth in the standings: the share
+of categories won (Head-to-Head Categories, each one counts) or the odds of winning the matchup, 5 of 9 (One Win).
+A move is judged by how much it changes that win %, so a category you already dominate or can't win
 stops mattering on its own (punting emerges), and the other teams' rosters are part of every answer.
 
 CLI (prints JSON, used by Claude Code and for quick checks):
-  python model.py team                      # win odds, projected standings, category odds, punt suggestions
+  python model.py team                      # win %, projected standings, category odds, punt suggestions
   python model.py trade --give "A" --get "B, C"
   python model.py ideas --mode finesse      # fair | finesse
   python model.py search --get "Wembanyama" --tier easy --lock "Jokic"   # offers for a target, see --help
@@ -63,11 +64,16 @@ STATUS_AVAIL = {"GTD": 0.9, "DTD": 0.9, "O": 0.7, "SUSP": 0.8, "INJ": 0.6, "IL":
 # A gradual ladder: they clearly gain / both gain / they lose a little but it looks good / you gain big, needs a pitch.
 # ponytail: starting guesses like the knobs above; tune once real offers get accepted or turned down.
 TIERS = {"easy": (0.5, 1, 0.3), "fair": (1, 0, -0.5), "finesse": (1.5, -2.5, 0.3), "hard": (3, -6, -1)}
+VERDICT, MOVE, GUARD = 0.5, 0.5, 1  # trade accept/decline beyond +-; waiver move worth listing; most a cats/team goal
+                                    # search may cost you
+# The win-% cutoffs above (and accept()'s) are in One Win terms. A categories league's win % moves about 2.5x less
+# per move (measured Oct 26 on the real league), so League scales them by this.
+CAT_SCALE = 0.4
 
 
-def accept(their_net, their_view, u=1.0):
+def accept(their_net, their_view, u=1.0, s=1.0):
     """How likely the other manager says yes: they mostly judge on how it looks (Yahoo ranks), a little on real fit."""
-    if their_view > 0.3 * u and their_net > -1:
+    if their_view > 0.3 * u and their_net > -s:
         return "Likely yes"
     return "Long shot" if their_view < -0.5 * u else "Maybe"
 
@@ -240,6 +246,8 @@ class League:
         self.snap, self.teams_n, self.roster_n = snap, s.get("teams", 12), s.get("roster", 13)
         self.lineup = s.get("starters", 10)  # players whose games count each day
         self.mode = s.get("mode", "9cat")
+        self.scoring = s.get("scoring", "categories")  # Yahoo's H2H default; "one_win" = only the matchup counts
+        self.s = 1.0 if self.scoring == "one_win" else CAT_SCALE  # scales the One Win cutoffs
         self.u = 3.0 if self.mode == "points" else 1.0  # FP/game spreads ~3x wider than 9-cat z-sums; scales thresholds
         self.cats = [c for c in s.get("cats", CATS) if c in CATS] or CATS
         self.points = s.get("points") or POINTS
@@ -443,9 +451,14 @@ class League:
             return {}
         V = np.stack([base - self.rows[k] if k in own else base + self.rows[k] for k in keys])
         _, O = self._others(team)
-        w = match_prob(self._concede(cat_probs(V[:, None], O[None], self.cats), punt)).mean(-1)
+        w = self._score(self._concede(cat_probs(V[:, None], O[None], self.cats), punt)).mean(-1)
         w0 = self.outlook(team, punt=punt)["win"]
         return {k: float(w0 - x if k in own else x - w0) for k, x in zip(keys, w)}
+
+    def _score(self, p):
+        """What a week is worth in the standings, from category odds p (..., cats): the expected share of categories
+        won (categories: each one counts as a win), or the chance to win the matchup (one win)."""
+        return match_prob(p) if self.scoring == "one_win" else p.mean(-1)
 
     def _concede(self, p, punt):
         """Punted categories count as losses for you: that's what committing to a punt means."""
@@ -460,13 +473,13 @@ class League:
         return names, (np.stack([self.vecs[t] for t in names]) if names else np.zeros((0, len(RAW))))
 
     def outlook(self, team, override=None, punt=()):
-        """A team's odds to win a weekly matchup vs every other team, and per-category odds (averaged)."""
+        """A team's win % (_score) vs every other team and on average, and per-category odds (averaged)."""
         override = override or {}
         v = override.get(team, self.vecs[team])
         opp = [t for t in self.rosters if t != team]
         O = np.stack([override.get(t, self.vecs[t]) for t in opp])
         p = self._concede(cat_probs(v[None], O, self.cats), punt)
-        m = match_prob(p)
+        m = self._score(p)
         return {"win": float(m.mean()), "odds": dict(zip(self.cats, p.mean(0).tolist())),
                 "vs": dict(zip(opp, m.tolist())), "cats_won": dict(zip(opp, p.sum(-1).tolist()))}
 
@@ -475,7 +488,7 @@ class League:
         return {t: self.outlook(t) for t in self.rosters}
 
     def standings(self, override=None):
-        """Projected finish: every team's average weekly win odds vs the rest of the league."""
+        """Projected finish: every team's average weekly win % vs the rest of the league."""
         wins = ({t: o["win"] for t, o in self.outlooks.items()} if not override
                 else {t: self.outlook(t, override)["win"] for t in self.rosters})
         order = sorted(wins, key=lambda t: -wins[t])
@@ -511,7 +524,7 @@ class League:
         return give, get
 
     def trade(self, give, get, punt=()):
-        """Evaluate a trade for you. 9-cat: change in your weekly win odds vs the league, both rosters updated
+        """Evaluate a trade for you. 9-cat: change in your weekly win % vs the league, both rosters updated
         (extra players dropped, open spots filled from waivers). Points: value net of replacement level."""
         give, get = self._check(give, get)
         name = self.names
@@ -584,8 +597,8 @@ class League:
             "rank": sb[self.me]["rank"], "rank_after": sa[self.me]["rank"],
             "odds": {c: round(100 * (a["odds"][c] - b["odds"][c]), 1) for c in self.cats},
             "you_drop": name(md), "you_add": name(ma), "they_drop": name(td), "they_add": name(ta),
-            "accept": accept(100 * (tw - tb), seen, self.u),
-            "verdict": "accept" if net > 0.5 else "decline" if net < -0.5 else "toss-up"})
+            "accept": accept(100 * (tw - tb), seen, self.u, self.s),
+            "verdict": "accept" if net > VERDICT * self.s else "decline" if net < -VERDICT * self.s else "toss-up"})
         return out
 
     def ideas(self, mode="fair", punt=(), team=None, limit=20, depth=10):
@@ -631,10 +644,10 @@ class League:
         give / get: players every deal must include. Pinning a get fixes the team and searches both whole rosters,
                otherwise it's your top `depth` vs theirs.
         lock:  players never offered or asked for.
-        tier:  how likely they say yes (TIERS). easy: both gain and it looks good to them. fair: both gain.
+        tier:  how likely they say yes (TIERS, scaled by self.s). easy: both gain and it looks good to them. fair: both gain.
                finesse: they *look* like winners on hot starts but lose a little. hard: you gain big, needs a pitch.
-        goal:  "win" (weekly win odds), "cats" (your odds in goal_cats) or "team" (head-to-head vs goal_team).
-               The last two skip deals that cost you more than 1% win odds.
+        goal:  "win" (weekly win %), "cats" (your odds in goal_cats) or "team" (head-to-head vs goal_team).
+               The last two skip deals that cost you more than GUARD win %.
         shape: "consolidate" (you send more players) or "depth" (you get more).
         """
         if self.mode == "points":
@@ -657,6 +670,7 @@ class League:
         cv, pv = self.perceived()
         vg, vc, vm = self.value().to_dict(), pv.to_dict(), self.value(punt=punt).to_dict()
         t0, t1, t2 = TIERS[tier]
+        t0, t1 = t0 * self.s, t1 * self.s
 
         def combos(keys, pins, v, skip=()):
             free = sorted((k for k in keys if k not in lock and k not in pins and k not in skip), key=lambda k: -v[k])
@@ -712,10 +726,10 @@ class League:
             k = len(O) + 1
             p_mt = cat_probs(me_after, them_after, cats)
             p_o = cat_probs(me_after[:, :, None], O[None, None], cats)  # (give combo, get combo, other team, cat)
-            m_o, m_t = match_prob(self._concede(p_o, punt)), match_prob(self._concede(p_mt, punt))
+            m_o, m_t = self._score(self._concede(p_o, punt)), self._score(self._concede(p_mt, punt))
             dme = 100 * ((m_o.sum(-1) + m_t) / k - before["win"])
-            t_o = match_prob(cat_probs(them_after[:, :, None], O[None, None], cats)).sum(-1)
-            dthem = 100 * ((t_o + match_prob(1 - p_mt)) / k - self.outlooks[t]["win"])
+            t_o = self._score(cat_probs(them_after[:, :, None], O[None, None], cats)).sum(-1)
+            dthem = 100 * ((t_o + self._score(1 - p_mt)) / k - self.outlooks[t]["win"])
             low = np.concatenate([[0], np.cumsum(np.sort(pv.reindex(keys).to_numpy()))])  # their weakest, for drops
             seen = gseen[:, None] - rseen[None] + np.where(n > 0, n * cv, -low[np.clip(-n, 0, len(low) - 1)])
             if goal == "team":
@@ -729,7 +743,7 @@ class League:
                 score = dme
             ok = (score > t0) & (dthem > t1) & (seen > t2 * u)
             if goal != "win":
-                ok &= dme > -1
+                ok &= dme > -GUARD * self.s
             if shape == "consolidate":
                 ok &= n < 0
             elif shape == "depth":
@@ -741,7 +755,7 @@ class League:
                 out.append({"team": t, "give": self.names(mine[gi]), "get": self.names(theirs[ri]),
                             "net": round(float(dme[gi, ri]), 1), "their_net": round(float(dthem[gi, ri]), 1),
                             "their_view": round(float(seen[gi, ri]), 2), "unit": "win%",
-                            "accept": accept(dthem[gi, ri], seen[gi, ri], u),
+                            "accept": accept(dthem[gi, ri], seen[gi, ri], u, self.s),
                             **({"score": round(float(score[gi, ri]), 1)} if goal != "win" else {})})
         s = lambda x: x.get("score", x["net"])
         out.sort(key=lambda x: -min(s(x), x["their_net"]) if tier in ("easy", "fair") else -s(x))
@@ -773,7 +787,7 @@ class League:
         return [c for c in sorted(odds, key=odds.get)[:2] if odds[c] < WEAK]
 
     def profile(self):
-        """Your weekly win odds, projected standings, per-category odds and category standings (every team's odds
+        """Your weekly win %, projected standings, per-category odds and category standings (every team's odds
         and rank in each category), H2H vs each team, punt suggestions."""
         tot = self.totals
         odds = pd.DataFrame({t: o["odds"] for t, o in self.outlooks.items()}).T[self.cats]  # team x category
@@ -783,14 +797,14 @@ class League:
               for t in o["vs"]}
         st = self.standings()
         return {"totals": tot.round(2).to_dict("index"), "ranks": ranks.to_dict("index"), "vs": vs,
-                "cat_odds": odds.round(3).to_dict("index"),
+                "cat_odds": odds.round(3).to_dict("index"), "scoring": self.scoring,
                 "odds": {c: round(p, 3) for c, p in o["odds"].items()}, "win": round(o["win"], 3),
                 "rank": st[self.me]["rank"], "standings": st,
                 "punt_suggestions": self.build(self.me), "builds": {t: self.build(t) for t in self.rosters},
                 "strengths": sorted(o["odds"], key=lambda c: -o["odds"][c])[:3]}
 
     def waivers(self, punt=(), limit=15):
-        """Best free agents for your team + add/drop pairs. 9-cat: scored by the change in your weekly win odds."""
+        """Best free agents for your team + add/drop pairs. 9-cat: scored by the change in your weekly win %."""
         if self.mode != "points" and self.fa:
             return self._waivers_matchup(punt, limit)
         fa = self.value(self.fa, punt).nlargest(limit)
@@ -804,26 +818,27 @@ class League:
                 "drop_candidates": [self.player(k, punt) for k in drops.index], "moves": moves[:8]}
 
     def _waivers_matchup(self, punt, limit):
-        """Every (add, drop) pair scored by the change in your weekly win odds vs the league."""
+        """Every (add, drop) pair scored by the change in your weekly win % vs the league."""
         adds = self.value(self.fa, punt).nlargest(40).index.tolist()
         drops = [k for k in self.rosters[self.me] if self.meta.get(k, {}).get("status", "") not in OUT]
         A = np.stack([self.vec([k]) for k in adds])
         D = np.stack([self.vec([k]) for k in drops])
         new = self.vecs[self.me] - D[None, :, :] + A[:, None, :]
         _, O = self._others(self.me)
-        win = match_prob(self._concede(cat_probs(new[:, :, None], O[None, None], self.cats), punt)).mean(-1)
+        win = self._score(self._concede(cat_probs(new[:, :, None], O[None, None], self.cats), punt)).mean(-1)
         gain = 100 * (win - self.outlook(self.me, punt=punt)["win"])  # (adds, drops)
         fit, best_drop = gain.max(1), gain.argmax(1)
         order = np.argsort(-fit)[:limit]
         moves = [{"add": self.p.at[adds[i], "PLAYER_NAME"], "drop": self.p.at[drops[best_drop[i]], "PLAYER_NAME"],
-                  "gain": round(float(fit[i]), 1), "unit": "win%"} for i in order if fit[i] > 0.5][:8]
+                  "gain": round(float(fit[i]), 1), "unit": "win%"} for i in order if fit[i] > MOVE * self.s][:8]
         cheap = np.argsort(-gain.max(0))[:3]  # drops that cost least when swapped for the best add
         return {"free_agents": [{**self.player(adds[i], punt), "fit": round(float(fit[i]), 1)} for i in order],
                 "drop_candidates": [self.player(drops[j], punt) for j in cheap], "moves": moves}
 
     def this_week(self, opp=None, punt=(), limit=5):
         """This week's matchup: totals so far + the rest of the week (week_vec, players in IL slots sit) -> odds per
-        category and for the week, a safe / chase / lost call per category, and streaming adds scored on this week.
+        category, the expected score, the chance to win more categories (win), a safe / chase / lost call per
+        category, and streaming adds scored on this week's win % (_score; the 0.1 floor is display resolution).
         opp defaults to the snapshot's opponent; with none, returns {"opponent": None, "teams": [...]} to pick from."""
         if self.mode == "points":
             raise KeyError("This week needs a category league")
@@ -854,7 +869,7 @@ class League:
         streams = []
         if drops and adds:
             V = np.array([[self.week_vec(swap(a, d), clears(a)) for d in drops] for a in adds])
-            gain = 100 * (match_prob(odds(V)) - win)
+            gain = 100 * (self._score(odds(V)) - self._score(p))
             season0 = self.outlook(me, punt=punt)["win"]
             for i in np.argsort(-gain.max(1))[:limit]:
                 a, d = adds[i], drops[gain[i].argmax()]
@@ -868,6 +883,8 @@ class League:
         call = lambda c, x: "punt" if c in punt else "safe" if x >= 1 - WEAK else "lost" if x <= WEAK else "chase"
         return {"opponent": opp, "teams": others, "week_end": self.week_end,
                 "live": m.get("opponent") == opp and all(t in m.get("totals", {}) for t in (me, opp)),
+                **({"yahoo_games": {"you": m["games"][me], "them": m["games"][opp]}}  # Yahoo's played / left, as set
+                   if m.get("opponent") == opp and all(t in m.get("games", {}) for t in (me, opp)) else {}),
                 "win": round(100 * win, 1), "score": [round(float(p.sum()), 1), round(len(self.cats) - float(p.sum()), 1)],
                 **({"games": {"you": sum(self.starts(play(me)).values()),
                               "them": sum(self.starts(play(opp)).values())}} if self.sched else {}),
@@ -890,8 +907,8 @@ class League:
                 "note": f"Based on {int(self.p.GP_CUR.max())} games so far — small samples swing hard early."}
 
     def state(self, punt=()):
-        return {"league": self.snap.get("name", "League"), "mode": self.mode, "cats": self.cats, "me": self.me,
-                "teams": list(self.rosters), "fetched": self.snap.get("fetched", ""), "demo": self.snap.get("demo", False),
+        return {"league": self.snap.get("name", "League"), "mode": self.mode, "scoring": self.scoring, "cats": self.cats,
+                "me": self.me, "teams": list(self.rosters), "fetched": self.snap.get("fetched", ""), "demo": self.snap.get("demo", False),
                 "roster": sorted((self.player(k, punt) for k in self.rosters[self.me]), key=lambda p: -p["value"]),
                 "profile": self.profile() if self.mode != "points" else None,
                 "waivers": self.waivers(punt), "movers": self.movers(punt)}

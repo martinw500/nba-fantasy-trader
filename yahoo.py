@@ -72,7 +72,8 @@ def snapshot(league_id=None):
 
     snap = {"name": text(q.get_league_info().name), "me": me, "teams": teams, "free_agents": fa,
             "settings": {"teams": len(teams), "roster": roster, "mode": "points" if points else "9cat",
-                         "cats": list(by_id.values()), "points": points}}
+                         "cats": list(by_id.values()), "points": points,
+                         "scoring": "one_win" if s.scoring_type == "headone" else "categories"}}  # "head" = categories
     try:  # this week's opponent and both teams' totals so far. ponytail: unverified yfpy shapes, like the rest
         names = {st.stat_id: st.display_name for st in s.stat_categories.stats}  # incl. display-only "FGM/FGA"
         unwrap = lambda x, k: x.get(k, x) if isinstance(x, dict) else x
@@ -118,7 +119,8 @@ def parse_text(text):
         1. Toronto blue jays  (4-5-0, 7th place)          Cade Cunningham (Q)
            C     Ivica Zubac   IND - C  [O: Out]   Pre 53   Cur 189  Ros 94%
         PART 3 - TOP 100 FREE AGENTS / 15%+ / WAIVER WIRE: rows with Pre/Cur ranks, roster %, "W Oct 28" claim dates
-        PART 6 matchups (pair line, then each team's FGM/FGA 36/91 ... TO 16), PART 7 transactions,
+        PART 6 matchups (pair line, then each team's FGM/FGA 36/91 ... TO 16 and Games played 7 Games remaining 32),
+        PART 7 transactions,
         PART 8 Yahoo projections per game, ADDS USED ... AND WAIVER PRIORITY, SEASON SCHEDULE
 
     Injury tags O / Q / P / D / NA (or [O: Out]). "Empty slot" rows, the injured list and any section it doesn't
@@ -150,8 +152,10 @@ def parse_text(text):
                     tzinfo=timezone(timedelta(hours=int(m[3]))) if m[3] else ET)
                 out["pulled"], y0 = at.isoformat(), at.year - (at.month < 8)
                 # games under way at pull time are in the totals, so the rest of the week starts the next day.
+                # "No Oct 27 games had started ... earlier games were final": today still counts.
                 # ponytail: 7 PM ET is the usual first tip-off; weekend matinees start earlier
-                started = "final" in line or at >= datetime.combine(at.date(), time(19), ET)
+                started = not re.search(r"\bno\b[^.;]*\bstarted", line, re.I) and (
+                    "final" in line or at >= datetime.combine(at.date(), time(19), ET))
                 out["from"] = (at.date() + timedelta(days=1 if started else 0)).isoformat()
             elif m := re.match(r"My team: (.+)", line):
                 out["me"] = m[1]
@@ -173,6 +177,8 @@ def parse_text(text):
             elif pair and (t := next((t for t in pair["teams"] if line.startswith(t + " ")), None)):
                 pair["totals"][t] = {YAHOO_STAT[k]: float(v) for ks, vs in re.findall(r"(\S+) ([\d./]+)", line[len(t):])
                                      for k, v in zip(ks.split("/"), vs.split("/")) if k in YAHOO_STAT and "%" not in k}
+            elif pair and pair["totals"] and (m := re.match(r"Games played (\d+)\s+Games remaining (\d+)", line)):
+                pair.setdefault("games", {})[list(pair["totals"])[-1]] = {"played": int(m[1]), "left": int(m[2])}
         elif mode == "transactions":  # a long team name can fill its column, so match the names, not the spacing
             m = re.match(r"(\w{3} \d+ \d+:\d+[ap]m)\s+(.+)", line)
             if m and (t := max((t for t in teams if m[2].startswith(t + " ")), key=len, default=None)):
@@ -253,6 +259,7 @@ def from_text(path, me=None):
     if mine and got.get("week"):
         snap["matchup"] = {"opponent": next(t for t in mine["teams"] if t != me), "week_start": got["week"]["start"],
                            "week_end": got["week"]["end"], "totals": mine["totals"],
+                           **({"games": mine["games"]} if mine.get("games") else {}),
                            **({"from": got["from"]} if got.get("from") else {})}
     elif old.get("matchup") and old.get("me") == me:  # the opponent picked in the app survives a re-import
         snap["matchup"] = old["matchup"]

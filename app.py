@@ -1,6 +1,7 @@
 """Local web app: python app.py -> http://localhost:8765"""
 import json
 import os
+import re
 import sys
 import traceback
 import webbrowser
@@ -62,7 +63,11 @@ def api(path, q, body):
         if os.environ.get("YAHOO_LEAGUE_ID"):
             yahoo.snapshot()
         elif lg.snap.get("text"):  # imported from a snapshot file: read the newest one (and refetch injuries)
-            newest = max(ROOT.glob("*snapshot*.txt"), key=lambda p: p.stat().st_mtime, default=lg.snap["text"])
+            # newest = latest date in the name ("...-2026-10-27.txt"), file time only between same-day pulls,
+            # so an old snapshot copied back into the folder doesn't win
+            day = lambda p: m[0] if (m := re.search(r"\d{4}-\d{2}-\d{2}", p.name)) else ""
+            newest = max(ROOT.glob("*snapshot*.txt"), key=lambda p: (day(p), p.stat().st_mtime),
+                         default=lg.snap["text"])
             yahoo.from_text(newest, lg.me)
             (model.DATA / "injuries.json").unlink(missing_ok=True)
         else:
