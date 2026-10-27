@@ -15,7 +15,12 @@ expected share of games played. In 9-cat, trades, trade ideas and waiver moves a
 ("win" -> "win_after"); "their_net" is the same for the other team; "odds" are per-category win-chance changes.
 league_overview has projected standings, per-category win odds and the user's odds vs each team. A category the
 user can't win or already dominates barely moves their odds, so explain punts from that. "their_view" is how a
-deal looks on this season's hype (what Yahoo ranks show them). Early in the season, small samples swing hard.
+deal looks on this season's hype (what Yahoo ranks show them); "accept" is how likely they say yes.
+evaluate_trade also returns cats_detail (both teams' category totals and odds, before -> after), vs (user's odds
+against each team), standings (flag "rival": partner or a top-4 team gaining more than the user), flags (injury,
+small sample, buying at peak hype) and build_after (categories the user would win under 30% of weeks, a punt hint).
+Use find_trades for "who can I get for X", "who wants Y", "fix my steals" or "beat team Z"; offer a harder tier
+when nothing clears the bar. Early in the season, small samples swing hard.
 For trades: say who wins, which categories move, the risk (injury, role, age, sample size), and when asked,
 write a short casual pitch the user can paste to the other manager. Keep answers short and concrete."""
 
@@ -39,20 +44,41 @@ class GM:
                 get: players the user receives
             """
             try:
-                return dump(lg.trade(give, get, gm.punt))
+                r = lg.trade(give, get, gm.punt)
             except KeyError as e:
                 return f"Error: {e}"
+            if "roster_after" in r:  # names and moves are enough here; full stat lines cost ~8k tokens a call
+                r["roster_after"] = {s: [{k: p[k] for k in ("name", "value", "move")} for p in ps]
+                                     for s, ps in r["roster_after"].items()}
+            return dump(r)
 
         @beta_tool
-        def trade_ideas(mode: str = "fair", team: str | None = None) -> str:
-            """Search for trades. mode "fair" = both teams gain on their builds; "finesse" = user wins more, other
-            side looks like a winner on hot-start hype.
+        def find_trades(give: list[str] | None = None, get: list[str] | None = None, lock: list[str] | None = None,
+                        tier: str = "fair", goal: str = "win", goal_cats: list[str] | None = None,
+                        goal_team: str | None = None, size: int = 3, team: str | None = None) -> str:
+            """Search for trades, up to size-for-size. Pin players to aim it: get = offers for their player,
+            give = buyers for yours, both = complete that trade, neither = open search. Each result has "accept"
+            (Likely yes / Maybe / Long shot).
 
             Args:
-                mode: "fair" or "finesse"
+                give: user's players every deal must include
+                get: other team's players every deal must include (all from one team)
+                lock: players never offered or asked for
+                tier: how likely they say yes. "easy": both gain and it looks good to them. "fair": both gain.
+                    "finesse": they look like winners on hot starts but lose a little. "hard": user gains a lot.
+                goal: "win" (weekly win odds), "cats" (user's odds in goal_cats) or "team" (head-to-head vs goal_team)
+                goal_cats: categories for goal "cats", e.g. ["STL", "AST"]
+                goal_team: exact team name for goal "team"
+                size: max players per side, 1-3
                 team: only search this opponent (exact team name), or omit for all
             """
-            return dump(lg.ideas(mode, gm.punt, team, limit=12))
+            if lg.mode == "points":  # points leagues keep the simple finder
+                return dump(lg.ideas("finesse" if tier == "finesse" else "fair", gm.punt, team, limit=12))
+            try:
+                return dump(lg.search(give or [], get or [], lock or [], team, size, tier, goal, goal_cats or [],
+                                      goal_team, punt=gm.punt, limit=12))
+            except KeyError as e:
+                return f"Error: {e}"
 
         @beta_tool
         def waivers() -> str:
@@ -80,7 +106,7 @@ class GM:
                 return f"Error: unknown team. Teams: {list(lg.rosters)}"
             return dump(lg.team_roster(team, gm.punt))
 
-        return [evaluate_trade, trade_ideas, waivers, sell_high_buy_low, league_overview, roster]
+        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, roster]
 
     def ask(self, text, punt=()):
         self.punt = list(punt)

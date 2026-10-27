@@ -146,7 +146,8 @@ Built as planned, plus:
 
 ### T4. AI GM and extras
 
-- `ai.py`: replace `trade_ideas` with `find_trades(give, get, lock, tier, goal, goal_cats, goal_team, size)`; `evaluate_trade` returns the T2 breakdown. Document `model.py search` in `.claude/skills/gm/SKILL.md`.
+- ✅ done Oct 26: `find_trades` replaces `trade_ideas` (points leagues fall back to `ideas()`). `evaluate_trade` returns the T2 breakdown with `roster_after` cut to name/value/move (~5k chars, down from ~13k). Tools tested offline; a live chat still needs an API key (see "Built but never run for real").
+- Originally: `ai.py`: replace `trade_ideas` with `find_trades(give, get, lock, tier, goal, goal_cats, goal_team, size)`; `evaluate_trade` returns the T2 breakdown. Document `model.py search` in `.claude/skills/gm/SKILL.md`.
 - Later: playoff mode, which weights likely playoff opponents' weeks (needs task 1's schedule).
 - Later: manager tendencies from Yahoo trade history (needs task 3's transactions). This is a weak signal, since rejected offers aren't visible.
 - Not doing: 3-team trades. Yahoo doesn't support them.
