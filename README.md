@@ -84,14 +84,31 @@ Classic pairings: big men punt FT%, high-usage guards punt TO, wings punt AST.
 - **Projected finish**: your league rank before → after.
 - Your odds change in each category.
 
-**Ask AI GM for a pitch** writes a short message to send the other manager.
+**Ask AI GM for a pitch** writes a short message to send the other manager. **Save trade** keeps it for comparing later.
+
+**Find any player** (top right) jumps to any rostered player: it switches to his team and checks him. The URL updates to `#trades?give=A,B&get=C` after each evaluation, so you can bookmark a trade. Last names work in the link too, as long as only one player has that name.
 
 ### "Find me a trade"
-**Trade finder**, bottom of the Trades tab. It searches 1-for-1 up to 2-for-2 deals with every team:
-- **Fair**: both teams' win odds go up (category fit), and it doesn't look like a loss to them. These are trades people actually accept. (Points leagues have no categories to trade around, so fair means you gain a little and it's near even for them.)
-- **Finesse**: your odds go up more. They *look* like the winner on hot starts but lose a little in reality. This is how sell-high works.
+The finder panel sits under the builder. The players you check aim the search, and its title says which search it will run:
+- Check **their** player: **Offers for X**, what you could give for him.
+- Check **yours**: **Buyers for Y**, every team that might take him and what they'd send back.
+- Check **both**: **Complete this trade**, deals that keep everyone checked and add players around them.
+- Check **nobody**: **Open search** across every team.
 
-**Load** puts an idea into the builder and evaluates it.
+The padlock on a player means the finder never uses him. Deals go up to 3-for-3. Toolbar:
+- **Difficulty**, i.e. how likely they say yes. **Easy**: both teams gain and it looks good to them. **Fair**: both teams gain. **Finesse**: they *look* like the winner on hot starts but lose a little in reality, which is how sell-high works. **Hard**: you gain a lot, so it needs a good pitch.
+- **Optimize for**: overall win %, your odds in chosen **categories**, or your head-to-head odds against **one team** (e.g. a playoff rival). The last two skip deals that cost you more than 1% win odds.
+- **Max size**, **Shape** (consolidate: you send more players; depth: you get more), **Healthy only**, and a team filter.
+
+Columns sort on click. **Load** evaluates a deal in the builder, and **Save** keeps it.
+
+Points leagues keep the simpler finder: Fair or Finesse, 1-for-1 up to 2-for-2, no checkboxes or locks.
+
+**Improve this deal** appears after you evaluate a trade. **Throw-ins** keeps everyone in the deal and adds a player to either side. **Swaps** replaces one player at a time. Both use the finder's settings.
+
+**Saved trades** (bottom of the tab) compares saved deals side by side. They're re-scored against today's rosters and your punts every time, so the numbers never go stale.
+
+**Find a buyer** on My team and **Find offers** on Hot & cold's buy-low list run these searches directly.
 
 ### "Sell high / buy low"
 **Hot & cold** tab. *Sell high* lists your players playing way above their real value; other managers see the hot start. *Buy low* lists good players on other teams starting cold. Early in the season the samples are tiny, and the app says so.

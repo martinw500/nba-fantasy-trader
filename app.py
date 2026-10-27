@@ -38,7 +38,7 @@ def api(path, q, body):
                          body.get("cats", []), body.get("vs"), bool(body.get("healthy")), body.get("shape"), punt,
                          limit=30)
     if path == "/api/players":
-        return sorted(lg.p.PLAYER_NAME.reindex([k for ks in lg.rosters.values() for k in ks] + lg.fa).tolist())
+        return sorted(({"name": n, "team": t} for t, ks in lg.rosters.items() for n in lg.names(ks)), key=lambda p: p["name"])
     if path == "/api/refresh":
         yahoo.snapshot() if os.environ.get("YAHOO_LEAGUE_ID") else yahoo.demo()
         lg, gm = model.load(), None

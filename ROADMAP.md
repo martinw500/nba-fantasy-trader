@@ -112,7 +112,16 @@ Built as planned, plus:
 
 **Done when:** every section renders on the demo league, and toggling a punt chip dims the new tables.
 
-### T3. Trades workbench UI
+### T3. Trades workbench UI ✅ done Oct 26 (branch `trade-lab`)
+
+Built as planned, plus:
+- Layout: builder → finder → evaluated result → Improve (right under the verdict) → rest of the breakdown → Saved trades.
+- The finder keeps an "All teams" filter, as the old finder did. It's locked to the partner while one of their players is checked.
+- Choosing "Categories…" pre-selects your two weakest non-punted categories. "Beat a team…" pre-selects the top-ranked other team.
+- Deep-link names go through `find()`, so `#trades?give=Tatum&get=Wembanyama` works and the URL is rewritten with full names. An ambiguous last name (e.g. "Wiggins") shows the server's error toast.
+- `/api/players` now returns `{name, team}` for rostered players only (no FAs), which feeds the datalist.
+- Result tables scroll inside a ~10-row box. On phones, the verdict pairs wrap instead of squeezing into 5 columns (the T2 known limit).
+- Known limits: Improve results stay listed after you Load one; a note says which deal they were built from. Saved trades are keyed by player names, so a trade-away or the October season bump turns them into "can't evaluate" columns (Remove clears them).
 
 **Change (`web/index.html`, follow DESIGN.md, no modals, then `/impeccable polish`):**
 - **Toolbar:**
