@@ -20,6 +20,12 @@ lg = model.load()
 gm = None  # created on first chat so the app works without an API key
 
 
+def remember(**choices):
+    """Save choices into the snapshot file, so they survive restarts and refreshes."""
+    snap = {**json.loads(yahoo.OUT.read_text(encoding="utf-8")), **choices}
+    yahoo.OUT.write_text(json.dumps(snap, indent=1, ensure_ascii=False), encoding="utf-8")
+
+
 def api(path, q, body):
     global lg, gm
     punt = body.get("punt", q.get("punt", [""])[0].split(",") if q.get("punt") else [])
@@ -39,14 +45,19 @@ def api(path, q, body):
                          limit=30)
     if path == "/api/players":
         return sorted(({"name": n, "team": t} for t, ks in lg.rosters.items() for n in lg.names(ks)), key=lambda p: p["name"])
-    if path == "/api/me":  # which team is yours; saved in the snapshot so it survives restarts and refreshes
+    if path == "/api/me":  # which team is yours
         if body.get("team") not in lg.rosters:
             raise KeyError(f"Unknown team: {body.get('team')}")
-        snap = json.loads(yahoo.OUT.read_text(encoding="utf-8"))
-        snap["me"] = body["team"]
-        yahoo.OUT.write_text(json.dumps(snap, indent=1, ensure_ascii=False), encoding="utf-8")
+        remember(me=body["team"], matchup=None)  # the opponent was the old team's
         lg, gm = model.load(), None
         return lg.state(punt)
+    if path == "/api/week":  # POST {opponent} sets this week's opponent until the week ends
+        if opp := body.get("opponent"):
+            if opp not in lg.rosters or opp == lg.me:
+                raise KeyError(f"Unknown opponent: {opp}")
+            lg.snap["matchup"] = lg.matchup = {**lg.matchup, "opponent": opp, "week_end": lg.week_end}
+            remember(matchup=lg.matchup)
+        return lg.this_week(punt=punt)
     if path == "/api/refresh":
         if os.environ.get("YAHOO_LEAGUE_ID"):
             yahoo.snapshot()
@@ -102,7 +113,8 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/players", "/api/me", "/api/refresh", "/api/chat"}
+API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/players", "/api/me", "/api/week",
+       "/api/refresh", "/api/chat"}
 
 if __name__ == "__main__":
     # ponytail: localhost-only, single user; no auth because it never listens on the network

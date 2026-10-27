@@ -88,8 +88,11 @@ Then see [ROADMAP.md](ROADMAP.md) for what's next.
 ### "Where do I stand?"
 **My team** shows your projected finish and your chance of winning a typical week. It also shows your odds in each category and your head-to-head odds against every team. **League** shows projected standings for everyone.
 
+### "How's my matchup this week? Who do I stream?"
+**This week** tab. Pick your opponent once (it's saved until the week ends on Sunday). You get your chance to win the week, each category's projected total and odds with a call (*Safe*, *Chase*, *Lost*), and **Streaming adds**: free agents ranked by how much they raise this week's odds, with games left, who to drop, and what keeping him does to your season-long odds. Projections count each player's games left this week; players in IL slots sit, and a waiver claim counts only from the day it clears. The text snapshot has no live score, so totals start at zero (right on Mondays); a Yahoo pull will fill in the opponent and the score. CLI: `python model.py week --vs "Team"`.
+
 ### "Should I punt something?"
-**My team** shows your odds in each category. Categories you win under 30% of weeks get a **Punt …** suggestion. You can also toggle any category with the **Punt** chips in the top bar. A punted column greys out in every table, and trades, waivers and ideas re-optimize with that category treated as a loss.
+**My team** shows your odds in each category. Categories you win under 35% of weeks get a **Punt …** suggestion. You can also toggle any category with the **Punt** chips in the top bar. A punted column greys out in every table, and trades, waivers and ideas re-optimize with that category treated as a loss.
 
 Classic pairings: big men punt FT%, high-usage guards punt TO, wings punt AST.
 
@@ -138,9 +141,9 @@ Points leagues keep the simpler finder: Fair or Finesse, 1-for-1 up to 2-for-2, 
 
 ## How the numbers work
 
-**Player lines.** Every player has a rest-of-season per-game line. It starts from last season (2025-26) and shifts toward this season as games pile up: this season's weight is `GP / (GP + 20)`. Rookies start from a fringe-roster line, so three hot games don't make them stars.
+**Player lines (the projection).** Every player has a rest-of-season per-game line. The pre-season baseline blends the last two seasons (a game in 2024-25 counts half as much as one in 2025-26) and is pulled toward a fringe-rotation line by 25 games, so a 5-game season isn't taken as gospel and a player back from a lost season isn't treated as a rookie. The line then shifts toward this season as games pile up: this season's weight is `GP / (GP + 20)`. That's 13% after 3 games and half after 20. Rookies start from a fringe-roster line, so three hot games don't make them stars. These are home-made projections; expert ones (Hashtag Basketball, FantasyPros) aren't plugged in yet (ROADMAP, Build next #4).
 
-**Plays %.** The share of games a player is expected to suit up for. It comes from games played last season plus this season, shrunk halfway toward 85% (one bad injury year shouldn't count fully), then cut by the injury tag (GTD 90%, O 70%, INJ 60%, IL 50%). When ESPN's injury report has an expected return date, that replaces the tag: the player counts for the share of remaining games after that date. Missed games are half-covered by a waiver-level fill-in, the way a bench player or streamer would cover them.
+**Plays %.** The share of games a player is expected to suit up for. It comes from games played over the last two seasons plus this one, shrunk toward 85% (one bad injury year shouldn't count fully), then cut by the injury tag (GTD 90%, O 70%, INJ 60%, IL 50%). When ESPN's injury report has an expected return date, that replaces the tag: the player counts for the share of remaining games after that date. Missed games are half-covered by a waiver-level fill-in, the way a bench player or streamer would cover them.
 
 **Wk.** Games left this week (Monday to Sunday) from the NBA schedule, counting only games after a return date. `League.week_vec()` turns that into this week's expected totals. Trades and the season-long odds still use an average 3.4-game week.
 
@@ -159,18 +162,19 @@ A trade, add or drop is judged by how much it changes your win odds, with both r
 - **What everyone else has.** Odds are computed against every real roster in your league.
 - **Punting.** A category you can't win stops mattering on its own. The Punt chips make it explicit: punted categories count as automatic losses, so the advice optimizes for the other categories.
 
-**Now / How it looks to them.** The same line weighted much harder toward this season (`GP / (GP + 5)`), roughly what Yahoo's rankings show other managers. Finesse trades and sell-high use it.
+**Now / How it looks to them.** The same line weighted harder toward this season (`GP / (GP + 10)`: 23% after 3 games), roughly what Yahoo's rankings show other managers. For trades, a player's look is counted over the games he actually plays (managers remember who missed a season) and never below what the best free agents look like. A manager taking back extra players feels the loss of the players they'd drop. Finesse trades and sell-high use it.
 
 **Points leagues** use the league's scoring weights and per-game values (no matchup model).
 
 **Honest limits:**
-- The weekly-randomness settings are educated guesses, not fitted to real Yahoo results. Odds are directionally right, but read 55% vs 58% as "about the same".
+- The weekly-randomness settings are fitted to real 2025-26 box scores (`python backtest.py`: 20 simulated leagues, each week predicted from what was known that Monday). Category odds come true at the rate they say, within a few points; whole-matchup odds within about 3 points. Still, read 55% vs 58% as "about the same".
+- How "looks to them" works is a judgment call. There's no data on which offers real managers accept.
 - Not modelled yet:
   - positions and roster slots (daily lineup limits)
   - this week's schedule in the weekly matchup itself (it's shown, and available as `week_vec`, but trades and odds use an average week)
   - keeper or dynasty value
 
-The settings live at the top of `model.py` if you want to tune them.
+The settings live at the top of `model.py`. Re-run `python backtest.py` after changing how players are projected; it prints predicted vs actual win rates.
 
 ## Using Claude Code on this project
 

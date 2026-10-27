@@ -9,7 +9,7 @@ To pick this up in Claude Code: *"Read ROADMAP.md and do Trade lab T3"*.
 ## Where things stand (Oct 26, 2026)
 
 **Working and tested (on the demo league):**
-- Web app with My team, League, Trades, Waivers, Hot & cold and AI GM views (`python app.py`).
+- Web app with My team, This week, League, Trades, Waivers, Hot & cold and AI GM views (`python app.py`).
 - 9-cat matchup model: weekly win odds, projected standings, odds per category, trade, waiver and finder scoring, punts.
 - Points-league mode (simpler: per-game values, no matchup model).
 - `python test_model.py` passes, and every view was clicked through in a real browser.
@@ -60,7 +60,7 @@ Built as planned, plus:
 - Candidates: top `depth` per side, plus pinned players even outside the top 10, minus `lock`. Pinned `get` players fix the team; enforce the same one-team rule as `trade()` (KeyError).
 - Combos: 1 to `size` players per side, and every combo must contain all pinned players (filter before stacking vectors). At depth 10 and size 3 that's 175 combos per side.
 - Roster fill for uneven deals generalizes from ±1 to ±2: drop the n cheapest, or add the n best FAs. "Cheapest" = least win-% cost, precomputed once per roster (single-player removal). Use it in `trade()._after()` too. This clears the "drop choice" item under Model accuracy.
-- `TIERS` constants at the top of the file (starting guesses, tune like the calibration knobs; u = 1 in 9-cat):
+- `TIERS` constants at the top of the file (retuned Oct 26 after calibration into a gradual ladder for the other team: +1 / 0 / −2.5 / −6. Easy and Fair sort by the smaller gain, Finesse and Hard by yours. Table below is the original plan; u = 1 in 9-cat):
 
   | tier | you (win %) | them (win %) | looks to them |
   |---|---|---|---|
@@ -159,7 +159,7 @@ Built as planned, plus:
 ### 1. This week's NBA schedule ✅ done Oct 26
 
 Built: `model.schedule()` (nba_api `ScheduleLeagueV2`, cached as `data/schedule_<season>.json` for a day), `League.games_week`, `League.week_vec()`, and a "Wk" column in every player table. NBA team = the league snapshot's `nba` field, falling back to the stats team. The test covers 4 games vs 2.
-Not done: Yahoo's actual week dates (weeks are assumed to run Monday–Sunday until a real Yahoo pull stores `week_start`/`week_end`). `week_vec` isn't used by any advice yet; task 2 is where it pays off.
+Not done: Yahoo's actual week dates (weeks are assumed to run Monday–Sunday until a real Yahoo pull stores `week_start`/`week_end`). `week_vec` drives task 2's This week view; season-long advice still uses the average week.
 
 **Why:** H2H is weekly. A player with 4 games this week is worth about twice one with 2 games. The model currently assumes 3.4 games for everyone.
 
@@ -172,7 +172,16 @@ Not done: Yahoo's actual week dates (weeks are assumed to run Monday–Sunday un
 
 **Done when:** each player shows "games this week", and the test checks a 4-game player contributes more to `week_vec` than an identical 2-game player.
 
-### 2. Current matchup ("This week" view)
+### 2. Current matchup ("This week" view) ✅ built Oct 26, live score waits on Yahoo
+
+Built: `League.this_week(opp, punt)` (CLI `python model.py week --vs "Team"`, `/api/week`, AI tool `this_week`), and a **This week** view under My team: verdict, category table (so far → projected, odds, Safe / Chase / Lost call, punted rows dimmed) and streaming adds.
+- `cat_probs` takes banked totals (`A0`, `B0`): they move the means but add no variance. A team with no shots left and nothing banked gets 0%, not NaN.
+- Players in IL / IL+ / NA slots sit. A waiver claim counts only from the day it clears ("claim by Oct 28").
+- Streams: each healthy free agent swapped for whichever of your 3 cheapest healthy players (season win-% cost) helps this week most. `season` shows what keeping him does long-term, so a one-week stream that hurts the season is visible.
+- Opponent: until Yahoo works, you pick it in the view. It's saved in the snapshot as `matchup` with `week_end`, survives a text re-import, is cleared when you switch teams, and is ignored once the week ends. `yahoo.py` now pulls `matchup` (opponent, week dates, both teams' totals, FGM/FGA split) from the scoreboard, but that's **unverified** like the rest of the Yahoo pull.
+- Known limits: no live score without Yahoo (totals start at zero, right on Mondays only). No daily lineup cap, so a team with more than 10 players playing on a day is overcounted (same "Positions and daily lineup slots" gap below). If live totals already include today's games, today counts twice. Not clicked through in a browser yet: the Playwright MCP couldn't start in Cursor (it looked for Chrome); the view was rendered in Node against the real API instead.
+
+Original plan:
 
 **Why:** this unlocks advice like "you're up 5–4; you're losing STL by 3, so stream a steals guy, and don't chase PTS."
 
@@ -231,11 +240,12 @@ Original plan:
 
 ## Model accuracy
 
-- [ ] **Calibrate the randomness settings** (`GAMES_WEEK`, `DISPERSION`, `SCHED_CV`, `PCT_NOISE`, `FILL`, `STATUS_AVAIL` at the top of `model.py`). They're educated guesses. Best method: pull last season's weekly scoreboards for a real league (`get_league_scoreboard_by_week`), predict each category with `cat_probs` from each team's totals, and tune the settings until predicted win rates match actual ones.
+- [x] **Calibrate the randomness settings** ✅ Oct 26, without Yahoo: `backtest.py` replays 2025-26 box scores in 20 simulated 12-team leagues, predicting each week from what was known that Monday. The old knobs were overconfident (predicted 0–10% won ~15%, 90–100% won ~86%). Fitted: DISPERSION per category, SCHED_CV 0.15, PCT_NOISE 1.75. Category and matchup calibration now sit within ~3 points of the diagonal. Category log loss went from 0.633 to 0.608 for an average week and from 0.614 to 0.580 with the real schedule. Also backtested and adopted a two-season baseline regressed by 25 games (`baseline()`). The availability formula held up against 2025-26 games played (players who missed a season: predicted 40%, actual 27%). Still guesses: GAMES_WEEK, FILL, STATUS_AVAIL, HYPE (perception can't be backtested without trade data).
+- [ ] **Matchup correlation**: categories are treated as independent. After calibration, matchup odds are within ~3 points, slightly bold with the real schedule and slightly timid for an average week. A shared games-played factor would fix both.
 - [ ] **Positions and daily lineup slots.** Trades and adds ignore positions (e.g. you could end up with 6 centers). Yahoo's `roster_positions` is in the settings. Minimum version: warn when a trade leaves a position empty *(done in Trade lab T2, untested on real `pos` data)*. Full version: a games-played penalty when more players have games than slots.
 - [ ] **Drop choice in trades** uses the lowest z-score. Better: drop whoever costs the least win %. *(Part of Trade lab T1.)*
 - [ ] **Trade finder depth** is your top 10 vs their top 10, up to 2-for-2. 3-for-1 consolidation trades aren't searched. *(Part of Trade lab T1.)*
-- [ ] **Hot & cold** uses a fixed hype weight (`HYPE = 5`). Could compare against Yahoo's actual rank (`sort=AR`) instead.
+- [ ] **Hot & cold** uses a fixed hype weight (`HYPE = 10`, was 5: 3 games carried 37% of how a player looked). Could compare against Yahoo's actual rank (the snapshot's Pre/Cur ranks) instead.
 
 ## Later / maybe
 

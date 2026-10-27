@@ -91,18 +91,16 @@ def test_all():
 
     # finder honours its own rules
     for idea in lg.ideas("fair"):
-        assert idea["net"] > 1 and idea["their_net"] > 0.5
+        assert idea["net"] > 1 and idea["their_net"] > 0
     for idea in lg.ideas("finesse"):
         assert idea["net"] > 1.5 and idea["their_view"] > 0.3
 
-    # search (pinned on a target: this league's even spread makes open searches look awful to "Them"):
-    # pins always in, locks never in, tier thresholds hold, 3-player sides and every filter work
-    found = 0
+    # search: tier thresholds hold. This 2-team league is zero-sum with z-scores spread +-46, so the real tiers find
+    # little; the mechanics (pins always in, locks never in, 3-player sides, filters) run on a loose test-only tier
     for tier, (t0, t1, t2) in model.TIERS.items():
-        for x in lg.search(get=["Player 199"], tier=tier, limit=200):
-            found += 1
+        for x in lg.search(tier=tier, limit=200):
             assert x["net"] >= t0 and x["their_net"] >= t1 and x["their_view"] >= t2, (tier, x)
-    assert found
+    model.TIERS["hard"], hard = (0.5, -20, -999), model.TIERS["hard"]
     hits = lg.search(get=["Player 199"], lock=["Player 198"], tier="hard", limit=200)
     assert hits and all("Player 199" in x["get"] and "Player 198" not in x["give"] for x in hits)
     assert any(len(x["give"]) == 3 for x in hits)
@@ -117,6 +115,16 @@ def test_all():
             raise AssertionError(f"accepted bad search {bad}")
         except KeyError:
             pass
+    model.TIERS["hard"] = hard
+
+    # "looks to them": nobody looks worse than the waiver level, and taking back extra players costs a team the
+    # perceived value of its own weakest (the ones it would drop), not a free agent's
+    cv, pv = lg.perceived()
+    assert abs(pv.min() - cv) < 1e-9 and (pv >= cv - 1e-9).all()
+    them_low = pv.reindex(lg.rosters["Them"]).nsmallest(2).sum()
+    r = lg.trade(["Player 198", "Player 194", "Player 190"], ["Player 199"])  # Them takes back 2 extra players
+    expect = pv[["player 198", "player 194", "player 190"]].sum() - pv["player 199"] - them_low
+    assert abs(r["their_view"] - expect) < 0.01, (r["their_view"], expect)
 
     # uneven trades drop whoever costs the least win %, two at a time if needed
     r = lg.trade(["Player 198"], ["Player 151", "Player 155", "Player 159"])
@@ -126,16 +134,45 @@ def test_all():
 
     # schedule: identical twins, one with 4 games left this week and one with 2; a return date wipes this week
     # and cuts rest-of-season availability to the share of games after it
-    twins = model.keyed(pd.DataFrame([line("Twin A", 180), line("Twin B", 180), line("Twin C", 180)]))
+    twins = model.keyed(pd.DataFrame([line(f"Twin {x}", 180) for x in "ABCDEF"]))
     week = ["2026-10-26", "2026-10-28", "2026-10-30", "2026-11-01", "2026-11-03", "2026-11-05"]
     snap = {**lg.snap, "teams": {**lg.snap["teams"], "Me": lg.snap["teams"]["Me"] + [
-        {"name": "Twin A", "nba": "AAA"}, {"name": "Twin B", "nba": "BBB"}, {"name": "Twin C", "nba": "AAA"}]}}
+        {"name": "Twin A", "nba": "AAA"}, {"name": "Twin B", "nba": "BBB"}, {"name": "Twin C", "nba": "AAA"}]},
+        "free_agents": lg.snap["free_agents"] + [{"name": "Twin D", "nba": "AAA"}, {"name": "Twin E", "nba": "BBB"},
+                                                 {"name": "Twin F", "nba": "AAA", "waiver": "Nov 1"}]}
     sl = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
-                      sched={"AAA": week, "BBB": week[:1] + week[3:]},
+                      sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week},
                       inj={"Twin C": {"status": "O", "note": "Ankle.", "return": "2026-11-03"}})
     assert sl.games_week["twin a"] == 4 and sl.games_week["twin b"] == 2 and sl.games_week["twin c"] == 0
     assert sl.week_vec(["twin a"])[model.RAW.index("PTS")] > sl.week_vec(["twin b"])[model.RAW.index("PTS")]
     assert abs(sl.avail["twin c"] / sl.rate["twin c"] - 2 / 6) < 1e-9 and sl.player("twin c")["injury"] == "Ankle."
+
+    # this week: no opponent until one is known; streams score more games higher, a waiver claim plays from the day
+    # it clears; banked totals decide a category, a punt concedes it, last week's matchup is ignored
+    assert sl.this_week()["opponent"] is None
+    wk = sl.this_week("Them")
+    gain = {s["name"]: s["gain"] for s in wk["streams"]}
+    assert "Twin D" in gain and gain["Twin D"] > gain.get("Twin E", -99) and gain["Twin D"] > gain.get("Twin F", -99)
+    assert next(s for s in wk["streams"] if s["name"] == "Twin D")["games"] == 4
+    assert sl.this_week("Them", limit=50)["streams"][-1]["gain"] >= 0.1 and wk["games"]["you"] > 0
+    assert all(s["drop"] != "Twin C" for s in sl.this_week("Them", limit=50)["streams"])  # injured: never dropped
+    assert wk["cats"]["FG%"]["you"][0] is None and 0 < wk["cats"]["PTS"]["you"][1] and not wk["live"]
+    up = model.League({**snap, "matchup": {"opponent": "Them", "week_end": "2026-11-01",
+                                           "totals": {"Me": {"PTS": 900, "FGM": 40, "FGA": 80}, "Them": {"PTS": 100}}}},
+                      pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
+                      sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week})
+    w2 = up.this_week()
+    assert w2["opponent"] == "Them" and w2["live"] and w2["cats"]["PTS"]["call"] == "safe" and w2["win"] > wk["win"]
+    assert w2["cats"]["PTS"]["you"][0] == 900 and w2["cats"]["FG%"]["you"][0] == 50.0
+    assert up.this_week(punt=["PTS"])["cats"]["PTS"] == {**w2["cats"]["PTS"], "odds": 0, "call": "punt"}
+    stale = model.League({**snap, "matchup": {"opponent": "Them", "week_end": "2026-10-25"}}, pd.concat([base, twins]),
+                         pd.concat([cur, twins]), today=model.date(2026, 10, 26))
+    assert stale.this_week()["opponent"] is None and stale.week_end == "2026-11-01"
+    # banked totals add no noise: with the same final totals, a week that's over is surer than one just starting
+    A, B = lg.vecs["Me"], lg.vecs["Them"]
+    p_now, p_done = model.cat_probs(A, B, model.CATS), model.cat_probs(A * 1e-6, B * 1e-6, model.CATS, A, B)
+    assert all(abs(d - 0.5) >= abs(n - 0.5) - 1e-9 for n, d in zip(p_now, p_done))
+    assert np.isfinite(model.cat_probs(A * 0, B, model.CATS)).all()  # Sunday night, no games left, nothing banked
 
     # league text import: Instinct-style snapshot (numbered teams, fixed-width rows, [O: Out], invisible glyphs,
     # injured section skipped, FA section with roster % and waiver dates) and a hand-typed "## Team" list

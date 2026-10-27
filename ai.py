@@ -18,9 +18,11 @@ user can't win or already dominates barely moves their odds, so explain punts fr
 deal looks on this season's hype (what Yahoo ranks show them); "accept" is how likely they say yes.
 evaluate_trade also returns cats_detail (both teams' category totals and odds, before -> after), vs (user's odds
 against each team), standings (flag "rival": partner or a top-4 team gaining more than the user), flags (injury,
-small sample, buying at peak hype) and build_after (categories the user would win under 30% of weeks, a punt hint).
+small sample, buying at peak hype) and build_after (categories the user would win under 35% of weeks, a punt hint).
 Use find_trades for "who can I get for X", "who wants Y", "fix my steals" or "beat team Z"; offer a harder tier
-when nothing clears the bar. Early in the season, small samples swing hard.
+when nothing clears the bar. Use this_week for "how's my matchup" and streaming: "win" is this week only, stream
+"gain" is this week's odds and "season" what keeping him does to the season-long odds. If it returns no opponent,
+ask who the user plays. Early in the season, small samples swing hard.
 For trades: say who wins, which categories move, the risk (injury, role, age, sample size), and when asked,
 write a short casual pitch the user can paste to the other manager. Keep answers short and concrete."""
 
@@ -96,6 +98,19 @@ class GM:
             return dump(lg.profile() if lg.mode != "points" else {"mode": "points"})
 
         @beta_tool
+        def this_week(opponent: str | None = None) -> str:
+            """This week's matchup: odds per category and for the week, totals so far and projected, a
+            safe / chase / lost call per category, and streaming adds scored on this week's odds.
+
+            Args:
+                opponent: exact team name; omit to use the opponent saved for this week
+            """
+            try:
+                return dump(lg.this_week(opponent, gm.punt))
+            except KeyError as e:
+                return f"Error: {e}"
+
+        @beta_tool
         def roster(team: str) -> str:
             """A team's roster with values and per-category z-scores.
 
@@ -106,7 +121,7 @@ class GM:
                 return f"Error: unknown team. Teams: {list(lg.rosters)}"
             return dump(lg.team_roster(team, gm.punt))
 
-        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, roster]
+        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, this_week, roster]
 
     def ask(self, text, punt=()):
         self.punt = list(punt)

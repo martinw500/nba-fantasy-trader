@@ -69,9 +69,27 @@ def snapshot(league_id=None):
                       f"status=A;sort=AR;start={start};count=25", ["league", "players"])
         fa += [pl(p) for p in (got if isinstance(got, list) else [got])]
 
-    return save({"name": text(q.get_league_info().name), "me": me, "teams": teams, "free_agents": fa,
-                 "settings": {"teams": len(teams), "roster": roster, "mode": "points" if points else "9cat",
-                              "cats": list(by_id.values()), "points": points}})
+    snap = {"name": text(q.get_league_info().name), "me": me, "teams": teams, "free_agents": fa,
+            "settings": {"teams": len(teams), "roster": roster, "mode": "points" if points else "9cat",
+                         "cats": list(by_id.values()), "points": points}}
+    try:  # this week's opponent and both teams' totals so far. ponytail: unverified yfpy shapes, like the rest
+        names = {st.stat_id: st.display_name for st in s.stat_categories.stats}  # incl. display-only "FGM/FGA"
+        unwrap = lambda x, k: x.get(k, x) if isinstance(x, dict) else x
+        for m in q.get_league_scoreboard_by_week(q.get_league_metadata().current_week).matchups:
+            m = unwrap(m, "matchup")
+            sides = {text(t.name): t for t in (unwrap(t, "team") for t in m.teams)}
+            if me in sides:
+                totals = {}
+                for n, t in sides.items():
+                    for st in (unwrap(x, "stat") for x in t.team_stats.stats):
+                        for k, v in zip(names.get(st.stat_id, "").split("/"), str(st.value or "").split("/")):
+                            if YAHOO_STAT.get(k) and k not in ("FG%", "FT%"):
+                                totals.setdefault(n, {})[YAHOO_STAT[k]] = float(v) if re.fullmatch(r"[\d.]+", v) else 0.0
+                snap["matchup"] = {"opponent": next(n for n in sides if n != me), "week_start": m.week_start,
+                                   "week_end": m.week_end, "totals": totals}
+    except Exception as e:
+        print(f"No matchup this week ({e})", file=sys.stderr)
+    return save(snap)
 
 
 PLAYER = re.compile(r"(\S+(?: \S+)*?)\s{2,}([A-Z]{2,4}) - ([A-Z,]+)(.*)")  # "Cade Cunningham    DET - PG,SG  [O: Out]"
@@ -143,13 +161,16 @@ def from_text(path, me):
     fa = [k for k in val.sort_values(ascending=False).index if k not in taken][:100]
     snap["free_agents"] = listed or [{"name": line.at[k, "PLAYER_NAME"], "pos": "", "status": "",
                                       "nba": line.at[k, "TEAM_ABBREVIATION"]} for k in fa]
+    old = json.loads(OUT.read_text(encoding="utf-8")) if OUT.exists() else {}
+    if old.get("matchup") and old.get("me") == me:  # the opponent picked in the app survives a re-import
+        snap["matchup"] = old["matchup"]
     return save(snap)
 
 
 def _pool():
     """ROS line and z-value of everyone who's played this season."""
     import model
-    base, cur = model.fetch(model.LAST), model.fetch(model.CUR, max_age_hours=12)
+    base, cur = model.baseline(model.fetch(model.LAST), model.fetch(model.OLDER)), model.fetch(model.CUR, max_age_hours=12)
     line = model.ros(base, cur)
     line = line[line.index.isin(cur.index)]
     return line, model.zscores(line, 156).sum(axis=1)
@@ -157,6 +178,7 @@ def _pool():
 
 def demo(seed=7):
     """12 teams snake-drafted (with some randomness) from players who've played this season."""
+    import model
     line, val = _pool()
     rng = random.Random(seed)
     order = sorted(line.index, key=lambda k: -(val[k] + rng.gauss(0, 1.2)))

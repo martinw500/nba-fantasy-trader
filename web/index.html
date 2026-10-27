@@ -149,6 +149,8 @@ th.punted-col, tr.punted-col td:first-child { text-decoration: line-through; }
 .pname { font-weight: 550; }
 .tag { display: inline-block; font-size: 11px; font-weight: 650; padding: 0 5px; border-radius: 4px; background: var(--line); color: var(--muted); margin-left: 6px; vertical-align: 1px; }
 .tag.out { background: color-mix(in oklch, var(--neg) 18%, transparent); color: var(--neg-ink); }
+.tag.safe { background: color-mix(in oklch, var(--pos) 20%, transparent); color: var(--pos-ink); }
+.tag.chase { color: var(--text); }
 .val { font-weight: 650; }
 .pos { color: var(--pos-ink); }
 .neg { color: var(--neg-ink); }
@@ -245,6 +247,7 @@ td.names { white-space: normal; min-width: 130px; }
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-team" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M15.5 4.8a3.5 3.5 0 0 1 0 6.4M17.5 14.8c2.2.6 3.6 2.4 4 5.2"/></symbol>
+  <symbol id="i-week" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4M8 14.5h3"/></symbol>
   <symbol id="i-league" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M3.5 9.5h17M3.5 14.5h17M9 4v16"/></symbol>
   <symbol id="i-trade" viewBox="0 0 24 24"><path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/></symbol>
   <symbol id="i-wire" viewBox="0 0 24 24"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.6-3.6 3.2-5.5 6.5-5.5 1.3 0 2.5.3 3.5.8M18 14v6M15 17h6"/></symbol>
@@ -260,6 +263,7 @@ td.names { white-space: normal; min-width: 130px; }
   <nav class="side" aria-label="Sections">
     <div class="brand"><span class="brand-mark"><svg class="i"><use href="#i-ball"/></svg></span>Fantasy GM</div>
     <button class="nav" data-view="team"><svg class="i"><use href="#i-team"/></svg><span>My team</span></button>
+    <button class="nav" data-view="week"><svg class="i"><use href="#i-week"/></svg><span>This week</span></button>
     <button class="nav" data-view="league"><svg class="i"><use href="#i-league"/></svg><span>League</span></button>
     <button class="nav" data-view="trades"><svg class="i"><use href="#i-trade"/></svg><span>Trades</span></button>
     <button class="nav" data-view="waivers"><svg class="i"><use href="#i-wire"/></svg><span>Waivers</span></button>
@@ -290,6 +294,7 @@ const S = {
   punt: new URLSearchParams(location.search).get("punt")?.split(",").filter(Boolean) ?? store.get("punt", []),  // ?punt=FT%25,TOV bookmarks a build
   state: null, error: null,
   league: { team: null, data: null },
+  week: {},  // { data, loading }; replaced on punt / team / refresh, so late answers land in the old object
   trade: { give: new Set(), get: new Set(), team: null, roster: null, result: null, busy: false },
   locks: new Set(store.get("locks", [])),
   find: { tier: "fair", goal: "win", cats: [], vs: "", size: 3, healthy: false, shape: "", team: "", list: null, busy: false, ran: "", sort: null },
@@ -371,8 +376,8 @@ function viewTeam() {
   let strip = "", vs = "";
   if (prof) {
     const ranks = prof.ranks[st.me];
-    strip = `<div class="panel"><div class="panel-h"><div><h2>Category odds</h2><p>Chance you win each category in a typical week, averaged over every opponent. Rank is your per-game production.</p></div>
-      ${prof.punt_suggestions.length && !prof.punt_suggestions.every(punted) ? `<button class="btn" data-act="apply-punt" title="You win these under 30% of weeks">Punt ${prof.punt_suggestions.map(lab).join(" + ")}</button>` : ""}</div>
+    strip = `<div class="panel"><div class="panel-h"><div><h2>Category odds</h2><p>Chance you win each category in a typical week, averaged over every opponent. Rank is where those odds place you in the league.</p></div>
+      ${prof.punt_suggestions.length && !prof.punt_suggestions.every(punted) ? `<button class="btn" data-act="apply-punt" title="You win these under 35% of weeks">Punt ${prof.punt_suggestions.map(lab).join(" + ")}</button>` : ""}</div>
       <div class="cats" style="--n:${st.cats.length}">${st.cats.map(c => `<div class="cat ${punted(c) ? "punted" : ""}"><span class="lbl">${lab(c)}</span>
           <span class="rk">${pct(prof.odds[c])}</span>
           <span class="tot muted">rank ${ranks[c]} / ${n}</span>
@@ -398,6 +403,48 @@ function viewTeam() {
     ${vs}`;
 }
 
+const CALL = { safe: "Ahead", chase: "Chase", lost: "Behind", punt: "Punted" };
+const CALL_TIP = { safe: "You win it 65%+ of the time from here", chase: "Could go either way: where streams and lineup calls pay off", lost: "35% or less to win it: spend your moves elsewhere first", punt: "You're punting it" };
+function viewWeek() {
+  const st = S.state, W = S.week, w = W.data;
+  const head = sub => `<div class="head"><div><h1>This week${w?.opponent ? ` vs ${esc(w.opponent)}` : ""}</h1><p class="sub">${sub}</p></div>
+    ${w?.teams ? `<label class="field">Opponent <select id="week-opp">${w.opponent ? "" : opt("", "Pick a team", "")}${w.teams.map(t => opt(t, t, w.opponent)).join("")}</select></label>` : ""}</div>`;
+  if (isPoints()) return head("") + `<div class="panel"><div class="empty"><b>Points leagues aren't covered yet</b>The weekly matchup view works on category leagues.</div></div>`;
+  if (!w) { if (!W.loading) loadWeek(); return head("&nbsp;") + `<div class="panel">${SKEL}</div>`; }
+  if (w.error) return head("") + `<div class="panel err">Couldn't load this week: ${esc(w.error)}. <button class="btn" data-act="week-retry">Try again</button></div>`;
+  const end = new Date(w.week_end + "T12:00").toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  if (!w.opponent) return head(`Week ends ${end}.`) + `<div class="panel"><div class="empty"><b>Who are you playing this week?</b>Pick your opponent above. It's saved until ${end}, when the week rolls over. A Yahoo pull will fill it in, with the live score, once the API works.</div></div>`;
+  const cats = Object.entries(w.cats), by = k => cats.filter(([, d]) => d.call === k).map(([c]) => lab(c));
+  const verdict = w.win >= 60 ? ["accept", "Favoured"] : w.win <= 40 ? ["decline", "Underdog"] : ["toss-up", "Toss-up"];
+  const tot = c => v => v == null ? "—" : c.endsWith("%") ? v.toFixed(1) + "%" : v.toFixed(0);
+  const side = (c, [now, fin]) => w.live ? ba([now, fin], tot(c)) : tot(c)(fin);
+  const games = w.games ? `<div><dt title="Player-games left this week, players in IL slots excluded">Games left</dt><dd>${w.games.you} <span class="muted small">vs ${w.games.them}</span></dd></div>` : "";
+  const advice = [by("chase").length && `Chase ${by("chase").join(", ")}.`, by("lost").length && `Don't chase ${by("lost").join(", ")}: you're unlikely to catch up.`,
+    by("safe").length && `You're ahead in ${by("safe").join(", ")}.`].filter(Boolean).join(" ");
+  const claim = w.streams.some(p => p.waiver) ? [{ h: "Add", v: p => p.waiver ? `<span class="tag" title="On waivers: he only counts from the day the claim clears">claim by ${esc(p.waiver)}</span>` : `<span class="muted">now</span>` }] : [];
+  const streamCols = [{ h: `<span title="Change in your chance to win this week">This week</span>`, v: p => `<span class="val ${tone(p.gain)}">${delta(p.gain, "win%")}</span>` },
+    { h: "Drop", v: p => esc(p.drop) }, { h: `<span title="Change in your season-long weekly win odds if you keep him">Season</span>`, v: p => `<span class="${tone(p.season)}">${delta(p.season, "win%")}</span>` }, ...claim];
+  return head(`Week ends ${end}${w.live ? "" : " · no live score yet"}${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}`) + `
+    <div class="panel"><div class="panel-h"><div class="verdict"><span class="pill ${verdict[0]}" style="text-transform:none">${verdict[1]}</span>
+      <dl class="side-by"><div><dt title="Chance you win the week, from the score so far and the games left">Win odds</dt><dd>${Math.round(w.win)}%</dd></div>
+        <div><dt title="Categories you'd expect to win and lose">Expected score</dt><dd>${w.score[0].toFixed(1)}–${w.score[1].toFixed(1)}</dd></div>${games}</dl></div></div>
+      <div class="tw"><table><thead><tr><th>Category</th><th class="n" title="${w.live ? "So far → projected final" : "Projected final"}">You</th><th class="n">${esc(w.opponent)}</th>
+        <th class="n" title="Chance you win the category this week">Your odds</th><th>Call</th></tr></thead><tbody>
+      ${cats.map(([c, d]) => `<tr class="${punted(c) ? "punted-col" : ""}"><td class="pname">${lab(c)}</td><td class="n">${side(c, d.you)}</td><td class="n">${side(c, d.them)}</td>
+        <td class="n val"><span class="dot" style="background:${oddsColor(d.odds / 100)}"></span>${Math.round(d.odds)}%</td>
+        <td><span class="tag ${d.call === "safe" ? "safe" : d.call === "lost" ? "out" : d.call}" title="${CALL_TIP[d.call]}">${CALL[d.call]}</span></td></tr>`).join("")}</tbody></table></div>
+      <div class="panel-b small muted" style="border-top:1px solid var(--line)">${advice} Projected = ${w.live ? "the score so far plus " : ""}each player's games left × his per-game line × his chance of playing. Players in IL slots sit.
+        ${w.live ? "" : "No live score yet, so this assumes nothing has been played, which is right on Monday. A Yahoo pull adds the real score."}</div></div>
+    <div class="panel"><div class="panel-h"><div><h2>Streaming adds</h2><p>Free agents who most raise your odds this week, each swapped for whichever of your three cheapest healthy players helps most. Season shows what keeping him does long-term.</p></div></div>
+      ${playerTable(w.streams, { extra: streamCols, empty: "<b>No stream helps this week</b>Nobody on waivers raises your odds by 0.1% or more over your weakest players." })}</div>`;
+}
+async function loadWeek(opponent) {
+  const W = S.week; W.loading = true;
+  try { W.data = await api("/api/week", opponent ? { opponent } : {}); } catch (e) { W.data = { error: e.message }; }
+  W.loading = false;
+  if (S.week === W && S.view === "week") render();
+}
+
 function viewLeague() {
   const st = S.state, team = S.league.team || (st.profile ? Object.keys(st.profile.standings).find(t => t !== st.me) : st.teams.find(t => t !== st.me));
   const prof = st.profile;
@@ -412,12 +459,18 @@ function viewLeague() {
   const d = S.league.data;
   const roster = !d || d.team !== team ? `<div class="skel"></div><div class="skel"></div>` : playerTable(d.roster);
   if ((!d || d.team !== team) && S.league.loading !== team) openTeam(team, false);
-  return `<div class="head"><div><h1>League</h1><p class="sub">${prof ? "Projected standings from every team's weekly win odds against the rest of the league. Weak spots are categories a team wins under 30% of weeks." : "Every roster, valued on your build."}</p></div></div>
+  const catTable = prof ? `<div class="panel"><div class="panel-h"><div><h2>Category standings</h2><p>Each team's chance to win the category in a typical week, and its rank. Rows follow projected standings.</p></div></div>
+    <div class="tw"><table><thead><tr><th>Team</th>${st.cats.map(c => `<th class="n z ${punted(c) ? "punted-col" : ""}" style="text-align:center">${lab(c)}</th>`).join("")}</tr></thead><tbody>
+    ${order.map(t => `<tr${t === st.me ? ` style="background:var(--accent-soft)"` : ""}><td><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button>${t === st.me ? ` <span class="tag">you</span>` : ""}</td>
+      ${st.cats.map(c => { const p = prof.cat_odds[t][c]; return `<td class="z ${punted(c) ? "punted-col" : ""}" style="--c:${heat((p - 0.5) * 6)}" title="${esc(t)}: ${pct(p)} to win ${lab(c)}, ${ord(prof.ranks[t][c])} in the league"><span>${pct(p)} <small class="muted">${prof.ranks[t][c]}</small></span></td>`; }).join("")}</tr>`).join("")}
+    </tbody></table></div></div>` : "";
+  return `<div class="head"><div><h1>League</h1><p class="sub">${prof ? "Projected standings from every team's weekly win odds against the rest of the league. Weak spots are categories a team wins under 35% of weeks." : "Every roster, valued on your build."}</p></div></div>
     <div class="grid2" style="grid-template-columns: minmax(300px, 420px) 1fr">
       <div class="panel" style="align-self:start">${list}</div>
       <div class="panel"><div class="panel-h"><div><h2>${esc(team)}</h2><p>${d && d.team === team && d.build.length ? `Weak in ${d.build.map(lab).join(", ")}` : "&nbsp;"}</p></div>
         ${team === st.me ? "" : `<button class="btn" data-act="trade-with" data-team="${esc(team)}"><svg class="i"><use href="#i-trade"/></svg>Trade with them</button>`}</div>${roster}</div>
-    </div>`;
+    </div>
+    ${catTable}`;
 }
 async function openTeam(team, go = true) {
   S.league.team = team; S.league.loading = team;
@@ -506,7 +559,7 @@ function tradeResultOdds(r) {
     ${cats}
     <div class="panel-b small muted" style="border-top:1px solid var(--line)">Win odds = chance to win a typical week against the league, with both rosters updated. ${moves}
       ${r.their_view > 0.3 && r.their_net < 0 ? "They'd likely see this as a win on hype alone." : ""}
-      ${hint.length ? `After this you'd win ${hint.map(lab).join(" and ")} under 30% of weeks: worth thinking about punting ${hint.length > 1 ? "them" : "it"}.` : ""}</div></div>
+      ${hint.length ? `After this you'd win ${hint.map(lab).join(" and ")} under 35% of weeks: worth thinking about punting ${hint.length > 1 ? "them" : "it"}.` : ""}</div></div>
     ${improvePanel()}
     <div class="grid2">
       <div class="panel"><div class="panel-h"><div><h2>Head-to-head</h2><p>Your chance to beat each team in a week, before → after. Biggest gains first.</p></div></div>
@@ -746,7 +799,7 @@ function render() {
   if (S.error && !S.state) { v.innerHTML = `<div class="panel err">Couldn't load your league: ${esc(S.error)}. Is <code>python app.py</code> running?</div>`; return; }
   if (!S.state) return;
   const demo = S.state.demo && S.view === "team" ? `<div class="notice">This is a demo league drafted from real stats. Connect your Yahoo league with <code>python yahoo.py</code> (see README) to see your real team.</div>` : "";
-  v.innerHTML = demo + ({ team: viewTeam, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, gm: viewGM }[S.view] || viewTeam)();
+  v.innerHTML = demo + ({ team: viewTeam, week: viewWeek, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, gm: viewGM }[S.view] || viewTeam)();
   const m = $("#msgs"); if (m) m.scrollTop = m.scrollHeight;
 }
 function setView(v) { S.view = v; store.set("view", v); history.replaceState(null, "", "#" + v); render(); window.scrollTo(0, 0); }
@@ -760,7 +813,7 @@ document.addEventListener("click", async e => {
     S.punt = punted(c) ? S.punt.filter(x => x !== c) : [...S.punt, c];
     const re = S.trade.result;
     store.set("punt", S.punt); S.trade.result = null; S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {};
-    S.league.data = null; S.trade.roster = null;
+    S.league.data = null; S.trade.roster = null; S.week = {};
     await loadState();
     return re && evaluate();
   }
@@ -792,6 +845,7 @@ document.addEventListener("click", async e => {
   }
   if (act === "clear-trade") { S.trade.give.clear(); S.trade.get.clear(); S.trade.result = null; history.replaceState(null, "", "#trades"); return render(); }
   if (act === "evaluate") return evaluate();
+  if (act === "week-retry") { S.week = {}; return render(); }
   if (act === "find") return find();
   if (act === "improve") return improve(t.dataset.kind);
   if (act === "load-deal") return loadDeal(S[t.dataset.src].list[+t.dataset.i]);
@@ -811,12 +865,13 @@ document.addEventListener("change", async e => {
   if (t.dataset.pick) { const set = S.trade[t.dataset.pick]; t.checked ? set.add(t.value) : set.delete(t.value); S.trade.result = null; return render(); }
   if (t.id === "trade-team") { S.trade.team = t.value; S.trade.get.clear(); S.trade.result = null; return render(); }
   if (t.id === "find-player") return pickPlayer(t.value);
+  if (t.id === "week-opp") { S.week = {}; loadWeek(t.value); return render(); }
   if (t.id === "me-team") {  // switch which team is yours: everything team-specific starts over
     t.disabled = true;
     try {
       S.state = await api("/api/me", { team: t.value });
       Object.assign(S.trade, { give: new Set(), get: new Set(), team: null, roster: null, result: null });
-      S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null;
+      S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null; S.week = {};
       toast(`You're ${t.value} now`);
     } catch (err) { toast(err.message); }
     return render();
@@ -840,7 +895,7 @@ document.addEventListener("keydown", e => {
 $("#refresh").addEventListener("click", async e => {
   const b = e.currentTarget; b.classList.add("busy"); b.disabled = true;
   try {
-    S.state = await api("/api/refresh", {}); S.league.data = null; S.trade.roster = null; S.find.list = null; S.saved.evals = {}; S.players = null;
+    S.state = await api("/api/refresh", {}); S.league.data = null; S.trade.roster = null; S.find.list = null; S.saved.evals = {}; S.players = null; S.week = {};
     toast("League refreshed");
   } catch (err) { toast("Refresh failed: " + err.message); }
   b.classList.remove("busy"); b.disabled = false; render();

@@ -14,19 +14,21 @@ Local Yahoo NBA fantasy GM app. Python 3.13 + pandas backend, one-file vanilla H
 Python lives in `.venv` (Homebrew Python blocks global pip): use `.venv/bin/python` or `source .venv/bin/activate`.
 - `python test_model.py`: self-check, synthetic data, no network. Run it after touching `model.py`.
 - `python app.py --no-browser`: run the app without opening a tab. `#view` and `?punt=FT%25,TOV` deep-link a view and build.
-- `python model.py {team|trade|ideas|waivers|movers|roster} [--punt ...]`: prints JSON.
+- `python model.py {team|trade|ideas|search|waivers|movers|roster|week} [--punt ...]`: prints JSON.
 
 ## Model rules (don't break these)
 - 9-cat advice (trade, ideas, waivers, standings) runs on the matchup model: `week` (per-game line × GAMES_WEEK × avail, missed games half-filled at waiver level) → `cat_probs` → `match_prob` → `outlook()`. Deltas are in win-% points, `unit: "win%"`. z-scores (`value()`) are only for player tables and candidate selection.
-- Calibration knobs (GAMES_WEEK, DISPERSION, SCHED_CV, PCT_NOISE, FILL, STATUS_AVAIL) are guesses. If you change them, re-check that demo standings stay in a realistic ~25–70% win range.
+- DISPERSION, SCHED_CV and PCT_NOISE are fitted by `python backtest.py` (2025-26 box scores, 20 simulated leagues, predictions from what was known each Monday). Re-run it after changing projections (`baseline()`, `ros()`, availability) and keep the calibration tables near the diagonal. GAMES_WEEK, FILL and STATUS_AVAIL are still guesses. After any change, check demo standings stay in a realistic ~25–70% win range.
+- Category odds are calibrated, so cutoffs live in odds terms: `WEAK` (35%) = weak spot / punt hint, and This week's Ahead/Behind calls use the same cutoff.
 - Punts concede the category (`_concede` sets your odds to 0) for your side only. Opponents always use real odds.
 - `trade()` rejects players you don't own or that come from more than one team (KeyError). Keep that check, since AI tool input comes through it.
 - Values are per game, rest of season: `ros()` blends last season → this season with `GP/(GP+SHRINK)`. Rookies start from a fringe line.
-- "cur"/"Now"/`their_view` = perceived value (`HYPE` shrink). This is what drives finesse trades and sell-high.
+- "cur"/"Now" = perceived per-game value (`HYPE` shrink). `their_view` uses `perceived()`: that over the games a player plays (`effective()`), floored at waiver level, and an incoming extra player costs the team its weakest players. This drives finesse trades and sell-high.
+- `effective()` is the only right way to weight value by availability: values are mostly negative (relative to the rostered average), so `value * avail` would rank an injured player above a healthy one.
 - Uneven trades always subtract `n * replacement()`. Replacement = top-5 FA average.
-- `build()` = a team's weak spots (categories it wins <30% of weeks). Points-mode trades value opponents on it.
+- `build()` = a team's weak spots (categories it wins <35% of weeks, `WEAK`). Points-mode trades value opponents on it.
 - Player lookup always goes through `League.find()` (accents, Jr/III, typos).
-- `SEASON`s are `LAST`/`CUR` at the top of `model.py`; bump them each October. Delete `data/stats_*.csv` to refetch.
+- `SEASON`s are `OLDER`/`LAST`/`CUR` at the top of `model.py`; bump them each October. The baseline blends `LAST` and `OLDER` (`baseline()`). Delete `data/stats_*.csv` to refetch.
 
 ## Gotchas
 - `nba_api` names have accents (Jokić). Windows consoles need `sys.stdout.reconfigure(encoding="utf-8")`, which the CLIs already do.

@@ -16,6 +16,7 @@ Answer the user's fantasy question with numbers from this repo's engine. Never i
    - `python model.py search --get "Target" | --give "Mine" [--lock "A, B"] [--tier easy|fair|finesse|hard] [--goal cats --cats "STL,AST" | --goal team --vs "Name"] [--size 3] [--healthy] [--shape consolidate|depth]` — targeted search: offers for a player, buyers for yours, deals that fix categories or beat one team. Each result has `accept` (Likely yes / Maybe / Long shot)
    - `python model.py waivers` — best free agents + add/drop moves
    - `python model.py movers` — sell high / buy low
+   - `python model.py week [--vs "Name"]` — this week's matchup: `win` (this week only), per-category totals so far → projected, odds and `call` (safe / chase / lost / punt), and `streams` (free agents scored on this week's odds, with `drop` and `season` = season-long change). `opponent: null` means none is saved: ask who the user plays and pass `--vs`
    - `python model.py roster --team "Name"` — any team's roster
 3. Answer like a blunt GM: the move, the number, which categories change, the risk (injury, role, small sample early in the season). For trades always mention how it looks to the other manager (`their_net`, `their_view`).
 4. If the user wants a message to send another manager, write it short and casual, then run it through the `humanizer` skill.

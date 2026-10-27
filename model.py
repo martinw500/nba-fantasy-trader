@@ -15,6 +15,7 @@ CLI (prints JSON, used by Claude Code and for quick checks):
   python model.py search --get "Wembanyama" --tier easy --lock "Jokic"   # offers for a target, see --help
   python model.py waivers
   python model.py movers                    # sell-high / buy-low
+  python model.py week --vs "Team"          # this week's matchup (--vs defaults to the snapshot's opponent)
   add --punt "FT%,TOV" to any of them
 """
 import argparse
@@ -27,7 +28,7 @@ import sys
 import time
 import unicodedata
 import urllib.request
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -35,26 +36,32 @@ import pandas as pd
 
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
-LAST, CUR = "2025-26", "2026-27"
+OLDER, LAST, CUR = "2024-25", "2025-26", "2026-27"
 CATS = ["FG%", "FT%", "FG3M", "PTS", "REB", "AST", "STL", "BLK", "TOV"]
 COUNTING = CATS[2:]
 RAW = ["FGM", "FGA", "FTM", "FTA"] + COUNTING
 POINTS = {"PTS": 1, "REB": 1.2, "AST": 1.5, "STL": 3, "BLK": 3, "TOV": -1}  # Yahoo default
 SHRINK = 20  # games of current season that count as much as the baseline
-HYPE = 5     # same, for how other managers see players (hot starts count a lot more)
+OLDER_W, REGRESS = 0.5, 25  # baseline: a game two seasons ago counts half; 25 games of a fringe line pull small samples in
+HYPE = 10    # same, for how other managers see players (hot starts count more: 3 games = 23%, 10 games = half)
 OUT = {"O", "INJ", "IL", "IL+", "NA", "SUSP"}  # Yahoo statuses that mean "not playing now"
 
-# Matchup model. ponytail: calibration knobs are informed guesses; fit them to real weekly results if odds look off.
+# Matchup model. DISPERSION, SCHED_CV and PCT_NOISE are fitted to real weeks of 2025-26 box scores (backtest.py: 20
+# simulated leagues, predictions from what was known each Monday); re-run it after changing how lines are projected.
 GAMES_WEEK = 3.4                                   # NBA games per team per week
-DISPERSION = {"PTS": 2.2, "REB": 1.2, "AST": 1.1}  # per-game variance / mean; ~Poisson (1.0) for 3PM/STL/BLK/TO
-SCHED_CV = 0.10                                    # week-to-week swing beyond box-score noise (schedule, rest, minutes)
-PCT_NOISE = 1.0                                    # FG%/FT% variance vs coin-flip shooting at each player's rate
+DISPERSION = {"FG3M": 1.75, "PTS": 3.0, "REB": 2.5, "AST": 3.0, "STL": 1.0, "BLK": 1.5, "TOV": 1.25}  # variance / mean
+SCHED_CV = 0.15                                    # week-to-week swing beyond box-score noise (schedule, rest, minutes,
+                                                   # and projection error)
+PCT_NOISE = 1.75                                   # FG%/FT% variance vs coin-flip shooting at each player's rate
+WEAK = 0.35                                        # a "weak spot" / punt hint: winning a category under 35% of
+                                                   # weeks (about the bottom 10% of team-categories once odds are calibrated)
 FILL = 0.5                                         # share of a sat-out player's games your bench/streamers cover
 STATUS_AVAIL = {"GTD": 0.9, "DTD": 0.9, "O": 0.7, "SUSP": 0.8, "INJ": 0.6, "IL": 0.5, "IL+": 0.4, "NA": 0.0}
 
 # Trade search difficulty: (min gain for you, min gain for them, both win %; min "looks to them" in value units).
+# A gradual ladder: they clearly gain / both gain / they lose a little but it looks good / you gain big, needs a pitch.
 # ponytail: starting guesses like the knobs above; tune once real offers get accepted or turned down.
-TIERS = {"easy": (0.5, 0, 0.3), "fair": (1, 0.5, -1), "finesse": (1.5, -5, 0.3), "hard": (3, -10, -1)}
+TIERS = {"easy": (0.5, 1, 0.3), "fair": (1, 0, -0.5), "finesse": (1.5, -2.5, 0.3), "hard": (3, -6, -1)}
 
 
 def accept(their_net, their_view, u=1.0):
@@ -131,6 +138,22 @@ def keyed(df):
     return df.assign(key=df.PLAYER_NAME.map(norm)).drop_duplicates("key").set_index("key")
 
 
+def baseline(last, older):
+    """Pre-season per-game line from the last two seasons: GP-weighted, a game two seasons ago counting OLDER_W of one
+    last season, pulled toward a fringe-rotation line by REGRESS games (so a 5-game season doesn't count as gospel, and
+    a player who missed all of last season isn't treated as a rookie). GP = the weighted games, for availability.
+    Backtested on 2025-26 (backtest.py): slightly better weekly odds than last season alone."""
+    cols = ["MIN"] + RAW
+    keys = last.index.union(older.index)
+    fringe = last.nlargest(200, "MIN").tail(60)[cols].mean().to_numpy()
+    w1, w2 = last.GP.reindex(keys).fillna(0), OLDER_W * older.GP.reindex(keys).fillna(0)
+    x1, x2 = last[cols].reindex(keys).fillna(0), older[cols].reindex(keys).fillna(0)
+    line = (x1.mul(w1, axis=0) + x2.mul(w2, axis=0) + REGRESS * fringe).div(w1 + w2 + REGRESS, axis=0)
+    return line.assign(PLAYER_NAME=last.PLAYER_NAME.combine_first(older.PLAYER_NAME).reindex(keys),
+                       TEAM_ABBREVIATION=last.TEAM_ABBREVIATION.combine_first(older.TEAM_ABBREVIATION).reindex(keys),
+                       GP=w1 + w2)
+
+
 def ros(base, cur, k=SHRINK):
     """Rest-of-season per-game line. weight on this season = GP / (GP + k).
     Rookies (no baseline) start from a fringe-roster line, so 3 hot games don't make them stars."""
@@ -167,22 +190,33 @@ def phi(x):
     return 0.5 * (1 + np.sign(x) * y)
 
 
-def cat_probs(A, B, cats):
-    """P(team A beats team B) in each category. A, B: (..., len(RAW)) weekly totals -> (..., len(cats))."""
+def cat_probs(A, B, cats, A0=None, B0=None):
+    """P(team A beats team B) in each category. A, B: (..., len(RAW)) weekly totals -> (..., len(cats)).
+    A0, B0: totals already banked this week. They move the final totals but add no variance."""
+    TA, TB = (A, B) if A0 is None else (A + A0, B + B0)
     out = []
     for c in cats:
         if c in ("FG%", "FT%"):
             m, a = RAW.index(c[:2] + "M"), RAW.index(c[:2] + "A")
-            pa, pb = A[..., m] / A[..., a], B[..., m] / B[..., a]
-            var = PCT_NOISE * (pa * (1 - pa) / A[..., a] + pb * (1 - pb) / B[..., a])
+            na, nb = np.maximum(TA[..., a], 1e-9), np.maximum(TB[..., a], 1e-9)  # no shots at all: 0%, not NaN
+            pa, pb = TA[..., m] / na, TB[..., m] / nb
+            var = PCT_NOISE * (pa * (1 - pa) * A[..., a] / na ** 2 + pb * (1 - pb) * B[..., a] / nb ** 2)
             diff = pa - pb
         else:
             i, d = RAW.index(c), DISPERSION.get(c, 1.0)
             ta, tb = A[..., i], B[..., i]
             var = d * (ta + tb) + (SCHED_CV * ta) ** 2 + (SCHED_CV * tb) ** 2
-            diff = tb - ta if c == "TOV" else ta - tb
-        out.append(phi(diff / np.sqrt(var)))
+            diff = TB[..., i] - TA[..., i] if c == "TOV" else TA[..., i] - TB[..., i]
+        out.append(phi(diff / np.sqrt(var + 1e-12)))  # no games left: a banked lead is a sure win
     return np.stack(out, -1)
+
+
+def total(v, c):
+    """A weekly total as shown: FG%/FT% in percent (None before any attempts), counting stats to one decimal."""
+    if c in ("FG%", "FT%"):
+        a = v[RAW.index(c[:2] + "A")]
+        return round(100 * float(v[RAW.index(c[:2] + "M")] / a), 1) if a else None
+    return round(float(v[RAW.index(c)]), 1)
 
 
 def match_prob(p):
@@ -208,7 +242,7 @@ class League:
         self.cats = [c for c in s.get("cats", CATS) if c in CATS] or CATS
         self.points = s.get("points") or POINTS
         self.me = snap["me"]
-        base = fetch(LAST) if base is None else base
+        base = baseline(fetch(LAST), fetch(OLDER)) if base is None else base
         cur = fetch(CUR, max_age_hours=12) if cur is None else cur
         pool = self.teams_n * self.roster_n
         line = ros(base, cur)
@@ -236,10 +270,18 @@ class League:
                 m = self.meta.setdefault(k, {})
                 m["status"] = m.get("status") or i["status"]  # the league's own tag wins
         self.rate, self.avail = self._availability(base, cur)
-        # ponytail: Yahoo NBA weeks run Monday-Sunday; the snapshot doesn't carry the league's week dates yet
-        self.games_week = pd.Series({k: self.games_left(k, sunday) for k in self.p.index}, dtype=float)
+        # this week's opponent and totals so far (Yahoo pull, or picked in the app); last week's one doesn't count.
+        # ponytail: without a Yahoo pull, weeks are assumed to run Monday-Sunday
+        m = snap.get("matchup") or {}
+        self.matchup = m if (m.get("week_end") or "") >= self.today else {}
+        self.week_end = self.matchup.get("week_end") or sunday
+        self.games_week = pd.Series({k: self.games_left(k, self.week_end) for k in self.p.index}, dtype=float)
         # expected weekly contribution: games played at his line, missed games partly covered at waiver level
         fill = self.p.loc[self._waiver_level(self.value()), RAW].mean()
+        # what a missed game is worth in value units: the half-covered waiver line (zero point for effective())
+        f = pd.DataFrame([FILL * fill], index=["_fill"]).assign(MIN=0.0)
+        self.zfill = {"ros": zscores(pd.concat([line, f]), pool).loc["_fill", self.cats],
+                      "cur": zscores(pd.concat([seen, f]), pool).loc["_fill", self.cats]}
         a = self.avail.to_numpy()[:, None]
         self.week = GAMES_WEEK * (a * self.p[RAW] + (1 - a) * FILL * fill.to_numpy())
 
@@ -252,9 +294,9 @@ class League:
                 keys.append(k)
         return keys
 
-    def games_left(self, k, end="9999"):
-        """Games k's NBA team plays from today (or his return date, if later) through `end`."""
-        start = max(self.today, self.inj.get(k, {}).get("return") or "")
+    def games_left(self, k, end="9999", start=None):
+        """Games k's NBA team plays from today (or `start`, or his return date, if later) through `end`."""
+        start = max(start or self.today, self.today, self.inj.get(k, {}).get("return") or "")
         return sum(start <= d <= end for d in self.sched.get(self.nba.get(k), ()))
 
     def _availability(self, base, cur):
@@ -307,6 +349,33 @@ class League:
         pick = self._waiver_level(v)
         z = self.zcur if frame == "cur" else self.z
         return float(v[pick].mean()), z.loc[pick].mean()
+
+    def effective(self, punt=(), frame="ros"):
+        """Value over the games a player will actually play: his per-game value where he plays (avail), the
+        half-covered waiver line the matchup model uses where he sits. A player who never plays sits below any
+        healthy free agent (a plain value x avail would rank him above them, since most values are negative)."""
+        v, floor = self.value(punt=punt, frame=frame), float(self.zfill[frame][self.active(punt)].sum())
+        return floor + self.avail.reindex(v.index).fillna(0.85) * (v - floor)
+
+    def perceived(self):
+        """(waiver level, every player's perceived value): how a player looks on this season's hype over the games he
+        plays (Yahoo ranks run on totals, and managers remember who missed a season), floored at what the best free
+        agents look like, since anyone worse is just a droppable roster spot."""
+        raw = self.effective(frame="cur")
+        cv = float(raw[self._waiver_level(raw)].mean())
+        return cv, raw.clip(lower=cv)
+
+    def weakest(self, team, m, pv):
+        """Perceived cost of the m players `team` would drop to make room: its weakest by perceived value."""
+        return float(pv.reindex(self.rosters[team]).nsmallest(m).sum()) if m > 0 else 0.0
+
+    def best_fa(self, n, skip=()):
+        """The n free agents a team would pick up for open spots: per-game value times share of games played, so an
+        injured name on waivers isn't who fills the spot."""
+        if not self.fa:
+            return []
+        v = self.effective().reindex(self.fa)
+        return v[~v.index.isin(list(skip))].nlargest(n).index.tolist()
 
     def _waiver_level(self, v):
         """The 5 best free agents by v, or the 10 players just outside the rostered pool without FA data."""
@@ -406,7 +475,7 @@ class League:
             dropped = sorted(keys, key=c.get)[:n]
             keys = [k for k in keys if k not in dropped]
         elif n < 0 and self.fa:
-            added = self.value([k for k in self.fa if k not in keys]).nlargest(-n).index.tolist()
+            added = self.best_fa(-n, skip=keys)
             keys += added
         return keys, dropped, added
 
@@ -436,8 +505,9 @@ class League:
         other = self.owner(get[0]) if get else None
         tp = self.build(other) if other in self.rosters else []
         theirs = float(self.value(give, tp).sum() - self.value(get, tp).sum() + n * self.replacement(tp)[0])
-        cv = self.replacement(frame="cur")[0]
-        seen = float(self.value(give, frame="cur").sum() - self.value(get, frame="cur").sum() + n * cv)
+        cv, pv = self.perceived()
+        seen = float(pv.reindex(give).sum() - pv.reindex(get).sum()) + (
+            -self.weakest(other, -n, pv) if n < 0 and other in self.rosters else n * cv)
         out = {"give": [self.player(k, punt) for k in give], "get": [self.player(k, punt) for k in get],
                "cats": {c: round(float(cats[c]), 2) for c in self.cats}, "net": round(mine, 2), "unit": "value",
                "other_team": other, "their_build": tp, "their_net": round(theirs, 2), "their_view": round(seen, 2),
@@ -453,8 +523,6 @@ class League:
         sb, sa = self.standings(), self.standings(ov)
         net = 100 * (a["win"] - b["win"])
         pct1 = lambda x: round(100 * x, 1)
-        total = lambda v, c: (round(100 * v[RAW.index(c[:2] + "M")] / v[RAW.index(c[:2] + "A")], 1) if c in ("FG%", "FT%")
-                              else round(float(v[RAW.index(c)]), 1))
         side = lambda v0, v1, o0, o1, c: {"total": [total(v0, c), total(v1, c)], "odds": [pct1(o0[c]), pct1(o1[c])]}
         cats_detail = {c: {"you": side(self.vecs[self.me], ov[self.me], b["odds"], a["odds"], c),
                            "them": side(self.vecs[other], ov[other], self.outlooks[other]["odds"], to["odds"], c)}
@@ -512,9 +580,10 @@ class League:
         """
         if self.mode != "points":
             return self.search(team=team, tier=mode, punt=punt, limit=limit, depth=depth)
-        vm, vc = self.value(punt=punt).to_dict(), self.value(frame="cur").to_dict()
+        cv, pv = self.perceived()
+        vm, vc = self.value(punt=punt).to_dict(), pv.to_dict()
         mine = self.value(self.rosters[self.me], punt).nlargest(depth).index.tolist()
-        rv, cv = self.replacement(punt)[0], self.replacement(frame="cur")[0]
+        rv = self.replacement(punt)[0]
         u = self.u
         combos = lambda ks: [c for r in (1, 2) for c in itertools.combinations(ks, r)]
         total = lambda v, ks: sum(v[k] for k in ks)
@@ -568,8 +637,8 @@ class League:
             team = self.owner(get[0])
         lock = {self.find(n) for n in lock} - set(give) - set(get)
         u, cats, me, wide = self.u, self.cats, self.me, bool(get)
-        vg, vc, vm = self.value().to_dict(), self.value(frame="cur").to_dict(), self.value(punt=punt).to_dict()
-        cv = self.replacement(frame="cur")[0]
+        cv, pv = self.perceived()
+        vg, vc, vm = self.value().to_dict(), pv.to_dict(), self.value(punt=punt).to_dict()
         t0, t1, t2 = TIERS[tier]
 
         def combos(keys, pins, v, skip=()):
@@ -598,7 +667,7 @@ class League:
             return (n >= 1)[..., None] * cut[:, :, 0] + (n >= 2)[..., None] * cut[:, :, 1]
 
         fa = np.zeros((3, len(RAW)))  # the best 0, 1 or 2 free agents, for whoever ends up with open spots
-        for i, k in enumerate(self.value(self.fa).nlargest(2).index if self.fa else []):
+        for i, k in enumerate(self.best_fa(2)):
             fa[i + 1:] += self.rows[k]
 
         roster = self.rosters[me]
@@ -630,7 +699,8 @@ class League:
             dme = 100 * ((m_o.sum(-1) + m_t) / k - before["win"])
             t_o = match_prob(cat_probs(them_after[:, :, None], O[None, None], cats)).sum(-1)
             dthem = 100 * ((t_o + match_prob(1 - p_mt)) / k - self.outlooks[t]["win"])
-            seen = gseen[:, None] - rseen[None] + n * cv
+            low = np.concatenate([[0], np.cumsum(np.sort(pv.reindex(keys).to_numpy()))])  # their weakest, for drops
+            seen = gseen[:, None] - rseen[None] + np.where(n > 0, n * cv, -low[np.clip(-n, 0, len(low) - 1)])
             if goal == "team":
                 h2h = m_t if goal_team == t else m_o[..., names.index(goal_team)]
                 score = 100 * (h2h - before["vs"][goal_team])
@@ -648,7 +718,7 @@ class League:
             elif shape == "depth":
                 ok &= n > 0
             G, R = np.nonzero(ok)
-            rank = np.minimum(score, dthem)[G, R] if tier == "fair" else score[G, R]
+            rank = np.minimum(score, dthem)[G, R] if tier in ("easy", "fair") else score[G, R]
             top = np.argsort(-rank)[:limit]
             for gi, ri in zip(G[top], R[top]):
                 out.append({"team": t, "give": self.names(mine[gi]), "get": self.names(theirs[ri]),
@@ -657,7 +727,7 @@ class League:
                             "accept": accept(dthem[gi, ri], seen[gi, ri], u),
                             **({"score": round(float(score[gi, ri]), 1)} if goal != "win" else {})})
         s = lambda x: x.get("score", x["net"])
-        out.sort(key=lambda x: -min(s(x), x["their_net"]) if tier == "fair" else -s(x))
+        out.sort(key=lambda x: -min(s(x), x["their_net"]) if tier in ("easy", "fair") else -s(x))
         if not team:  # spread suggestions across teams
             per_team = {}
             out = [o for o in out if per_team.setdefault(o["team"], []).append(o) or len(per_team[o["team"]]) <= 3]
@@ -678,22 +748,25 @@ class League:
         return pd.DataFrame({t: self.z.loc[ks].sum() for t, ks in self.rosters.items()}).T
 
     def build(self, team):
-        """Categories a team is effectively punting: up to 2 it wins under 30% of the time across the league."""
+        """Categories a team is effectively punting: up to 2 it wins under WEAK of the time across the league."""
         return [] if self.mode == "points" else self._weak(self.outlooks[team]["odds"])
 
     @staticmethod
     def _weak(odds):
-        return [c for c in sorted(odds, key=odds.get)[:2] if odds[c] < 0.3]
+        return [c for c in sorted(odds, key=odds.get)[:2] if odds[c] < WEAK]
 
     def profile(self):
-        """Your weekly win odds, projected standings, per-category odds, H2H vs each team, punt suggestions."""
+        """Your weekly win odds, projected standings, per-category odds and category standings (every team's odds
+        and rank in each category), H2H vs each team, punt suggestions."""
         tot = self.totals
-        ranks = tot.rank(ascending=False, method="min").astype(int)
+        odds = pd.DataFrame({t: o["odds"] for t, o in self.outlooks.items()}).T[self.cats]  # team x category
+        ranks = odds.rank(ascending=False, method="min").astype(int)  # projected category standings
         o, n = self.outlooks[self.me], len(self.cats)
         vs = {t: {"pct": round(o["vs"][t], 3), "win": round(o["cats_won"][t], 1), "loss": round(n - o["cats_won"][t], 1)}
               for t in o["vs"]}
         st = self.standings()
         return {"totals": tot.round(2).to_dict("index"), "ranks": ranks.to_dict("index"), "vs": vs,
+                "cat_odds": odds.round(3).to_dict("index"),
                 "odds": {c: round(p, 3) for c, p in o["odds"].items()}, "win": round(o["win"], 3),
                 "rank": st[self.me]["rank"], "standings": st,
                 "punt_suggestions": self.build(self.me), "builds": {t: self.build(t) for t in self.rosters},
@@ -731,6 +804,62 @@ class League:
         return {"free_agents": [{**self.player(adds[i], punt), "fit": round(float(fit[i]), 1)} for i in order],
                 "drop_candidates": [self.player(drops[j], punt) for j in cheap], "moves": moves}
 
+    def this_week(self, opp=None, punt=(), limit=5):
+        """This week's matchup: totals so far + the rest of the week (week_vec, players in IL slots sit) -> odds per
+        category and for the week, a safe / chase / lost call per category, and streaming adds scored on this week.
+        opp defaults to the snapshot's opponent; with none, returns {"opponent": None, "teams": [...]} to pick from."""
+        if self.mode == "points":
+            raise KeyError("This week needs a category league")
+        me, m = self.me, self.matchup
+        others = [t for t in self.rosters if t != me]
+        opp = opp or m.get("opponent")
+        if not opp:
+            return {"opponent": None, "teams": others, "week_end": self.week_end}
+        if opp not in others:
+            raise KeyError(f"Unknown opponent {opp}: pick one of {', '.join(others)}")
+        so_far = {t: np.array([float(m.get("totals", {}).get(t, {}).get(s, 0)) for s in RAW]) for t in (me, opp)}
+        play = lambda t: [k for k in self.rosters[t] if self.meta.get(k, {}).get("slot") not in ("IL", "IL+", "NA")]
+        left = {t: self.week_vec(play(t)) for t in (me, opp)}
+        odds = lambda v: self._concede(cat_probs(v, left[opp], self.cats, so_far[me], so_far[opp]), punt)
+        p = odds(left[me])
+        win = float(match_prob(p))
+
+        def games(k):  # a waiver claim only plays from the day it clears
+            w = self.meta.get(k, {}).get("waiver")
+            clears = w and datetime.strptime(f"{w} {self.today[:4]}", "%b %d %Y").date().isoformat()
+            return self.games_left(k, self.week_end, clears) if self.sched else GAMES_WEEK
+
+        # streams: each healthy free agent for whichever of your 3 cheapest healthy players (season win-% cost) helps most
+        healthy = lambda ks: [k for k in ks if self.meta.get(k, {}).get("status", "") not in OUT]
+        cost = self._contrib(me, healthy(play(me)), punt)
+        drops, adds = sorted(cost, key=cost.get)[:3], healthy(self.fa)
+        streams = []
+        if drops and adds:
+            g = {k: games(k) for k in adds}
+            full = lambda k: self.games_week[k] if self.sched else GAMES_WEEK
+            A = np.stack([self.week_vec([k]) * (g[k] / full(k) if full(k) else 0) for k in adds])
+            D = np.stack([self.week_vec([k]) for k in drops])
+            gain = 100 * (match_prob(odds(left[me] - D[None] + A[:, None])) - win)
+            season0 = self.outlook(me, punt=punt)["win"]
+            for i in np.argsort(-gain.max(1))[:limit]:
+                a, d = adds[i], drops[gain[i].argmax()]
+                if gain[i].max() < 0.1:
+                    break
+                season = self.outlook(me, {me: self.vecs[me] - self.rows[d] + self.rows[a]}, punt)["win"]
+                streams.append({**self.player(a, punt), **({"games": int(g[a])} if self.sched else {}),
+                                "gain": round(float(gain[i].max()), 1), "drop": self.p.at[d, "PLAYER_NAME"],
+                                "season": round(100 * (season - season0), 1)})
+        call = lambda c, x: "punt" if c in punt else "safe" if x >= 1 - WEAK else "lost" if x <= WEAK else "chase"
+        return {"opponent": opp, "teams": others, "week_end": self.week_end,
+                "live": m.get("opponent") == opp and all(t in m.get("totals", {}) for t in (me, opp)),
+                "win": round(100 * win, 1), "score": [round(float(p.sum()), 1), round(len(self.cats) - float(p.sum()), 1)],
+                **({"games": {"you": int(self.games_week.reindex(play(me)).sum()),
+                              "them": int(self.games_week.reindex(play(opp)).sum())}} if self.sched else {}),
+                "cats": {c: {"you": [total(so_far[me], c), total(so_far[me] + left[me], c)],
+                             "them": [total(so_far[opp], c), total(so_far[opp] + left[opp], c)],
+                             "odds": round(100 * float(x), 1), "call": call(c, x)} for c, x in zip(self.cats, p)},
+                "streams": streams}
+
     def movers(self, punt=(), limit=10):
         """Sell high: your players beating their ROS value right now. Buy low: good ROS players slumping on other teams."""
         gap = self.value(punt=punt, frame="cur") - self.value(punt=punt)
@@ -765,7 +894,7 @@ def load(path=DATA / "league.json"):
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster"])
+    ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster", "week"])
     ap.add_argument("--give", default="")
     ap.add_argument("--get", default="")
     ap.add_argument("--mode", default="fair", choices=["fair", "finesse"])
@@ -775,7 +904,7 @@ def main():
     ap.add_argument("--tier", default="fair", choices=list(TIERS), help="search: how likely they say yes")
     ap.add_argument("--goal", default="win", choices=["win", "cats", "team"])
     ap.add_argument("--cats", default="", help='search --goal cats: e.g. "STL,AST"')
-    ap.add_argument("--vs", help="search --goal team: the team to beat")
+    ap.add_argument("--vs", help="search --goal team: the team to beat. week: this week's opponent")
     ap.add_argument("--size", type=int, default=3, help="search: max players per side")
     ap.add_argument("--healthy", action="store_true", help="search: skip injured players you'd get")
     ap.add_argument("--shape", choices=["consolidate", "depth"])
@@ -789,6 +918,7 @@ def main():
                                        split(a.cats), a.vs, a.healthy, a.shape, punt),
            "waivers": lambda: lg.waivers(punt),
            "movers": lambda: lg.movers(punt),
+           "week": lambda: lg.this_week(a.vs, punt),
            "roster": lambda: lg.team_roster(a.team or lg.me, punt)}[a.cmd]()
     print(json.dumps(out, indent=1, ensure_ascii=False))
 
