@@ -303,7 +303,8 @@ def test_all():
     ilf = model.League({**ill.snap, "free_agents": ill.snap["free_agents"] + [{"name": "Sore FA", "pos": "", "status": "O"}]},
                        pd.concat([base, hurt, sore]), pd.concat([cur, hurt.assign(GP=5), sore.assign(GP=5)]))
     freed = ilf.add_drop("Player 139", "Hurt Guy")
-    assert len(freed["drop"]) == 2 and freed["drop"][0]["name"] == "Hurt Guy" and freed["drop"][1]["auto"]
+    assert [(x["name"], x["auto"], x["parked"]) for x in freed["drop"]][0] == ("Hurt Guy", False, True)
+    assert len(freed["drop"]) == 2 and freed["drop"][1]["auto"] and not freed["drop"][1]["parked"]
     park = ilf.add_drop("Sore FA")
     assert park["add"]["parks"] and park["drop"] == [] and park["open"] == 0
     assert abs(park["win_after"] - 100 * ilf.outlook("Me", {"Me": ilf.vecs["Me"] + ilf.rows_il["sore fa"]})["win"]) < 0.06

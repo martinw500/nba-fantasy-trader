@@ -1728,7 +1728,7 @@ class League:
             auto = []
         keys = [x for x in keys if x not in auto]
         out = {"add": {**self.player(k, punt), "parks": k in il},
-               "drop": [{**self.player(x, punt), "auto": x != d} for x in [d] * bool(d) + auto],
+               "drop": [{**self.player(x, punt), "auto": x != d, "parked": x in self.il[self.me]} for x in [d] * bool(d) + auto],
                "open": max(-n, 0)}
         if self.mode == "points":
             net = float(self.value([k], punt).sum() - self.value([d] * bool(d) + auto, punt).sum())
