@@ -1,5 +1,6 @@
 """Backtest the 9-cat matchup model on a real NBA season, no Yahoo needed:  python backtest.py [2025-26]
 python backtest.py replay [2025-26]: rest-of-season error by expert-projection weight instead (fits PROJ_W).
+python backtest.py teammates [2025-26]: next week's error with and without teammates' injuries (fits SHARE, USAGE).
 
 Drafts 20 simulated 12-team leagues from preseason projections. Each week the model predicts every matchup from what
 it would have known that Monday (last season blended with games so far, availability from games played), then the
@@ -203,29 +204,39 @@ def lifted(m, deboost=True):
 
 
 def teammates(grid=((0.37, 0.25),)):
-    """Next week's per-game lines with and without teammates' injuries (model.lifts), vs what players did that week,
-    as in replay(), for players with an injured teammate and for everyone. Fitted SHARE and USAGE on 2025-26."""
+    """Next week's per-game lines without teammates' injuries (off), with them (on: model.lifts net of model.had) and
+    with lifts but no had() correction (fwd), vs what players did that week, as in replay(), plus the minutes bias
+    (actual - line). Scored on players who played every one of their team's games that week: one who missed some (hurt
+    mid-game, back on a minutes limit, in and out of the rotation) averaged 3.6 minutes under his line in the games he
+    did play, which availability covers, not the line (2025-26: -1.1 min over everyone, +0.5 over full weeks). 20+:
+    projected 20+ minutes, where playing every game is about health rather than teammates. All weeks: the partial ones
+    too. Fitted SHARE and USAGE on 2025-26."""
     weeks, cols = list(mondays()), ["MIN"] + model.RAW
     print(f"\n== {SEASON}: next week's lines with teammates' injuries ==")
     for share, usage in grid:
         model.SHARE, model.USAGE = share, usage
-        rows = {k: [] for k in ("act", "off", "on", "fwd", "hit")}
+        rows = {k: [] for k in ("act", "off", "on", "fwd", "hit", "full")}
         for m in weeks:
             act = per_game(m["nxt"])
             act = act[act.index.isin(m["line"].index)]
             on, boost = lifted(m)
             fwd, _ = lifted(m, deboost=False)
             add = boost.reindex(act.index).fillna(0)
+            games = m["team"].reindex(act.index).map(m["nxt"].groupby("TEAM_ABBREVIATION").GAME_ID.nunique())
             rows["act"].append(act[cols]); rows["off"].append(m["line"].loc[act.index, cols])
             rows["on"].append(on.loc[act.index, cols] + add); rows["fwd"].append(fwd.loc[act.index, cols] + add)
             rows["hit"].append(pd.Series(act.index.isin(boost.index), index=act.index))
-        act, hit = pd.concat(rows["act"]), pd.concat(rows["hit"]).to_numpy()
-        for name, sub in (("injured teammate", hit), ("everyone", np.ones(len(hit), bool))):
+            rows["full"].append(act.GP >= games.fillna(np.inf))
+        act, hit, full = pd.concat(rows["act"]), pd.concat(rows["hit"]).to_numpy(), pd.concat(rows["full"]).to_numpy()
+        big = (pd.concat(rows["off"]).MIN >= 20).to_numpy()
+        print(f"  SHARE {share} USAGE {usage}")
+        for name, sub in (("injured teammate", hit & full), ("  20+ min", hit & full & big), ("everyone", full),
+                          ("  20+ min", full & big), ("injured, all weeks", hit)):
             a = act[sub]
             err = lambda p: ((p[sub] - a).abs() / a.mean()).mean()
-            out = {v: err(pd.concat(rows[v])) for v in ("off", "on", "fwd")}
-            print(f"  SHARE {share} USAGE {usage}  {name:16} n {sub.sum():5}  " + "   ".join(
-                f"{v} MIN {e.MIN:.4f} stats {e[model.RAW].mean():.4f}" for v, e in out.items()))
+            out = {v: (err(pd.concat(rows[v])), (a - pd.concat(rows[v])[sub]).MIN.mean()) for v in ("off", "on", "fwd")}
+            print(f"    {name:18} n {sub.sum():5}  " + "   ".join(
+                f"{v} MIN {e.MIN:.4f} stats {e[model.RAW].mean():.4f} bias {b:+.2f}" for v, (e, b) in out.items()))
 
 
 if __name__ == "__main__":

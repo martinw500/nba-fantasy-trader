@@ -20,6 +20,7 @@ CLI (prints JSON, used by Claude Code and for quick checks):
   python model.py movers                    # sell-high / buy-low
   python model.py week --vs "Team"          # this week's matchup (--vs defaults to the snapshot's opponent)
   python model.py strategy                  # punt planner: every build's waiver adds + up to 3 trades, true odds (~15s)
+  python model.py news                      # ESPN news on your players and their teammates since the snapshot
   add --punt "FT%,TOV" to any of them
 """
 import argparse
@@ -31,10 +32,12 @@ import itertools
 import json
 import re
 import sys
+import threading
 import time
 import unicodedata
 import urllib.request
-from datetime import date, datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -209,6 +212,59 @@ def espn(season=CUR):
             (DATA / f"projections_{date.today()}.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
         return out
     return _cached(DATA / f"projections_{season}.json", 24 if season == CUR else np.inf, get)
+
+
+def news_index():
+    """{player name: [ESPN id, time of his latest news (UTC ISO) or None]} for ESPN's 1000 most-owned players, cached
+    3 hours. ponytail: unofficial endpoint like espn()."""
+    yr = int(CUR[:4]) + 1
+    def get():
+        only = {"players": {"limit": 1000, "sortPercOwned": {"sortPriority": 1, "sortAsc": False},  # a sort is required
+                            "filterStatsForSourceIds": {"value": [1]},  # any stats filter: none at all sends 3 MB
+                            "filterStatsForSplitTypeIds": {"value": [0]}, "filterStatsForExternalIds": {"value": [yr]}}}
+        req = urllib.request.Request(f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/{yr}/segments/0"
+                                     "/leaguedefaults/3?view=kona_player_info", headers={"X-Fantasy-Filter": json.dumps(only)})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            players = json.load(r)["players"]
+        utc = lambda ms: datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return {p["player"]["fullName"]: [p["player"]["id"], (t := p["player"].get("lastNewsDate")) and utc(t)]
+                for p in players}
+    return _cached(DATA / "news_index.json", 3, get)
+
+
+NEWS, news_lock = DATA / "news.json", threading.Lock()
+
+
+def news(keys, since=""):
+    """{stats key: ESPN's fantasy news on him (Rotowire's blurbs), newest first: [{date (UTC ISO), headline, story}]}
+    for the keys ESPN lists (news_index()) with news since `since`. A player's news is fetched again only once the index
+    shows something newer; kept in data/news.json. Offline: what's saved."""
+    ix = news_index()
+    names = {norm(n): n for n in ix}
+    found = {k: ix[names[m]] for k in keys if (m := match(k, names)) and (ix[names[m]][1] or "") >= since}
+    read = lambda: json.loads(NEWS.read_text(encoding="utf-8")) if NEWS.exists() else {}
+    with news_lock:
+        saved = read()
+    def get(pid):
+        url = f"https://site.api.espn.com/apis/fantasy/v2/games/fba/news/players?playerId={pid}"
+        try:
+            with urllib.request.urlopen(url, timeout=20) as r:
+                feed = json.load(r).get("feed", [])
+        except Exception as e:
+            print(f"Couldn't fetch news for ESPN player {pid} ({e}).", file=sys.stderr)
+            return None
+        return [{"date": x["published"], "headline": x.get("headline", ""), "story": x.get("story", "")}
+                for x in feed if x.get("type") == "Rotowire"]
+    stale = {str(pid): last for pid, last in found.values() if saved.get(str(pid), {}).get("last") != last}
+    if stale:
+        with ThreadPoolExecutor(8) as ex:
+            got = {pid: {"last": stale[pid], "items": items} for pid, items in zip(stale, ex.map(get, stale)) if items is not None}
+        with news_lock:  # re-read: the card and the panel can fetch at once
+            saved = {**read(), **got}
+            DATA.mkdir(exist_ok=True)
+            NEWS.write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
+    return {k: [x for x in saved[str(pid)]["items"] if x["date"] >= since]
+            for k, (pid, _) in found.items() if str(pid) in saved}
 
 
 def gamelogs(season=CUR, max_age_hours=None):
@@ -421,7 +477,7 @@ def match_prob(p):
 class League:
     """A league snapshot (see yahoo.py) joined with NBA stats."""
 
-    def __init__(self, snap, base=None, cur=None, sched=None, inj=None, today=None, logs=None, proj=None):
+    def __init__(self, snap, base=None, cur=None, sched=None, inj=None, today=None, logs=None, proj=None, news=None):
         s = snap["settings"]
         self.snap, self.teams_n, self.roster_n = snap, s.get("teams", 12), s.get("roster", 13)
         self.lineup = s.get("starters", 10)  # players whose games count each day
@@ -437,6 +493,7 @@ class League:
         base = baseline(fetch(LAST), fetch(OLDER)) if base is None else base
         cur = fetch(CUR, max_age_hours=12) if cur is None else cur
         self.cur, self.logs = cur, logs  # this season's per-game stats and box scores (gamelogs()), for card()
+        self.news = news  # news() from load(), for card() and roster_news(); never moves a number
         pool = self.teams_n * self.roster_n
         # expert projections: the snapshot's (Yahoo), and ESPN's (proj, from load()) for players Yahoo doesn't list
         self.proj = experts(snap.get("projections", {}), proj or {}, base, base.index.union(cur.index))
@@ -663,13 +720,15 @@ class League:
 
     @functools.cached_property
     def lifted(self):
-        """{player: [each injured teammate whose minutes he takes (self.lift), back when, and his per-game lift while
-        that one sits]}, for players who play some of those games."""
+        """{player: [each injured teammate whose minutes he takes (self.lift), back when, how many of the player's
+        games come before that (game_days(), so after his own return), and his per-game lift in them]}, for lifts of
+        half a minute or more in at least one game."""
         out = {}
         for (k, j), d in self.lift.iterrows():
-            if d.MIN >= 0.5 and (self.inj.get(k, {}).get("return") or "") < self.inj[j]["return"]:
+            n = sum(x < self.inj[j]["return"] for x in self.game_days(k))
+            if d.MIN >= 0.5 and n:
                 out.setdefault(k, []).append({"by": self.p.at[j, "PLAYER_NAME"], "return": self.inj[j]["return"],
-                                              **{c: round(float(d[c]), 1) for c in ["MIN"] + COUNTING}})
+                                              "games": n, **{c: round(float(d[c]), 1) for c in ["MIN"] + COUNTING}})
         return out
 
     def weeks(self, n=3):
@@ -712,7 +771,22 @@ class League:
                               **{c: round(float(s[c]), 1) for c in COUNTING}}
                           for w, (s, gp) in lines.items()},
                 "weeks": [{"start": s, "end": e, "games": len(self.game_days(k, e, s))} for s, e in weeks],
-                "fit_rank": int(fit), "fit": round(100 * MARKET ** (fit - 1), 1)}
+                "fit_rank": int(fit), "fit": round(100 * MARKET ** (fit - 1), 1),
+                **({"news": self.news([k]).get(k, [])[:3]} if self.news else {})}
+
+    def roster_news(self, days=2):
+        """News on your players and their NBA teammates in the rotation (10+ min), newest first: since the snapshot or
+        the last `days` days, whichever is longer. new = after the snapshot."""
+        mine = set(self.rosters[self.me])
+        teams = {self.nba.get(k) for k in mine} - {None, ""}
+        keys = mine | {k for k in self.p.index if self.nba.get(k) in teams and self.p.at[k, "MIN"] >= 10}
+        utc = lambda t: t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        pulled = utc(datetime.fromisoformat(self.snap["pulled"])) if self.snap.get("pulled") else ""
+        since = min(pulled or "9", utc(datetime.now(timezone.utc) - timedelta(days)))
+        got = self.news(keys, since) if self.news else {}
+        return sorted(({"name": self.p.at[k, "PLAYER_NAME"], "nba": self.nba.get(k, ""), "team": self.owner(k),
+                        "mine": k in mine, "new": x["date"] > pulled, **x} for k, xs in got.items() for x in xs),
+                      key=lambda x: x["date"], reverse=True)
 
     # --- matchup model (9-cat) -----------------------------------------------
     def vec(self, keys):
@@ -1460,14 +1534,14 @@ def load(path=DATA / "league.json"):
         import yahoo
         yahoo.demo()
     return League(json.loads(Path(path).read_text(encoding="utf-8")), sched=schedule(), inj=injuries(),
-                  logs=gamelogs(CUR, 12), proj=espn())
+                  logs=gamelogs(CUR, 12), proj=espn(), news=news)
 
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster", "week",
-                                    "strategy"])
+                                    "strategy", "news"])
     ap.add_argument("--give", default="")
     ap.add_argument("--get", default="")
     ap.add_argument("--mode", default="fair", choices=["fair", "finesse"])
@@ -1494,6 +1568,7 @@ def main():
            "movers": lambda: lg.movers(punt),
            "week": lambda: lg.this_week(a.vs, punt),
            "strategy": lambda: lg.strategy(a.size),
+           "news": lg.roster_news,
            "roster": lambda: lg.team_roster(a.team or lg.me, punt)}[a.cmd]()
     print(json.dumps(out, indent=1, ensure_ascii=False))
 

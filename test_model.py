@@ -247,6 +247,91 @@ def test_all():
     assert set(sl.card("Twin A")["lines"]) == {"ros", "season"}
     sl.logs = None
 
+    # news (N8): My team's panel asks news() about your players and their NBA teammates (Twin D and E are free agents
+    # on AAA and BBB) since the snapshot or two days back, whichever is earlier; newest first, new = after the
+    # snapshot. The card shows a player's news; a League without news() (offline) has none.
+    now = model.datetime.now(model.timezone.utc)
+    iso = lambda h: (now - model.timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    asked = []
+    def fake(keys, since=""):
+        asked.append((set(keys), since))
+        return {k: [{"date": iso(h), "headline": k, "story": ""}] for k, h in (("twin a", 3), ("twin d", 0.5)) if k in keys}
+    nw = model.League({**snap, "pulled": (now - model.timedelta(hours=1)).isoformat()}, pd.concat([base, twins]),
+                      pd.concat([cur, twins]), news=fake)
+    assert [(x["name"], x["mine"], x["new"], x["team"]) for x in nw.roster_news()] == [
+        ("Twin D", False, True, "FA"), ("Twin A", True, False, "Me")]
+    keys, since = asked[0]
+    assert {"twin a", "twin b", "twin d", "twin e", "player 150"} <= keys and iso(48.01) < since < iso(47.99)
+    assert nw.card("Twin A")["news"][0]["headline"] == "twin a" and "news" not in sl.card("Twin A")
+    # news() itself: ESPN's names land on stats keys, a player is fetched again only when the index shows newer news,
+    # and only news since `since` comes back (network and data/ swapped out)
+    import io, json, tempfile, urllib.request
+    from pathlib import Path
+    ix, hits, old = {"Twin Á": [7, "2026-10-27T10:00:00Z"], "Nobody": [8, None]}, [], (model.news_index, urllib.request.urlopen, model.NEWS)
+    feed = {"feed": [{"type": "Rotowire", "published": "2026-10-27T10:00:00Z", "headline": "Out", "story": "Knee."},
+                     {"type": "Rotowire", "published": "2026-10-20T10:00:00Z", "headline": "Old", "story": ""},
+                     {"type": "Media", "published": "2026-10-27T11:00:00Z", "headline": "Highlights"}]}
+    model.news_index, model.NEWS = lambda: ix, Path(tempfile.mkdtemp()) / "news.json"
+    urllib.request.urlopen = lambda url, timeout: hits.append(url) or io.BytesIO(json.dumps(feed).encode())
+    try:
+        assert model.news(["twin a"], "2026-10-26") == {"twin a": [{"date": "2026-10-27T10:00:00Z", "headline": "Out", "story": "Knee."}]}
+        assert len(model.news(["twin a"])["twin a"]) == 2 and len(hits) == 1  # cached
+        ix["Twin Á"][1] = "2026-10-28T00:00:00Z"
+        assert model.news(["twin a"], "2026-10-28") == {"twin a": []} and len(hits) == 2  # newer news: fetched again
+        assert model.news(["twin a"], "2026-10-29") == {} and len(hits) == 2  # nothing that recent: not even asked
+    finally:
+        model.news_index, urllib.request.urlopen, model.NEWS = old
+
+    # teammates' injuries (N7): while a regular (REGULAR+ minutes) sits, SHARE of his minutes go to NBA teammates in
+    # the rotation (10+), by room under ROOM and more to similar roles, at their own rates. USAGE of the shots, points,
+    # assists and turnovers those minutes don't replace go to the same players by output, even one with no room
+    rates = lambda big: ({"REB": 0.3, "BLK": 0.06, "AST": 0.03, "FG3M": 0.005} if big
+                         else {"REB": 0.1, "BLK": 0.005, "AST": 0.2, "FG3M": 0.07})
+    mate = lambda n, mins, big=False, t="AAA": line(n, 150, MIN=mins, TEAM_ABBREVIATION=t,
+                                                    **{c: r * mins for c, r in rates(big).items()})
+    ml = model.keyed(pd.DataFrame([mate("Star", 34), mate("Guard", 20), mate("Big", 20, True), mate("Iron", 38),
+                                   mate("Deep", 8), mate("Sixth", 24, True), mate("Other", 20, t="BBB")]))
+    lf = model.lifts(ml, ml.TEAM_ABBREVIATION.to_dict(), list(ml.index))
+    assert set(lf.index.get_level_values("by")) == {"star", "iron"}  # Sixth (24 min) isn't a regular, Other has no mates
+    s = lf.xs("star", level="by")
+    assert set(s.index) == {"guard", "big", "iron", "sixth"}  # same team, 10+ minutes
+    assert abs(s.MIN.sum() - model.SHARE * 34) < 1e-9 and s.at["guard", "MIN"] > s.at["big", "MIN"]
+    assert s.at["iron", "MIN"] == 0 < s.at["iron", "PTS"]
+    own = ml.loc[s.index, model.RAW].div(ml.loc[s.index, "MIN"], axis=0).mul(s.MIN, axis=0)  # his minutes, their rates
+    assert np.allclose(s.REB, own.REB) and np.allclose(s.STL, own.STL)
+    assert abs((s.PTS - own.PTS).sum() - model.USAGE * (ml.at["star", "PTS"] - own.PTS.sum())) < 1e-9
+    # had(): the lift a player had per game in the box scores. Star joined in game 1 and sat games 3 and 4, so Guard
+    # (5 games) had 2/5 of it; game 0 came before Star's first and doesn't count
+    box = pd.DataFrame([{"key": k, "TEAM_ABBREVIATION": "AAA", "GAME_ID": g, "GAME_DATE": pd.Timestamp(2026, 10, 20 + g)}
+                        for g in range(5) for k in ("guard", "star") if k == "guard" or g in (1, 2)])
+    h = model.had(box, ml.TEAM_ABBREVIATION.to_dict(), lf[lf.index.get_level_values("by") == "star"])
+    assert list(h.index) == ["guard"] and np.allclose(h.loc["guard"], 2 / 5 * s.loc["guard"])
+    # in the league: Twin C (AAA, out until Nov 3) lifts Twins A, D and F (AAA) for their games before then: every
+    # game this week (p_week, which week_vec uses), 4 of the 6 left (p, rest of season). BBB's Twin B gets nothing
+    no = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
+                      sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week})
+    up = sl.lift.loc[("twin a", "twin c")]
+    gap = lambda a, b, k: (a.loc[k, model.RAW] - b.loc[k, model.RAW]).astype(float).to_numpy()
+    assert up.MIN > 0.5 and not len(no.lift)
+    assert np.allclose(gap(sl.p, no.p, "twin a"), 4 / 6 * up[model.RAW]) and np.allclose(gap(sl.p_week, no.p, "twin a"), up[model.RAW])
+    assert not gap(sl.p_week, no.p, "twin b").any() and sl.value(["twin a"]).iloc[0] > no.value(["twin a"]).iloc[0]
+    assert sl.week_vec(["twin a"])[model.RAW.index("PTS")] > no.week_vec(["twin a"])[model.RAW.index("PTS")]
+    assert sl.player("twin a")["lift"] == [{"by": "Twin C", "return": "2026-11-03", "games": 4,
+                                           **{c: round(float(up[c]), 1) for c in ["MIN"] + model.COUNTING}}]
+    assert "lift" not in no.player("twin a") and "lift" not in sl.player("twin c") and "lift" in sl.card("Twin D")
+    # no games before his return (Twin C back Oct 27, no AAA game on the 26th): no lift, and none listed
+    gone = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
+                        sched={"AAA": week[1:], "BBB": week, "XXX": week},
+                        inj={"Twin C": {"status": "O", "note": "Ankle.", "return": "2026-10-27"}})
+    assert len(gone.lift) and not gone.lifted and not gap(gone.p_week, no.p, "twin a").any()
+    # ... and the box scores are read net of the lifts players had: Twin C sat 2 of Twin A's 4 games, so Twin A's line
+    # drops (back to what it'd be with everyone playing); Twin D, with no games, keeps his
+    bx = pd.DataFrame([{**line(f"Twin {t}", 180), "TEAM_ABBREVIATION": "AAA", "GAME_ID": g,
+                        "GAME_DATE": pd.Timestamp(2026, 10, 20 + g)} for g in range(4) for t in "AC" if t == "A" or g < 2])
+    wl = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
+                      sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week}, logs=bx.assign(key=bx.PLAYER_NAME.map(model.norm)))
+    assert wl.p.at["twin a", "MIN"] < no.p.at["twin a", "MIN"] and wl.p.at["twin d", "MIN"] == no.p.at["twin d", "MIN"]
+
     # this week: no opponent until one is known; streams score more games higher, a waiver claim plays from the day
     # it clears; banked totals decide a category, a punt concedes it, last week's matchup is ignored
     assert sl.this_week()["opponent"] is None

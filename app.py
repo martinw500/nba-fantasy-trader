@@ -113,6 +113,8 @@ def api(path, q, body):
         return lg.strategy()
     if path == "/api/player":  # the player card
         return lg.card(body["name"], punt)
+    if path == "/api/news":  # My team's News panel
+        return lg.roster_news()
     if path == "/api/players":
         return sorted(({"name": n, "team": t} for t, ks in lg.rosters.items() for n in lg.names(ks)), key=lambda p: p["name"])
     if path == "/api/me":  # which team is yours
@@ -194,7 +196,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player",
+API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/news",
        "/api/players", "/api/me", "/api/week", "/api/refresh", "/api/chat", "/api/chats"}
 
 if __name__ == "__main__":

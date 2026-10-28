@@ -170,6 +170,9 @@ tr.card-row > td { padding: 0; white-space: normal; }
 .pcard .tw { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
 .pcard th { position: static; }
 .pcard .sep { border-left: 1px solid var(--line); padding-left: 24px; }
+.news { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-width: 72ch; }
+h3.small { margin: 0; font-weight: 650; }
+details > summary { cursor: pointer; margin-top: 10px; color: var(--muted); }
 
 /* matchups */
 .vs { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0; }
@@ -318,6 +321,7 @@ const S = {
   state: null, error: null,
   league: { team: null, data: null },
   week: {},  // { data, loading }; replaced on punt / team / refresh, so late answers land in the old object
+  news: {},  // { data, error }: My team's News panel; replaced on team / refresh
   strategy: {},  // { data, busy, sel }: the punt planner (sel: the build whose plan shows), ignores your punt, so only team / refresh replace it
   trade: { give: new Set(), get: new Set(), team: null, roster: null, result: null, busy: false },
   locks: new Set(store.get("locks", [])),
@@ -385,6 +389,11 @@ const lab = c => LABEL[c] || c;
 const mdy = d => new Date(d + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const statusTag = p => p.status || p.injury ? `<span class="tag ${OUT.has(p.status) ? "out" : ""}"${p.injury ? ` title="${esc(p.injury)}"` : ""}>${esc(p.status || "News")}${p.return && p.return >= new Date().toISOString().slice(0, 10) ? ` · back ${mdy(p.return)}` : ""}</span>` : "";
 const gpNote = p => p.gp < 3 ? ` title="Only ${p.gp} games this season"` : "";
+// teammates' injuries: the minutes and shots he picks up while they sit, counted in his lines for those games only.
+// Tables tag a lift of a minute or more (most are smaller, spread over a whole rotation); the card lists every one
+const liftMin = p => (p.lift || []).reduce((s, l) => s + l.MIN, 0);
+const liftWhen = l => `${esc(l.by)} is out (back ${mdy(l.return)}, ${l.games} game${l.games === 1 ? "" : "s"})`;
+const liftTag = p => liftMin(p) >= 1 ? `<span class="tag" title="${p.lift.map(l => `+${l.MIN.toFixed(1)} min a game while ${liftWhen(l)}`).join("; ")}. Counted in his lines for those games">+${liftMin(p).toFixed(1)} min</span>` : "";
 // trade market (Yahoo ranks): a player's value + rank (* = Yahoo hasn't ranked him, the model's rank), a deal's gap
 const mktCell = p => `${Math.round(p.mkt)} <span class="muted small"${p.mkt_model ? ` title="Yahoo hasn't ranked him: the model's own rank"` : ""}>#${p.mkt_rank}${p.mkt_model ? "*" : ""}</span>`;
 const mktTone = d => Math.abs(d) < 5 ? "" : tone(d);
@@ -403,7 +412,7 @@ function playerTable(players, { extra = [], empty = "No players.", dim = [] } = 
     <th class="n" title="Trade-market value (100 = the market's top player) and market rank: Yahoo's preseason rank blended with this season's, weighted by games played">Mkt</th>
     ${isPoints() ? `<th class="n">FP/G</th>` : cats.map(c => `<th class="n z ${punted(c) ? "punted-col" : ""}" style="text-align:center">${lab(c)}</th>`).join("")}</tr>`;
   const rows = players.map(p => { const open = S.card.t === t && S.card.name === p.name; return `<tr${open ? ` class="sel"` : ""}>
-    <td><button class="rowbtn" data-act="card" data-name="${esc(p.name)}" data-t="${t}" aria-expanded="${open}" title="${open ? "Close" : "Open"} his player card">${esc(p.name)}</button>${statusTag(p)}${p.pos ? ` <span class="muted small">${esc(p.pos)}</span>` : ""}</td>
+    <td><button class="rowbtn" data-act="card" data-name="${esc(p.name)}" data-t="${t}" aria-expanded="${open}" title="${open ? "Close" : "Open"} his player card">${esc(p.name)}</button>${statusTag(p)}${liftTag(p)}${p.pos ? ` <span class="muted small">${esc(p.pos)}</span>` : ""}</td>
     ${extra.map(x => `<td class="n">${x.v(p)}</td>`).join("")}
     ${wk ? `<td class="n ${p.games >= 4 ? "pos" : p.games <= 1 ? "neg" : ""}">${p.games ?? ""}</td>` : ""}
     <td class="n muted"${gpNote(p)}>${p.gp}</td>
@@ -422,6 +431,9 @@ const LINES = { ros: ["Rest of season", "The model's projection: expert projecti
   espn: ["ESPN projection", "ESPN's season projection, part of ours (Yahoo's snapshot doesn't list him)"],
   season: ["This season"], last14: ["Last 14 days"], last7: ["Last 7 days"] };
 const span = (a, b) => mdy(a) + "–" + (a.slice(5, 7) === b.slice(5, 7) ? +b.slice(8) : mdy(b));
+// ESPN's fantasy news (Rotowire's blurbs): context only, it never moves a number
+const newsItem = (x, who = "", story = true) => `<li><div class="small"><span class="muted">${when(x.date)}</span>${who}${x.new ? `<span class="tag safe" title="Since your snapshot">new</span>` : ""}</div>
+  <div>${esc(x.headline)}</div>${story && x.story ? `<div class="small muted">${esc(x.story)}</div>` : ""}</li>`;
 function playerCard() {
   const C = S.card, d = C.data, me = S.state.me, cats = S.state.cats;
   if (!d) return `<div class="pcard">${C.error ? `<span class="neg">Couldn't load ${esc(C.name)}: ${esc(C.error)}</span>` : `<div class="skel" style="margin:4px 0"></div><div class="skel" style="margin:4px 0;width:60%"></div>`}</div>`;
@@ -441,12 +453,16 @@ function playerCard() {
     <div class="pcard-h"><div><b>${esc(d.name)}</b>${statusTag(d)} <span class="muted small">${[esc(d.nba), esc(d.pos), own].filter(Boolean).join(" · ")}</span></div>
       <div class="toolbar">${act}<button class="btn ghost" data-act="card" data-name="${esc(C.name)}" data-t="${C.t}">Close</button></div></div>
     ${d.injury ? `<div class="small">${esc(d.injury)}${d.return ? ` <span class="muted">Expected back ${mdy(d.return)}.</span>` : ""}</div>` : ""}
+    ${d.lift ? `<div class="small">${d.lift.map(l => `While ${liftWhen(l)}: ${[["MIN", "min"], ...cats.filter(c => l[c] != null).map(c => [c, lab(c)])]
+      .filter(([c]) => c === "MIN" || Math.abs(l[c]) >= 0.2).map(([c, n]) => `<span class="${punted(c) ? "punted-col" : ""}">${l[c] > 0 ? "+" : ""}${l[c].toFixed(1)} ${n}</span>`).join(", ")} a game.`).join(" ")}
+      <span class="muted">His lines count it for those games only.</span></div>` : ""}
     <div class="tw"><table><thead><tr><th>Per game</th><th class="n">GP</th><th class="n">MIN</th>${cats.map(c => `<th class="n ${punted(c) ? "punted-col" : ""}">${lab(c)}</th>`).join("")}</tr></thead>
       <tbody>${lines}</tbody></table></div>
     <dl class="side-by">${games}
       <div class="sep"><dt title="Trade-market value (100 = the market's top player) and market rank, from Yahoo's preseason and current ranks">Market</dt><dd>${mktCell(d)}</dd></div>
       <div><dt title="His rank on your build (rest-of-season value over the games he'll play), valued on the same curve as the market">Your build</dt><dd>${Math.round(d.fit)} <span class="muted small">#${d.fit_rank}</span></dd></div></dl>
-    <div class="small muted">${read}</div></div>`;
+    <div class="small muted">${read}</div>
+    ${d.news?.length ? `<div><h3 class="small muted">Latest news <span title="ESPN's fantasy news. It never changes a number by itself">(ESPN)</span></h3><ul class="news">${d.news.map(x => newsItem(x)).join("")}</ul></div>` : ""}</div>`;
 }
 async function openCard(name, t) {
   if (S.card.name === name && S.card.t === t) { S.card = {}; return render(); }
@@ -486,7 +502,31 @@ function viewTeam() {
   return `<div class="head"><div><h1>${esc(st.me)}</h1><p class="sub">${outlook}${st.roster.length} players${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}</p></div></div>
     ${strip}${todo}
     <div class="panel"><div class="panel-h"><div><h2>Roster</h2><p>Category cells are z-scores vs a typical rostered player. Green helps you, red hurts.</p></div></div>${playerTable(st.roster)}</div>
+    ${newsPanel()}
     ${prof ? strategyPanel() : ""}${vs}`;
+}
+
+// ---------- news on your players and their NBA teammates (rotation), loaded with My team ----------
+function newsPanel() {
+  const N = S.news, d = N.data;
+  if (!d && !N.error && !N.loading) loadNews();
+  const head = `<div class="panel-h"><div><h2>News</h2><p>ESPN's fantasy news on your players and their NBA teammates since your snapshot (at least two days). It never changes a number by itself. Return dates, minutes and projections do.</p></div></div>`;
+  if (N.error) return `<div class="panel">${head}<div class="panel-b small neg">Couldn't load news: ${esc(N.error)}</div></div>`;
+  if (!d) return `<div class="panel">${head}<div class="panel-b">${SKEL}</div></div>`;
+  if (!d.length) return `<div class="panel">${head}<div class="empty">No news on your players or their teammates.</div></div>`;
+  const who = x => ` <b>${esc(x.name)}</b> <span class="muted">${[x.nba, x.mine ? "" : x.team === "FA" ? "free agent" : x.team].filter(Boolean).map(esc).join(" · ")}</span>`;
+  const list = xs => `<ul class="news">${xs.map(x => newsItem(x, who(x), false)).join("")}</ul>`;
+  const mine = d.filter(x => x.mine), mates = d.filter(x => !x.mine), top = mates.slice(0, 5), rest = mates.slice(5);
+  return `<div class="panel">${head}<div class="panel-b">
+    ${mine.length ? `<h3 class="small muted">Your players</h3>${list(mine)}` : ""}
+    ${mates.length ? `<h3 class="small muted"${mine.length ? ` style="margin-top:14px"` : ""}>Teammates</h3>${list(top)}` : ""}
+    ${rest.length ? `<details><summary class="small">${rest.length} more on teammates</summary>${list(rest)}</details>` : ""}</div></div>`;
+}
+async function loadNews() {
+  const N = S.news; N.loading = true;
+  try { N.data = await api("/api/news", {}); } catch (e) { N.error = e.message; }
+  N.loading = false;
+  if (S.news === N && S.view === "team") render();
 }
 
 // ---------- punt planner: every build's plan on real odds, on demand (up to three trade searches per build, ~15s) ----------
@@ -1098,7 +1138,7 @@ document.addEventListener("change", async e => {
     try {
       S.state = await api("/api/me", { team: t.value });
       Object.assign(S.trade, { give: new Set(), get: new Set(), team: null, roster: null, result: null });
-      S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null; S.week = {}; S.strategy = {}; S.card = {};
+      S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null; S.week = {}; S.news = {}; S.strategy = {}; S.card = {};
       toast(`You're ${t.value} now`);
     } catch (err) { toast(err.message); }
     return render();
@@ -1127,7 +1167,7 @@ document.addEventListener("keydown", e => {
 $("#refresh").addEventListener("click", async e => {
   const b = e.currentTarget; b.classList.add("busy"); b.disabled = true;
   try {
-    S.state = await api("/api/refresh", {}); S.league.data = null; S.trade.roster = null; S.find.list = null; S.saved.evals = {}; S.players = null; S.week = {}; S.strategy = {}; S.card = {};
+    S.state = await api("/api/refresh", {}); S.league.data = null; S.trade.roster = null; S.find.list = null; S.saved.evals = {}; S.players = null; S.week = {}; S.news = {}; S.strategy = {}; S.card = {};
     toast("League refreshed");
   } catch (err) { toast("Refresh failed: " + err.message); }
   b.classList.remove("busy"); b.disabled = false; render();
