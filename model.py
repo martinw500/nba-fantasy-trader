@@ -556,7 +556,7 @@ class League:
         self.p_week = self.p.copy()  # this week's per-game lines: the lifts for this week's games instead
         wk = self._boost(self.week_end).sub(ahead, fill_value=0)
         self.p_week.loc[wk.index, wk.columns] += wk
-        self.rate, self.avail = self._availability(base, cur)
+        self.rate, self.avail, self.back = self._availability(base, cur)
         self.games_week = pd.Series({k: len(self.game_days(k, self.week_end)) for k in self.p.index}, dtype=float)
         # expected weekly contribution: games played at his line, missed games partly covered at waiver level
         fill = self.p.loc[self._waiver_level(self.value()), RAW].mean()
@@ -566,6 +566,19 @@ class League:
                       "cur": zscores(pd.concat([seen, f]), pool).loc["_fill", self.cats]}
         a = self.avail.to_numpy()[:, None]
         self.week = GAMES_WEEK * (a * self.p[RAW] + (1 - a) * FILL * fill.to_numpy())
+        # parked in an IL slot (IL, IL+, NA): he holds no active spot, so nobody covers his missed games, and from his
+        # return (the share `back` of games left) he takes the spot of a waiver-level player. Nothing if even then he
+        # wouldn't beat one (effective value): he'd be dropped. ponytail: he bumps the waiver level, not the team's worst
+        self.il = {t: {k for k in ks if self.meta[k].get("slot") in ("IL", "IL+", "NA")} for t, ks in self.rosters.items()}
+        self.il_n = s.get("il", max(map(len, self.il.values()), default=0))  # IL slots per team (yahoo.py reads them)
+        w, r = self._waiver_level(self.value()), self.rate.to_numpy()[:, None]
+        healthy = GAMES_WEEK * (r * self.p[RAW] + (1 - r) * FILL * fill.to_numpy())  # his week once he's back
+        il = (healthy - self.week.loc[w].mean()).mul(self.back, axis=0)
+        floor = float(self.zfill["ros"].sum())
+        self.week_il = il.where(floor + self.rate * (self.value() - floor) > self.effective()[w].mean(), 0.0, axis=0)
+        # an open roster spot on the trade market: the waiver level's market value, fixed now so a player dropped on a
+        # copy (free moves) never prices a pickup at his own rank
+        self.spot = float(self.market["value"].reindex(w).mean())
 
     def _keys(self, players):
         keys = []
@@ -604,8 +617,9 @@ class League:
 
     def _availability(self, base, cur):
         """Share of games a player suits up for: GP rate over last season + this one, shrunk halfway toward 85%
-        (one bad injury year shouldn't count fully), then cut by injury status. Returns (rate, rest-of-season).
-        A known return date replaces the status guess: rest of season he plays the share of remaining games after it."""
+        (one bad injury year shouldn't count fully), then cut by injury status. Returns (rate, rest-of-season, share of
+        games left after his return). A known return date replaces the status guess: rest of season he plays the share
+        of remaining games after it."""
         played = base.GP.reindex(self.p.index).fillna(0) + cur.GP.reindex(self.p.index).fillna(0)
         possible = base.GP.max() + cur.GP.max()
         a = (played + 0.85 * possible / 2) / (possible * 1.5)
@@ -617,7 +631,7 @@ class League:
             if (i.get("return") or "") > self.today and rest and k in share.index:
                 status[k], share[k] = 1.0, sum(d >= i["return"] for d in rest) / len(rest)
         rate = a * status.reindex(a.index).fillna(1.0)
-        return rate, rate * share
+        return rate, rate * share, share
 
     def find(self, name, strict=True):
         if (k := match(name, self.p.index)) or not strict:
@@ -687,8 +701,8 @@ class League:
         return ok
 
     def weakest(self, team, m, pv):
-        """Perceived cost of the m players `team` would drop to make room: its weakest by perceived value."""
-        return float(pv.reindex(self.rosters[team]).nsmallest(m).sum()) if m > 0 else 0.0
+        """Perceived cost of the m players `team` would drop to make room: its weakest active ones by perceived value."""
+        return float(pv.reindex(self._playing(self.rosters[team])).nsmallest(m).sum()) if m > 0 else 0.0
 
     def best_fa(self, n, skip=()):
         """The n free agents a team would pick up for open spots: per-game value times share of games played, so an
@@ -793,8 +807,15 @@ class League:
                       key=lambda x: x["date"], reverse=True)
 
     # --- matchup model (9-cat) -----------------------------------------------
-    def vec(self, keys):
-        return self.week.reindex(list(keys)).fillna(0).sum().to_numpy()
+    def vec(self, keys, il=None):
+        """Weekly totals: each player's week, or his IL-slot week (week_il) if he's in `il` (default: parked here)."""
+        il = self._parked if il is None else set(il)
+        return (self.week.reindex([k for k in keys if k not in il]).fillna(0).sum()
+                + self.week_il.reindex([k for k in keys if k in il]).fillna(0).sum()).to_numpy()
+
+    @property
+    def _parked(self):
+        return set().union(*self.il.values())
 
     def week_vec(self, keys, start=None):
         """This week's expected totals: per-game line x games he starts the rest of this week (starts()) x
@@ -816,6 +837,11 @@ class League:
     def rows(self):
         """Weekly vector per player, as a dict of arrays for fast summing in loops."""
         return dict(zip(self.week.index, self.week.to_numpy()))
+
+    @functools.cached_property
+    def rows_il(self):
+        """Same, parked in an IL slot (week_il)."""
+        return dict(zip(self.week_il.index, self.week_il.to_numpy()))
 
     def _contrib(self, team, keys, punt=()):
         """Each player's worth to `team` in win %, for ranking drops: what its current roster loses without his line,
@@ -871,19 +897,24 @@ class League:
         return {t: {"win": round(wins[t], 3), "rank": i + 1} for i, t in enumerate(order)}
 
     def _after(self, team, out, inn, punt=()):
-        """Roster after a trade at its current size: extra players mean dropping whoever costs the least win %
-        (incoming included), open spots get the best free agents."""
+        """Roster after a trade, keeping its number of active players: injured players coming in take its free IL slots
+        (longest out first), extra active players mean dropping whoever costs the least win % (an injured one coming in
+        isn't dropped), open spots get the best free agents. Players parked in IL slots hold no active spot.
+        -> (keys, dropped, added, parked)"""
+        hurt = sorted((k for k in inn if self.meta.get(k, {}).get("status", "") in OUT), key=lambda k: (self.back[k], k))
+        il = [k for k in self.il[team] if k not in out]
+        il += hurt[:max(self.il_n - len(il), 0)]
         keys = [k for k in self.rosters[team] if k not in out] + list(inn)
-        n = len(keys) - len(self.rosters[team])
+        n = len(keys) - len(il) - len(self._playing(self.rosters[team]))
         dropped, added = [], []
         if n > 0:
-            c = self._contrib(team, keys, punt)
-            dropped = sorted(keys, key=c.get)[:n]
+            c = self._contrib(team, [k for k in keys if k not in il and k not in hurt], punt)
+            dropped = sorted(c, key=c.get)[:n]
             keys = [k for k in keys if k not in dropped]
         elif n < 0 and self.fa:
             added = self.best_fa(-n, skip=keys)
             keys += added
-        return keys, dropped, added
+        return keys, dropped, added, il
 
     # --- trades ------------------------------------------------------------
     def names(self, keys):
@@ -919,8 +950,8 @@ class League:
         tp = self.build(other) if other in self.rosters else []
         theirs = float(self.value(give, tp).sum() - self.value(get, tp).sum() + n * self.replacement(tp)[0])
         cv, pv = self.perceived()
-        seen = float(pv.reindex(give).sum() - pv.reindex(get).sum()) + (
-            -self.weakest(other, -n, pv) if n < 0 and other in self.rosters else n * cv)
+        swap = float(pv.reindex(give).sum() - pv.reindex(get).sum())
+        seen = swap + (-self.weakest(other, -n, pv) if n < 0 and other in self.rosters else n * cv)
         out = {"give": [self.player(k, punt) for k in give], "get": [self.player(k, punt) for k in get],
                "cats": {c: round(float(cats[c]), 2) for c in self.cats}, "net": round(mine, 2), "unit": "value",
                "other_team": other, "their_build": tp, "their_net": round(theirs, 2), "their_view": round(seen, 2),
@@ -929,9 +960,10 @@ class League:
                "verdict": "accept" if mine > 0.25 * self.u else "decline" if mine < -0.25 * self.u else "toss-up"}
         if self.mode == "points" or other not in self.rosters:
             return out
-        mk, md, ma = self._after(self.me, give, get, punt)
-        tk, td, ta = self._after(other, get, give)
-        ov = {self.me: self.vec(mk), other: self.vec(tk)}
+        mk, md, ma, mil = self._after(self.me, give, get, punt)
+        tk, td, ta, til = self._after(other, get, give)
+        ov = {self.me: self.vec(mk, mil), other: self.vec(tk, til)}
+        out["their_view"] = round(swap - self.weakest(other, len(td), pv) + len(ta) * cv, 2)  # IL slots counted
         b, a = self.outlook(self.me, punt=punt), self.outlook(self.me, ov, punt)
         to = self.outlook(other, ov)
         tb, tw = self.outlooks[other]["win"], to["win"]
@@ -996,9 +1028,9 @@ class League:
 
     def _priced(self, give, get, md, ma, td, ta):
         """priced() for a trade: the market value each side ends up with, net of the players it drops (md, td) and the
-        free agents it picks up (ma, ta)."""
+        open spots it fills (ma, ta: a free agent is free, so each is worth `spot`, whoever it is)."""
         mv = lambda ks: float(self.market["value"].reindex(list(ks)).sum())
-        return priced(mv(give) - mv(td) + mv(ta), mv(get) - mv(md) + mv(ma))
+        return priced(mv(give) - mv(td) + len(ta) * self.spot, mv(get) - mv(md) + len(ma) * self.spot)
 
     def after_trade(self, give, get, punt=()):
         """The league after a trade (checked as in trade()): both rosters as trade() scores them (extra players dropped,
@@ -1006,9 +1038,10 @@ class League:
         drops and pickups and its market price."""
         give, get = self._check(give, get)
         other = self.owner(get[0])
-        mk, md, ma = self._after(self.me, give, get, punt)
-        tk, td, ta = self._after(other, get, give)
-        lg = self._copy({self.me: mk, other: tk}, [k for k in self.fa if k not in ma + ta] + md + td)
+        mk, md, ma, mil = self._after(self.me, give, get, punt)
+        tk, td, ta, til = self._after(other, get, give)
+        lg = self._copy({self.me: mk, other: tk}, [k for k in self.fa if k not in ma + ta] + md + td,
+                        {self.me: set(mil), other: set(til)})
         lg.trades = [*self.trades, {"team": other, "give": give, "get": get, "drop": md, "add": ma,
                                     "market": self._priced(give, get, md, ma, td, ta)}]
         return lg
@@ -1126,35 +1159,50 @@ class League:
             return [tuple(pins) + c for s in range(max(1, len(pins)), size + 1)
                     for c in itertools.combinations(free, s - len(pins))]
 
-        def stack(cs):  # summed weekly vectors, player counts, summed perceived and market value
-            return (np.stack([sum(self.rows[k] for k in c) for c in cs]), np.array([len(c) for c in cs]),
+        injured = lambda k: self.meta.get(k, {}).get("status", "") in OUT
+
+        def stack(cs, il):  # summed weekly vectors (active, and as held: parked ones at week_il), players, active
+            # players, parked ones, summed perceived and market value
+            return (np.stack([sum(self.rows[k] for k in c) for c in cs]),
+                    np.stack([sum(self.rows_il[k] if k in il else self.rows[k] for k in c) for c in cs]),
+                    np.array([len(c) for c in cs]), np.array([sum(k not in il for k in c) for c in cs]),
+                    np.array([sum(k in il for k in c) for c in cs]),
                     np.array([sum(vc[k] for k in c) for c in cs]), np.array([sum(mv[k] for k in c) for c in cs]))
 
-        def low2(groups, c):  # per group: the 2 players the team would miss least (padded with inf), vectors, market
-            vals, vecs, mk = np.full((len(groups), 2), np.inf), np.zeros((len(groups), 2, len(RAW))), np.zeros((len(groups), 2))
+        def parked(cs):  # per combo: injured players (they take the receiver's free IL slots, as in _after), and what
+            cut = np.zeros((len(cs), size + 1, len(RAW)))  # parking the first 0..size of them takes off its week
+            for i, c in enumerate(cs):
+                for j, k in enumerate(sorted(filter(injured, c), key=lambda k: (self.back[k], k))):
+                    cut[i, j + 1:] += self.rows[k] - self.rows_il[k]
+            return np.array([sum(map(injured, c)) for c in cs]), cut
+
+        def low(groups, c):  # per group: the `size` players the team would miss least (padded with inf), vectors, market
+            vals, vecs, mk = (np.full((len(groups), size), np.inf), np.zeros((len(groups), size, len(RAW))),
+                              np.zeros((len(groups), size)))
             for i, g in enumerate(groups):
-                for j, k in enumerate(sorted(g, key=c.get)[:2]):
+                for j, k in enumerate(sorted(g, key=c.get)[:size]):
                     vals[i, j], vecs[i, j], mk[i, j] = c[k], self.rows[k], mv[k]
             return vals, vecs, mk
 
-        def drops(A, B, n):  # vector and market value of the n (0-2) cheapest of A's pair (per give combo) and B's
+        def drops(A, B, n):  # vector and market value of the n cheapest of A's (per give combo) and B's (per get combo)
             a, b = len(A[0]), len(B[0])
             pair = lambda x, y: np.concatenate([np.broadcast_to(x[:, None], (a, b) + x.shape[1:]),
                                                 np.broadcast_to(y[None], (a, b) + y.shape[1:])], 2)
-            pick = np.argsort(pair(A[0], B[0]), -1)[..., :2]
+            pick = np.argsort(pair(A[0], B[0]), -1)[..., :size]
             cut, mk = np.take_along_axis(pair(A[1], B[1]), pick[..., None], 2), np.take_along_axis(pair(A[2], B[2]), pick, 2)
-            one, two = n >= 1, n >= 2
-            return one[..., None] * cut[:, :, 0] + two[..., None] * cut[:, :, 1], one * mk[..., 0] + two * mk[..., 1]
+            on = np.arange(size) < n[..., None]
+            return (on[..., None] * cut).sum(2), (on * mk).sum(2)
 
-        fa, fam = np.zeros((3, len(RAW))), np.zeros(3)  # the best 0, 1 or 2 free agents (vectors, market value), for
-        for i, k in enumerate(self.best_fa(2)):         # whoever ends up with open spots
+        fa, fam = np.zeros((size + 1, len(RAW))), np.arange(size + 1) * self.spot  # the best 0..size free agents
+        for i, k in enumerate(self.best_fa(size)):  # (vectors; market: open spots), for whoever ends up with open spots
             fa[i + 1:] += self.rows[k]
-            fam[i + 1:] += mv[k]
 
-        roster = self.rosters[me]
+        roster, il_me = self.rosters[me], self.il[me]
         mine = combos(roster, give, vm)
-        GV, gn, gseen, gmk = stack(mine)
-        my_rest = low2([[k for k in roster if k not in c] for c in mine], self._contrib(me, roster, punt))
+        GV, GH, gn, ga, gp, gseen, gmk = stack(mine, il_me)
+        g_hurt, g_cut = parked(mine)
+        my_rest = low([[k for k in roster if k not in c and k not in il_me] for c in mine], self._contrib(me, roster, punt))
+        I = np.arange(len(mine))[:, None]
         before = self.outlook(me, punt=punt)
         out = []
         for t, keys in self.rosters.items():
@@ -1164,16 +1212,24 @@ class League:
             theirs = combos(keys, get, vg, hurt)
             if not theirs:
                 continue
-            RV, rn, rseen, rmk = stack(theirs)
+            il_t, J = self.il[t], np.arange(len(theirs))[None]
+            RV, RH, rn, ra, rp, rseen, rmk = stack(theirs, il_t)
+            r_hurt, r_cut = parked(theirs)
             c_in = self._contrib(me, {k for c in theirs for k in c}, punt)  # what their players would add for you
             c_t = self._contrib(t, set(keys) | {k for c in mine for k in c})
-            n = rn[None] - gn[:, None]  # extra players you receive
-            my_drop, my_drop_m = drops(my_rest, low2(theirs, c_in), n)
-            their_drop, their_drop_m = drops(low2(mine, c_t), low2([[k for k in keys if k not in c] for c in theirs], c_t), -n)
-            me_after = self.vecs[me] - GV[:, None] + RV[None] - my_drop + fa[np.clip(-n, 0, 2)]
-            them_after = self.vecs[t] - RV[None] + GV[:, None] - their_drop + fa[np.clip(n, 0, 2)]
-            give_m = gmk[:, None] - their_drop_m + fam[np.clip(n, 0, 2)]  # market value each side ends up with
-            get_m = rmk[None] - my_drop_m + fam[np.clip(-n, 0, 2)]
+            # injured players coming in park in free IL slots (the ones a side sends free theirs up); the rest need
+            # active spots: n_me / n_t extra active players you / they end up with
+            to_me = np.minimum(r_hurt[None], np.maximum(self.il_n - len(il_me) + gp[:, None], 0))
+            to_t = np.minimum(g_hurt[:, None], np.maximum(self.il_n - len(il_t) + rp[None], 0))
+            n_me, n_t = rn[None] - to_me - ga[:, None], gn[:, None] - to_t - ra[None]
+            healthy = lambda cs: [[k for k in c if not injured(k)] for c in cs]  # an injured player coming in stays
+            my_drop, my_drop_m = drops(my_rest, low(healthy(theirs), c_in), n_me)
+            their_drop, their_drop_m = drops(low(healthy(mine), c_t),
+                                             low([[k for k in keys if k not in c and k not in il_t] for c in theirs], c_t), n_t)
+            me_after = self.vecs[me] - GH[:, None] + RV[None] - r_cut[J, to_me] - my_drop + fa[np.clip(-n_me, 0, size)]
+            them_after = self.vecs[t] - RH[None] + GV[:, None] - g_cut[I, to_t] - their_drop + fa[np.clip(-n_t, 0, size)]
+            give_m = gmk[:, None] - their_drop_m + fam[np.clip(-n_t, 0, size)]  # market value each side ends up with
+            get_m = rmk[None] - my_drop_m + fam[np.clip(-n_me, 0, size)]
             mkt = 100 * (get_m - give_m) / np.maximum(np.maximum(give_m, get_m), 1)  # as in priced()
             names, O = self._others(me, t)
             k = len(O) + 1
@@ -1183,8 +1239,8 @@ class League:
             dme = 100 * ((m_o.sum(-1) + m_t) / k - before["win"])
             t_o = self._score(cat_probs(them_after[:, :, None], O[None, None], cats)).sum(-1)
             dthem = 100 * ((t_o + self._score(1 - p_mt)) / k - self.outlooks[t]["win"])
-            low = np.concatenate([[0], np.cumsum(np.sort(pv.reindex(keys).to_numpy()))])  # their weakest, for drops
-            seen = gseen[:, None] - rseen[None] + np.where(n > 0, n * cv, -low[np.clip(-n, 0, len(low) - 1)])
+            weak = np.concatenate([[0], np.cumsum(np.sort(pv.reindex(self._playing(keys)).to_numpy()))])  # for drops
+            seen = gseen[:, None] - rseen[None] + np.where(n_t < 0, -n_t * cv, -weak[np.clip(n_t, 0, len(weak) - 1)])
             if goal == "team":
                 h2h = m_t if goal_team == t else m_o[..., names.index(goal_team)]
                 score = 100 * (h2h - before["vs"][goal_team])
@@ -1198,9 +1254,9 @@ class League:
             if goal != "win":
                 ok &= dme > -GUARD * self.s
             if shape == "consolidate":
-                ok &= n < 0
+                ok &= gn[:, None] > rn[None]
             elif shape == "depth":
-                ok &= n > 0
+                ok &= gn[:, None] < rn[None]
             G, R = np.nonzero(ok)
             rank = np.minimum(score, dthem)[G, R] if tier in ("easy", "fair") else score[G, R]
             top = np.argsort(-rank)[:limit]
@@ -1375,9 +1431,9 @@ class League:
         return self.value(self.fa, punt).nlargest(40).index.tolist()
 
     def _drops(self, roster, keep=()):
-        """Who an add can replace: healthy players outside `keep`, plus nobody (None) while the active roster has an
-        open spot."""
-        drops = [k for k in roster if k not in keep and self.meta.get(k, {}).get("status", "") not in OUT]
+        """Who an add can replace: healthy active players outside `keep`, plus nobody (None) while the active roster has
+        an open spot."""
+        drops = [k for k in self._playing(roster) if k not in keep and self.meta.get(k, {}).get("status", "") not in OUT]
         return drops + [None] * (len(self._playing(roster)) < self.roster_n)
 
     def _gains(self, team, roster, adds, drops, punt):
@@ -1422,12 +1478,12 @@ class League:
         lg.free = {**self.free, team: [*self.free.get(team, ()), *moves]}
         return lg
 
-    def _copy(self, rosters, fa):
-        """A copy of the league with these rosters and free agents (after_free, after_trade)."""
+    def _copy(self, rosters, fa, il=None):
+        """A copy of the league with these rosters, free agents and IL slots (after_free, after_trade)."""
         lg = copy.copy(self)
         for c in ("vecs", "outlooks", "totals"):  # cached on today's rosters
             lg.__dict__.pop(c, None)
-        lg.rosters, lg.fa = {**self.rosters, **rosters}, fa
+        lg.rosters, lg.fa, lg.il = {**self.rosters, **rosters}, fa, {**self.il, **(il or {})}
         return lg
 
     def _moves_out(self, moves):
@@ -1436,7 +1492,8 @@ class League:
 
     def _playing(self, keys):
         """Players not parked in an IL slot: the ones on the active roster."""
-        return [k for k in keys if self.meta.get(k, {}).get("slot") not in ("IL", "IL+", "NA")]
+        parked = self._parked
+        return [k for k in keys if k not in parked]
 
     def this_week(self, opp=None, punt=(), limit=5):
         """This week's matchup: totals so far + the rest of the week (week_vec, players in IL slots sit) -> odds per

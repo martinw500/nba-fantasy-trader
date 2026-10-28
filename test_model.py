@@ -127,11 +127,13 @@ def test_all():
     assert m.at["player 170", "yahoo"] and not m.at["player 174", "yahoo"] and mk.player("player 174")["mkt_model"]
     assert m.at["player 171", "rank"] < m.at["player 170", "rank"]  # 2/3 x 1 + 1/3 x 400 = 134, behind 60
     assert sorted(m["rank"]) == list(range(1, len(m) + 1)) and np.allclose(m.value, 100 * model.MARKET ** (m["rank"] - 1))
-    # drop cost: the side taking more players gives up its drops' market value, the other adds its pickups'
+    # drop cost: the side taking more players gives up its drops' market value; the other's open spot is worth the
+    # waiver level (spot), whoever fills it: a free agent is free
     r = lg.trade(["Player 198"], ["Player 151", "Player 155"])
     mv = lambda ns: sum(lg.market.at[lg.find(n), "value"] for n in ns)
     assert abs(r["market"]["get"] - (mv(["Player 151", "Player 155"]) - mv(r["you_drop"]))) < 0.1
-    assert r["they_add"] and abs(r["market"]["give"] - (mv(["Player 198"]) + mv(r["they_add"]))) < 0.1
+    assert r["they_add"] and abs(r["market"]["give"] - (mv(["Player 198"]) + lg.spot)) < 0.1
+    assert abs(lg.spot - lg.market["value"].reindex(lg._waiver_level(lg.value())).mean()) < 1e-9
     assert any(f.startswith("You overpay on the market") for f in lg.trade(["Player 198"], ["Player 151"])["flags"])
     assert any(f.startswith("Lowball") for f in lg.trade(["Player 150"], ["Player 199"])["flags"])
     # after_trade: the league as trade() scores it, the drop back on waivers and the pickup off them
@@ -208,6 +210,26 @@ def test_all():
     assert [m["drop"] for m in short.trade(["Player 198"], ["Player 151"], their_free=True)["their_free"]] == [None]
     assert short.search(tier="hard", their_free=True, limit=200) == short.search(team="Them", tier="hard",
                                                                                  their_free=True, limit=200)[:3]
+
+    # IL slots (N5): a parked player holds no active spot and nobody covers his missed games, so he counts for less
+    # than an active one. Sending him frees no spot (the player coming back costs a drop), an injured player coming in
+    # parks in a free slot (an open spot: a pickup), and search scores both deals like trade()
+    hurt = model.keyed(pd.DataFrame([line("Hurt Guy", 196), line("Sore Guy", 193)]))
+    ill = model.League({**lg.snap, "settings": {**lg.snap["settings"], "il": 2}, "teams": {
+        "Me": lg.snap["teams"]["Me"] + [{"name": "Hurt Guy", "pos": "", "status": "O", "slot": "IL"}],
+        "Them": lg.snap["teams"]["Them"] + [{"name": "Sore Guy", "pos": "", "status": "O", "slot": "BN"}]}},
+        pd.concat([base, hurt]), pd.concat([cur, hurt.assign(GP=5)]))
+    pts = model.RAW.index("PTS")
+    assert ill.il == {"Me": {"hurt guy"}, "Them": set()} and ill.rows_il["hurt guy"][pts] < ill.rows["hurt guy"][pts]
+    sent, got = ill.trade(["Hurt Guy"], ["Player 151"], free=False), ill.trade(["Player 150"], ["Sore Guy"], free=False)
+    assert len(sent["you_drop"]) == 1 and sent["you_add"] == [] and len(sent["they_add"]) == 1
+    assert got["you_drop"] == [] and len(got["you_add"]) == 1
+    model.TIERS["hard"] = (-99, -99, -np.inf, np.inf)  # every deal, as above
+    for r in (sent, got):
+        x = ill.search([p["name"] for p in r["give"]], [p["name"] for p in r["get"]], size=1, tier="hard", free=False)
+        assert [(x[0]["net"], x[0]["their_net"], x[0]["market"], x[0]["their_view"])] == [
+            (r["net"], r["their_net"], r["market"], r["their_view"])], (x, r)
+    model.TIERS["hard"] = hard
 
     # schedule: identical twins, one with 4 games left this week and one with 2; a return date wipes this week
     # and cuts rest-of-season availability to the share of games after it
@@ -456,7 +478,7 @@ Sharks has an open SF slot.""")
     assert list(got["teams"]) == ["fatty zhou", "Big Tuo Plumbing Inc.", "Sharks"]
     assert got["pulled"] == "2026-10-26T23:37:00-07:00" and got["from"] == "2026-10-27"  # Oct 26's games are banked
     assert got["week"] == {"week": 2, "start": "2026-10-26", "end": "2026-11-01"}
-    assert got["settings"] == {"roster": 13, "starters": 10, "scoring": "categories", "max_adds": 4}
+    assert got["settings"] == {"roster": 13, "starters": 10, "il": 3, "scoring": "categories", "max_adds": 4}
     fz = got["teams"]["fatty zhou"]
     assert fz[0] == {"name": "Nikola Jokić", "nba": "DEN", "pos": "C", "status": "", "slot": "C",
                      "rank": {"pre": 1, "cur": 8}, "owned": 100}
