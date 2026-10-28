@@ -209,6 +209,9 @@ Sidebar buttons with an 18px stroke icon (custom SVG, 1.7 stroke). The current i
 ### Z-score table (signature)
 Category cells are centered numbers on an inset 4px-rounded fill (`--c`) whose strength follows |z|. Punted columns get `opacity .3` + grayscale and a struck-through header. "Now" is green or red against "Value" to show hot or cold starts.
 
+### Selectable rows
+A table row that picks what another panel shows (Strategy's Every build) gets an `accent-soft` fill and `accent-ink` name. A step row's follow-up line (a trade's waiver moves) sits under it in a muted sub-row, with the step's result cells spanning both.
+
 ### Category strip
 Equal columns per category: label, rank `n / 12`, signed total, and a 4px bar. The bar is green in the top 40%, red in the bottom 35%, grey between.
 

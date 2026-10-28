@@ -134,6 +134,14 @@ def test_all():
     assert r["they_add"] and abs(r["market"]["give"] - (mv(["Player 198"]) + mv(r["they_add"]))) < 0.1
     assert any(f.startswith("You overpay on the market") for f in lg.trade(["Player 198"], ["Player 151"])["flags"])
     assert any(f.startswith("Lowball") for f in lg.trade(["Player 150"], ["Player 199"])["flags"])
+    # after_trade: the league as trade() scores it, the drop back on waivers and the pickup off them
+    deal = (["Player 198"], ["Player 151", "Player 155"])
+    r, at = lg.trade(*deal, free=False), lg.after_trade(*deal)
+    assert round(100 * at.outlook("Me")["win"], 1) == r["win_after"] and at.trades[0]["market"] == r["market"]
+    assert round(100 * at.outlook("Them")["win"], 1) == r["their_win_after"] and lg.trades == []
+    assert lg.find(r["you_drop"][0]) in at.fa and lg.find(r["they_add"][0]) in at.rosters["Them"]
+    assert lg.find(r["they_add"][0]) not in at.fa and "player 198" in at.rosters["Them"]
+    assert lg.names(at.trades[0]["drop"]) == r["you_drop"] and at.trades[0]["add"] == []
 
     # search: this 2-team league is zero-sum with z-scores spread +-46, so the real tiers find little; the mechanics
     # (pins always in, locks never in, 3-player sides, filters) run on a loose test-only tier
@@ -384,15 +392,46 @@ Sharks has an open SF slot.""")
                       pd.concat([base, model.keyed(pd.DataFrame(bricks))]),
                       pd.concat([cur, model.keyed(pd.DataFrame([{**x, "GP": 5} for x in bricks]))]))
     plan = bl.strategy(size=1)
-    assert plan["pick"] == ["FT%"] and plan["edge"] > 2 and next(b for b in plan["builds"] if not b["punt"])["free"] == []
-    assert {m["add"] for m in plan["builds"][0]["free"]} == {"Brick A", "Brick B", "Brick C"}
+    assert plan["pick"] == ["FT%"] and plan["edge"] > 2
+    assert next(b for b in plan["builds"] if not b["punt"])["steps"][0]["free"] == []
+    assert {m["add"] for m in plan["builds"][0]["steps"][0]["free"]} == {"Brick A", "Brick B", "Brick C"}
     assert plan["builds"][0]["win"] == round(100 * bl.after_free(["FT%"]).outlook("Me")["win"], 1)  # nothing conceded
-    # balanced is scored on every build's trades, so a build with the same free moves never beats it
+    # trades in a row: bricks on three other teams. The first one sinks FT% and lowers your true odds, so one trade per
+    # build stays balanced; three pay off and the FT% punt wins. The market prices bricks on all 9 categories (Yahoo
+    # rank 40), so each trade clears fair on its own, against the rosters at that point
+    brick = lambda j: {**as_pl(f"Brick {j}"), "rank": {"pre": 40, "cur": 40}}
+    bricks = [line(f"Brick {j}", 300, FTM=1, FTA=12) for j in "ABC"]
+    teams = {"Me": lg.snap["teams"]["Me"], "Them": lg.snap["teams"]["Them"] + [brick("C")],
+             "Third": [as_pl(f"Player {i}") for i in range(152, 200, 4)] + [brick("A")],
+             "Fourth": [as_pl(f"Player {i}") for i in range(153, 200, 4)] + [brick("B")]}
+    tl = model.League({**lg.snap, "teams": teams, "settings": {**lg.snap["settings"], "teams": 4}},
+                      pd.concat([base, model.keyed(pd.DataFrame(bricks))]),
+                      pd.concat([cur, model.keyed(pd.DataFrame([{**x, "GP": 5} for x in bricks]))]))
+    plan = tl.strategy(size=1)
+    ft, flat = plan["builds"][0], next(b for b in plan["builds"] if not b["punt"])
+    wins = [s["win"] for s in ft["steps"]]
+    assert plan["pick"] == ["FT%"] and plan["edge"] > 2 and len(flat["steps"]) == 1 and tl.strategy(size=1, steps=1)["pick"] == []
+    assert len(wins) == 4 and wins[1] < wins[0] < wins[3] and {g for s in ft["steps"][1:] for g in s["trade"]["get"]} == {
+        "Brick A", "Brick B", "Brick C"} and not any(s["trade"]["later"] for s in ft["steps"][1:])
+    for s in ft["steps"][1:]:
+        d = s["trade"]["market"]["diff_pct"]
+        assert abs(d) <= 15 or s["trade"]["their_net"] > 0 and abs(d) <= model.FAIR_FIT
+    assert {p["name"] for p in ft["buy"][:3]} == {"Brick A", "Brick B", "Brick C"}  # far below their worth to FT%
+    # balanced tries every build's deals and replays every chain while each trade lifts true odds, so a build that
+    # never lowers them and makes no waiver moves can't beat it
     plan = lg.strategy(size=2)
     flat = plan["builds"][0]
     assert plan["pick"] == [] and not flat["punt"] and len(plan["builds"]) == 1 + len(model.CATS) + len(model.PAIRS)
-    assert all(b["win"] <= flat["win"] for b in plan["builds"] if b["free"] == flat["free"])
-    assert flat["trade"]["net"] == lg.trade(flat["trade"]["give"], flat["trade"]["get"])["net"] > 0
+    steady = lambda b: all(x["win"] <= y["win"] for x, y in zip(b["steps"], b["steps"][1:]))
+    assert all(b["win"] <= flat["win"] for b in plan["builds"] if steady(b) and not any(s["free"] for s in b["steps"]))
+    t = flat["steps"][1]["trade"]
+    assert flat["steps"][1]["win"] == lg.trade(t["give"], t["get"])["win_after"] > flat["steps"][0]["win"]
+    # each trade's waiver moves (its drops and open-spot pickups, then the free moves it opens up) keep your roster size
+    assert all(len(s["trade"]["get"]) - len(s["trade"]["give"]) + len(s["add"]) - len(s["drop"]) == 0
+               for b in plan["builds"] for s in b["steps"][1:])
+    # star fit: your top 5 players' weak spots in the categories a build concedes
+    assert all(s["cat"] in b["punt"] and s["z"] <= -1 for b in plan["builds"] for s in b["stars"]) and not flat["stars"]
+    assert [s["name"] for s in next(b for b in plan["builds"] if b["punt"] == ["TOV"])["stars"]] == ["Player 198"]
     # cheapest categories: one more player-z helps in every category, most where it moves the odds most
     cheap = lg.cheapest()
     assert {x["cat"] for x in cheap} == set(model.CATS) and all(x["per_z"] > 0 for x in cheap)

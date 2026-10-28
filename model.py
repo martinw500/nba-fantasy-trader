@@ -18,7 +18,7 @@ CLI (prints JSON, used by Claude Code and for quick checks):
   python model.py waivers                   # trades and search are scored on top of the free moves it lists
   python model.py movers                    # sell-high / buy-low
   python model.py week --vs "Team"          # this week's matchup (--vs defaults to the snapshot's opponent)
-  python model.py strategy                  # punt planner: every build's best moves on true odds (~15s)
+  python model.py strategy                  # punt planner: every build's waiver adds + up to 3 trades, true odds (~15s)
   add --punt "FT%,TOV" to any of them
 """
 import argparse
@@ -276,6 +276,7 @@ class League:
         self.points = s.get("points") or POINTS
         self.me = snap["me"]
         self.free = {}  # {team: free moves already made on this copy} (after_free)
+        self.trades = []  # trades already made on this copy (after_trade)
         base = baseline(fetch(LAST), fetch(OLDER)) if base is None else base
         cur = fetch(CUR, max_age_hours=12) if cur is None else cur
         pool = self.teams_n * self.roster_n
@@ -644,9 +645,7 @@ class League:
         flags += [f"{t} gains more than you ({100 * (sa[t]['win'] - sb[t]['win']):+.1f}% vs {100 * mine_d:+.1f}%)"
                   + (", and they're your trade partner." if t == other else f", and they're projected {sb[t]['rank']}.")
                   for t in sorted(rival, key=lambda t: sb[t]["rank"])]
-        # the market: what each side ends up with, net of the players it drops and the free agents it picks up
-        mv = lambda ks: float(self.market["value"].reindex(list(ks)).sum())
-        mkt = priced(mv(give) - mv(td) + mv(ta), mv(get) - mv(md) + mv(ma))
+        mkt = self._priced(give, get, md, ma, td, ta)
         d, fair = mkt["diff_pct"], TIERS["fair"][3]
         if d < -fair:
             flags.append(f"You overpay on the market: you send {mkt['give']:.0f} in market value for {mkt['get']:.0f}.")
@@ -671,6 +670,48 @@ class League:
             "accept": accept(d, 100 * (tw - tb), self.s),
             "verdict": "accept" if net > VERDICT * self.s else "decline" if net < -VERDICT * self.s else "toss-up"})
         return out
+
+    def _priced(self, give, get, md, ma, td, ta):
+        """priced() for a trade: the market value each side ends up with, net of the players it drops (md, td) and the
+        free agents it picks up (ma, ta)."""
+        mv = lambda ks: float(self.market["value"].reindex(list(ks)).sum())
+        return priced(mv(give) - mv(td) + mv(ta), mv(get) - mv(md) + mv(ma))
+
+    def after_trade(self, give, get, punt=()):
+        """The league after a trade (checked as in trade()): both rosters as trade() scores them (extra players dropped,
+        yours by `punt`; open spots filled from waivers), the drops back on waivers. Recorded in .trades, with your
+        drops and pickups and its market price."""
+        give, get = self._check(give, get)
+        other = self.owner(get[0])
+        mk, md, ma = self._after(self.me, give, get, punt)
+        tk, td, ta = self._after(other, get, give)
+        lg = self._copy({self.me: mk, other: tk}, [k for k in self.fa if k not in ma + ta] + md + td)
+        lg.trades = [*self.trades, {"team": other, "give": give, "get": get, "drop": md, "add": ma,
+                                    "market": self._priced(give, get, md, ma, td, ta)}]
+        return lg
+
+    def _step(self, x, punt=()):
+        """One trade of a strategy() plan on this league (x: give and get names), then its follow-up free moves (the
+        players the plan brought in are kept). None when it offers a player who's gone, or fails the fair tier's terms
+        for the other side (their odds and the market, any gain for you). win: your true odds after, obj: on `punt`.
+        add / drop: your waiver moves around it, net (an open spot's pickup that a free move swaps out isn't one)."""
+        try:
+            lg = self.after_trade(x["give"], x["get"], punt)
+        except KeyError:
+            return None
+        t = lg.trades[-1]
+        them, mkt = 100 * (lg.outlook(t["team"])["win"] - self.outlooks[t["team"]]["win"]), t["market"]["diff_pct"]
+        if not self._tier("fair", np.inf, them, mkt):
+            return None
+        n = len(lg.free.get(self.me, ()))
+        lg = lg.after_free(punt, keep=[k for tr in lg.trades for k in tr["get"]])
+        new = lg.free.get(self.me, [])[n:]
+        add, drop = t["add"] + [a for a, _, _ in new], t["drop"] + [d for _, d, _ in new if d]
+        return {"lg": lg, "free": lg._moves_out(new), "add": self.names(k for k in add if k not in drop),
+                "drop": self.names(k for k in drop if k not in add),
+                "win": lg.outlook(self.me)["win"], "obj": lg.outlook(self.me, punt=punt)["win"],
+                "trade": {"team": t["team"], "give": self.names(t["give"]), "get": self.names(t["get"]),
+                          "their_net": round(them, 1), "market": t["market"], "accept": accept(mkt, them, self.s)}}
 
     def ideas(self, mode="fair", punt=(), team=None, limit=20, depth=10):
         """Trade finder. 9-cat goes through search() with mode as the tier.
@@ -913,31 +954,66 @@ class League:
         return sorted(({"cat": c, "odds": round(odds[c], 3), "per_z": round(100 * float(u - odds[c]), 1)}
                        for c, u in zip(self.cats, up)), key=lambda x: -x["per_z"])
 
-    def strategy(self, size=3, top=5):
-        """Punt planner. Conceding a category only lowers today's odds: a punt pays off through the moves it unlocks.
-        So each build (staying balanced, each category, PAIRS) gets its own free moves and its top `top` fair trades
-        (search() with that punt), re-scored on true odds, nothing conceded. Balanced is re-scored on every build's
-        trades, since it can make any of them: a punt only wins through what it alone unlocks (its waiver moves, or a
-        trade that only pays after them). Builds rank by your true win % after the best of these (waivers alone, or
-        plus one trade). pick: the build to play, [] (stay balanced) unless a punt beats balanced by more than VERDICT."""
+    def strategy(self, size=3, top=5, steps=3):
+        """Punt planner. Conceding a category only lowers today's odds: a punt pays off through the moves it unlocks,
+        often over several trades, the first of which costs the most. So each build (staying balanced, each category,
+        PAIRS) makes its own free moves, then up to `steps` trades in a row: each the one that lifts its own (punted)
+        odds most of its top `top` fair deals (search() with that punt on the rosters by then, size 2 after the first
+        for speed), followed by its free moves again (_step). Every step is scored on true odds, nothing conceded, and
+        a build keeps its best prefix, or the single trade that lifts true odds most. Balanced also tries every build's
+        first deals and replays every build's chain while each trade lifts true odds, since it could make them too: a
+        punt only wins through what it alone unlocks (its waiver moves, or trades that only pay after a costly first
+        one). pick: the build to play, [] (stay balanced) unless a punt beats balanced by more than VERDICT.
+        stars: your top 5 players' weak spots (z <= -1) the build concedes. buy: the 5 players on other teams the
+        market prices furthest below their worth to the build (its effective() rank on the MARKET curve)."""
         if self.mode == "points":
             raise KeyError("The punt planner needs a category league")
-        now, out = round(100 * self.outlook(self.me)["win"], 1), []
+        me, now = self.me, round(100 * self.outlook(self.me)["win"], 1)
         builds = [[]] + [[c] for c in self.cats] + [list(p) for p in PAIRS if set(p) <= set(self.cats)]
         found = [self.search(tier="fair", punt=b, size=size, limit=top) for b in builds]
         every = list({(frozenset(x["give"]), frozenset(x["get"])): x for xs in found for x in xs}.values())
+        lifts = lambda st, xs, b: [s for x in xs if (s := st["lg"]._step(x, b)) and s["obj"] > st["obj"]]
+        plans = []
         for b, xs in zip(builds, found):
             lg = self.after_free(b)
-            win, deal = round(100 * lg.outlook(self.me)["win"], 1), None
-            for x in xs if b else every:
-                try:  # on top of this build's free moves, as search scored it
-                    r = lg.trade(x["give"], x["get"], free=False)
-                except KeyError:  # offers a player these free moves drop
-                    continue
-                if r["win_after"] > win:
-                    win, deal = r["win_after"], {**x, "net": r["net"], "their_net": r["their_net"]}
-            out.append({"punt": b, "free": lg._moves_out(lg.free.get(self.me, ())), "trade": deal, "win": win,
-                        "gain": round(win - now, 1)})
+            free = lg._moves_out(lg.free.get(me, ()))
+            path = [{"lg": lg, "free": free, "trade": None, "add": [m["add"] for m in free],
+                     "drop": [m["drop"] for m in free if m["drop"]],
+                     "win": lg.outlook(me)["win"], "obj": lg.outlook(me, punt=b)["win"]}]
+            nxt = lifts(path[0], xs if b else every, b)
+            opts = [path[:1]] + ([[path[0], max(nxt, key=lambda s: s["win"])]] if nxt else [])
+            while nxt:
+                path.append(max(nxt, key=lambda s: s["obj"]))
+                if len(path) > steps:
+                    break
+                cur = path[-1]["lg"]  # players the plan brought in or sent away are never traded again
+                nxt = lifts(path[-1], cur.search(tier="fair", punt=b, size=min(size, 2), limit=top, free=False,
+                                                 lock=set(cur.rosters[me]) ^ set(self.rosters[me])), b)
+            plans.append((b, path, opts + [path[:i] for i in range(2, len(path) + 1)]))
+        (_, (start, *_), flat_opts) = plans[0]
+        for _, path, _ in plans[1:]:  # balanced replays each chain while every trade lifts true odds
+            r = [start]
+            while len(r) < len(path) and (s := lifts(r[-1], [path[len(r)]["trade"]], [])):
+                r += s
+            flat_opts.extend(r[:i] for i in range(2, len(r) + 1))
+        top5 = self.value(self.rosters[me]).nlargest(5).index
+        theirs = [k for t, ks in self.rosters.items() if t != me for k in ks]
+        later = lambda t: not (set(t["give"]) <= set(self.rosters[me])  # needs an earlier step first
+                               and {self.owner(k) for k in t["get"]} == {t["team"]})
+        out = []
+        for b, _, opts in plans:
+            best = max(opts, key=lambda p: p[-1]["win"])  # the first best, so the fewest moves on a tie
+            win = round(100 * best[-1]["win"], 1)
+            fit = self.effective(b).rank(ascending=False)
+            gap = 100 * MARKET ** (fit - 1) - self.market["value"]
+            out.append({"punt": b, "win": win, "gain": round(win - now, 1),
+                        "steps": [{"trade": s["trade"] and {**s["trade"], "later": later(s["lg"].trades[-1])},
+                                   **{k: s[k] for k in ("free", "add", "drop")}, "win": round(100 * s["win"], 1)}
+                                  for s in best],
+                        "stars": [{"name": self.p.at[k, "PLAYER_NAME"], "cat": c, "z": round(float(self.z.at[k, c]), 1)}
+                                  for k in top5 for c in b if self.z.at[k, c] <= -1],
+                        "buy": [{**self.player(k, b), "fit_rank": int(fit[k]), "gap": round(float(g), 1)}
+                                for k, g in gap.reindex(theirs).nlargest(5).items() if g > 0]})
         out.sort(key=lambda x: -x["win"])  # stable: balanced wins ties
         edge = round(out[0]["win"] - next(x["win"] for x in out if not x["punt"]), 1)  # 62.1 - 61.9 isn't 0.2 in floats
         return {"win": now, "builds": out, "pick": out[0]["punt"] if edge > VERDICT * self.s else [], "edge": edge}
@@ -1010,18 +1086,24 @@ class League:
     def after_free(self, punt=(), keep=(), team=None):
         """The league after a team's free moves (yours by default): trades and search are scored on top of it, so a
         deal gets no credit for a pickup that team could make anyway, and an open spot it leaves gets the next-best
-        free agent."""
+        free agent. .free[team] holds every free move made on the copy so far."""
         team = team or self.me
         moves = self.free_moves(punt, keep, team)
         if not moves:
             return self
-        lg = copy.copy(self)
-        for c in ("vecs", "outlooks", "totals"):  # cached on today's rosters
-            lg.__dict__.pop(c, None)
         roster, fa = list(self.rosters[team]), list(self.fa)
         for a, d, _ in moves:
             roster, fa = [k for k in roster if k != d] + [a], [k for k in fa if k != a] + [d] * bool(d)
-        lg.rosters, lg.fa, lg.free = {**self.rosters, team: roster}, fa, {**self.free, team: moves}
+        lg = self._copy({team: roster}, fa)
+        lg.free = {**self.free, team: [*self.free.get(team, ()), *moves]}
+        return lg
+
+    def _copy(self, rosters, fa):
+        """A copy of the league with these rosters and free agents (after_free, after_trade)."""
+        lg = copy.copy(self)
+        for c in ("vecs", "outlooks", "totals"):  # cached on today's rosters
+            lg.__dict__.pop(c, None)
+        lg.rosters, lg.fa = {**self.rosters, **rosters}, fa
         return lg
 
     def _moves_out(self, moves):

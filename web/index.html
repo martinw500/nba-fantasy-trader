@@ -156,6 +156,10 @@ th.punted-col, tr.punted-col td:first-child { text-decoration: line-through; }
 .neg { color: var(--neg-ink); }
 .rowbtn { border: 0; background: none; padding: 0; cursor: pointer; text-align: left; font-weight: 550; }
 .rowbtn:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; }
+.rowbtn[aria-pressed="true"] { color: var(--accent-ink); }
+tr.sel td { background: var(--accent-soft); }
+tr.has-sub td:not([rowspan]), tr.has-sub:nth-last-child(2) td { border-bottom: 0; }
+tr.sub td { padding-top: 0; }
 
 /* matchups */
 .vs { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0; }
@@ -295,7 +299,7 @@ const S = {
   state: null, error: null,
   league: { team: null, data: null },
   week: {},  // { data, loading }; replaced on punt / team / refresh, so late answers land in the old object
-  strategy: {},  // { data, busy }: the punt planner, ignores your punt, so only team / refresh replace it
+  strategy: {},  // { data, busy, sel }: the punt planner (sel: the build whose plan shows), ignores your punt, so only team / refresh replace it
   trade: { give: new Set(), get: new Set(), team: null, roster: null, result: null, busy: false },
   locks: new Set(store.get("locks", [])),
   find: { tier: "fair", goal: "win", cats: [], vs: "", size: 3, healthy: false, theirs: store.get("theirs", false), shape: "", overpay: "", team: "", list: null, busy: false, ran: "", sort: null },
@@ -364,9 +368,9 @@ const mktTone = d => Math.abs(d) < 5 ? "" : tone(d);
 const mktDeal = m => `<span class="muted small">${Math.round(m.give)} → ${Math.round(m.get)}</span> <span class="${mktTone(m.diff_pct)}">${(m.diff_pct > 0 ? "+" : "") + Math.round(m.diff_pct)}%</span>`;
 const MKT_TIP = "Market value you send → get (100 = the market's top player, from Yahoo's preseason and current ranks), roster spots included. % = what you gain on market, as a share of the bigger side";
 
-function playerTable(players, { extra = [], empty = "No players." } = {}) {
+function playerTable(players, { extra = [], empty = "No players.", dim = [] } = {}) {  // dim: grey these columns too (a build's punt)
   if (!players?.length) return `<div class="empty">${empty}</div>`;
-  const cats = S.state.cats;
+  const cats = S.state.cats, punted = c => S.punt.includes(c) || dim.includes(c);
   const wk = players.some(p => p.games !== undefined);
   const head = `<tr><th>Player</th>${extra.map(x => `<th class="n">${x.h}</th>`).join("")}${wk ? `<th class="n" title="Games left this week (Monday to Sunday), after any return date">Wk</th>` : ""}<th class="n">GP</th>
     <th class="n" title="Expected share of remaining games played (games-played history + Yahoo injury status)">Plays</th>
@@ -421,40 +425,66 @@ function viewTeam() {
     ${prof ? strategyPanel() : ""}${vs}`;
 }
 
-// ---------- punt planner: every build's best moves on real odds, on demand (a trade search per build, ~15s) ----------
+// ---------- punt planner: every build's plan on real odds, on demand (up to three trade searches per build, ~15s) ----------
 const buildName = b => b.length ? b.map(lab).join(" + ") : "No punt";
-const deal = x => `${x.give.map(esc).join(" + ")} for ${x.get.map(esc).join(" + ")}`;
-const planText = b => and([...(b.free.length ? [`adding ${and(b.free.map(m => esc(m.add)))} off waivers`] : []),
-  ...(b.trade ? [`trading ${deal(b.trade)}`] : [])]) || "no moves";
+const plural = (n, w) => `${n} ${w}${n > 1 ? "s" : ""}`;
+const planMoves = b => { const adds = b.steps.reduce((n, s) => n + s.add.length, 0), trades = b.steps.length - 1;
+  return and([...(adds ? [plural(adds, "waiver add")] : []), ...(trades ? [plural(trades, "trade")] : [])]) || "no moves"; };
 function strategyPanel() {
-  const P = S.strategy, d = P.data;
-  let body;
-  if (P.busy) body = `<div class="empty"><b>Comparing builds…</b>Each one runs a full trade search, so this takes about 15 seconds.</div>${SKEL}`;
-  else if (!d) body = `<div class="empty"><b>Should you punt?</b>Punting a category only lowers today's odds. It pays off through the moves it unlocks: compare builds to see if any punt's moves beat staying balanced.</div>`;
-  else {
-    const best = d.builds[0], flat = d.builds.find(b => !b.punt.length), p1 = v => v.toFixed(1) + "%";
-    const [cls, pill, why] = d.pick.length
-      ? ["accept", `Punt ${buildName(d.pick)}`, `It unlocks ${planText(best)}, taking your ${WIN().of} from ${p1(d.win)} to ${p1(best.win)}: ${delta(d.edge, "win%")} more than staying balanced.`]
-      : ["toss-up", "Stay balanced", `${best.punt.length ? `The best punt, ${buildName(best.punt)}, is only ${delta(d.edge, "win%")} ahead, too close to call.` : "No punt beats it once its moves are made."}
-        Plan: ${planText(flat)}, ${p1(d.win)} → ${p1(flat.win)}.`];
-    const th = (h, tip, cls = "n") => `<th class="${cls}" title="${esc(tip)}">${h}</th>`;
-    const rows = d.builds.map((b, i) => `<tr><td><span class="pname">${buildName(b.punt)}</span>${b.punt.length === S.punt.length && b.punt.every(punted) ? `<span class="tag">current</span>` : ""}</td>
-      <td class="names"${b.free.length ? ` title="${freeList(b.free)}"` : ""}>${b.free.length ? b.free.map(m => esc(m.add)).join(", ") : `<span class="muted">None</span>`}</td>
-      <td class="names">${b.trade ? `${deal(b.trade)} <span class="muted small">${esc(b.trade.team)}</span>` : `<span class="muted">No fair trade helps</span>`}</td>
-      <td class="n">${b.trade ? `<span class="${tone(b.trade.their_net)}">${delta(b.trade.their_net, "win%")}</span>` : ""}</td>
-      <td class="n">${b.trade ? mktDeal(b.trade.market) : ""}</td>
-      <td class="n val">${b.win.toFixed(1)}%</td><td class="n ${tone(b.gain)}">${delta(b.gain, "win%")}</td>
-      <td class="n">${b.trade ? `<button class="btn ghost" data-act="plan-load" data-i="${i}" title="Open it in Trades, scored on your current build">Load</button>` : ""}</td></tr>`).join("");
-    body = `<div class="panel-b"><div class="verdict"><span class="pill ${cls}" style="text-transform:none">${pill}</span><span class="small">${why}</span></div></div>
-      <div class="tw" style="border-top:1px solid var(--line)"><table><thead><tr>${th("Build", "The categories this build concedes", "")}
-        ${th("Waiver adds", "Free-agent moves this build makes before any trade (hover for the drops)", "")}${th("Best fair trade", "The fair offer, searched with this punt, that lifts your real odds most on top of those adds", "")}
-        ${th("Them", "Change in their " + WIN().of + " from the trade")}${th("Market", MKT_TIP)}
-        ${th(WIN().h + " after", "After this build's adds and trade, on real odds: a punted category still counts when you win it")}${th("vs now", "Change from your " + WIN().of + " today")}<th></th></tr></thead>
-        <tbody>${rows}</tbody></table></div>
-      <div class="panel-b small muted" style="border-top:1px solid var(--line)">Staying balanced is also scored on every other build's trades, since it could make them too, so a punt only wins through moves it alone unlocks.</div>`;
-  }
-  return `<div class="panel"><div class="panel-h"><div><h2>Strategy</h2><p>Staying balanced, every single punt and six common pairs, each with its own waiver adds and best fair trade, scored on your real odds.</p></div>
-    <button class="btn primary" data-act="plan" ${P.busy ? "disabled" : ""}>${P.busy ? "Comparing…" : d ? "Compare again" : "Compare builds"}</button></div>${body}</div>`;
+  const P = S.strategy, d = P.data, p1 = v => v.toFixed(1) + "%";
+  const th = (h, tip, cls = "n") => `<th class="${cls}" title="${esc(tip)}">${h}</th>`;
+  const line = `style="border-top:1px solid var(--line)"`;
+  const head = `<div class="panel-h"><div><h2>Strategy</h2><p>Should you punt? Each build makes its waiver adds, then up to three fair trades in a row, scored on your real odds.</p></div>
+    <button class="btn primary" data-act="plan" ${P.busy ? "disabled" : ""}>${P.busy ? "Comparing…" : d ? "Compare again" : "Compare builds"}</button></div>`;
+  if (P.busy) return `<div class="panel">${head}<div class="empty"><b>Comparing builds…</b>Each one runs up to three trade searches, so this takes about 15 seconds.</div>${SKEL}</div>`;
+  if (!d) return `<div class="panel">${head}<div class="empty"><b>Should you punt?</b>Punting a category only lowers today's odds. It pays off through the moves it unlocks, often over a few trades. Compare builds to see if any punt's plan beats staying balanced.</div></div>`;
+  const best = d.builds[0], flat = d.builds.find(b => !b.punt.length);
+  const [cls, pill, why] = d.pick.length
+    ? ["accept", `Punt ${buildName(d.pick)}`, `Its plan beats staying balanced by ${delta(d.edge, "win%")}.`]
+    : ["toss-up", "Stay balanced", best.punt.length ? `The best punt, ${buildName(best.punt)}, is only ${delta(d.edge, "win%")} ahead, too close to call.` : "No punt beats it once its moves are made."];
+  const sel = P.sel ?? d.builds.indexOf(d.pick.length ? best : flat), b = d.builds[sel];
+  // the plan: waiver adds, then each trade on the rosters the one before leaves (and the adds it opens up)
+  const steps = b.steps.map((s, j) => {
+    const prev = j ? b.steps[j - 1].win : d.win;
+    const after = (span = "") => `<td class="n val"${span}>${p1(s.win)}</td><td class="n ${tone(s.win - prev)}"${span}>${delta(s.win - prev, "win%")}</td>`;
+    if (!s.trade) return `<tr><td class="muted">Waivers</td><td colspan="6" class="names">${s.free.length ? "Add " + freeList(s.free) : `<span class="muted">No waiver move clears the bar</span>`}</td>${after()}<td></td></tr>`;
+    // its waiver moves (open spots, extra players, the adds it opens up) go on a line below the deal
+    const t = s.trade, span = s.add.length || s.drop.length ? ` rowspan="2"` : "";
+    const wire = [...(s.add.length ? [`add ${and(s.add.map(esc))}`] : []), ...(s.drop.length ? [`drop ${and(s.drop.map(esc))}`] : [])].join(", ");
+    return `<tr${span ? ` class="has-sub"` : ""}><td class="muted"${span}>Trade ${j}</td><td>${esc(t.team)}</td><td class="names">${t.give.map(esc).join(", ")}</td>
+      <td class="names">${t.get.map(esc).join(", ")}</td>
+      <td class="n ${tone(t.their_net)}">${delta(t.their_net, "win%")}</td><td class="n">${mktDeal(t.market)}</td><td>${acceptPill(t.accept)}</td>${after(span)}
+      <td class="n"${span}><button class="btn ghost" data-act="plan-load" data-i="${sel}" data-j="${j}" ${t.later ? `disabled title="Needs the trades before it first: Trades scores a deal on today's rosters"` : `title="Open it in Trades, scored on today's rosters and your punt"`}>Load</button></td></tr>
+      ${span ? `<tr class="sub"><td colspan="6" class="names small muted">Then on waivers: ${wire}</td></tr>` : ""}`;
+  }).join("");
+  const cats = and(b.punt.map(lab));
+  const fit = b.punt.length ? `<div class="panel-b small muted" ${line}>Star fit: ${b.stars.length
+    ? and(b.stars.map(x => `<b>${esc(x.name)}</b> (${lab(x.cat)} ${x.z.toFixed(1)})`)) + (new Set(b.stars.map(x => x.name)).size > 1 ? ". Their weak spots stop costing you." : ". His weak spot stops costing you.")
+    : `none of your top five players is weak in ${cats}.`}</div>` : "";
+  const strategy = `<div class="panel" id="strategy">${head}
+    <div class="panel-b"><div class="verdict"><span class="pill ${cls}" style="text-transform:none">${pill}</span><span class="small">${why}</span></div></div>
+    <div class="panel-b small" ${line}><b>Plan: ${buildName(b.punt)}</b> <span class="muted">· ${planMoves(b)}, ${p1(d.win)} → ${p1(b.win)}</span></div>
+    <div class="tw" ${line}><table><thead><tr>${th("Step", "Waiver adds first, then each trade on the rosters the one before leaves", "")}${th("Partner", "Trade partner", "")}<th>You give</th><th>You get</th>
+      ${th("Them", "Change in their " + WIN().of + " from the trade")}${th("Market", MKT_TIP)}${th("Will they say yes", "Mostly the market, a little how it really helps them", "")}
+      ${th(WIN().h + " after", "After this step, on real odds: a punted category still counts when you win it")}${th("Change", "From the step before (today, for the waiver adds)")}<th></th></tr></thead>
+      <tbody>${steps}</tbody></table></div>${fit}</div>`;
+  // the buy list: players other teams own that the market (Yahoo's ranks, every category) prices below their worth to this build
+  const owner = { h: "Team", v: p => esc(p.team) }, rank = { h: `<span title="His rank on this build. Compare it with his market rank in Mkt">Fit</span>`, v: p => `#${p.fit_rank}` };
+  const offers = { h: "", v: p => `<button class="btn ghost" data-act="offers" data-name="${esc(p.name)}" data-team="${esc(p.team)}">Find offers</button>` };
+  const buy = `<div class="panel"><div class="panel-h"><div><h2>Buy list: ${buildName(b.punt)}</h2><p>Players on other teams the market prices furthest below their worth to this build. Yahoo's ranks count every category, so a player who's weak only where you punt comes cheap.</p></div></div>
+    ${playerTable(b.buy, { extra: [owner, rank, offers], dim: b.punt, empty: "<b>Nobody's a bargain</b>No player on another team is cheaper on the market than his worth to this build." })}</div>`;
+  // every build: the win % after each step (red: a step that costs on its own, paid back by a later trade)
+  const path = x => x.steps.map((s, i) => `<span class="${s.win < (i ? x.steps[i - 1].win : d.win) ? "neg" : ""}">${s.win.toFixed(1)}</span>`).join(` <span class="muted">→</span> `);
+  const rows = d.builds.map((x, i) => `<tr${i === sel ? ` class="sel"` : ""}><td><button class="rowbtn" data-act="plan-show" data-i="${i}" aria-pressed="${i === sel}" title="Show this build's plan and buy list">${buildName(x.punt)}</button>${x.punt.length === S.punt.length && x.punt.every(punted) ? `<span class="tag">current</span>` : ""}</td>
+    <td class="muted">${planMoves(x)}</td><td class="small">${path(x)}</td>
+    <td class="n val">${p1(x.win)}</td><td class="n ${tone(x.gain)}">${delta(x.gain, "win%")}</td></tr>`).join("");
+  const every = `<div class="panel"><div class="panel-h"><div><h2>Every build</h2><p>Staying balanced, every single punt and six common pairs. Pick one to see its plan and buy list.</p></div></div>
+    <div class="tw"><table><thead><tr>${th("Build", "The categories this build concedes", "")}${th("Moves", "Waiver adds (before and between trades) and trades in its plan", "")}
+      ${th("Path", `Your ${WIN().of} after the waiver adds and after each trade. Red: a step that costs on its own, paid back by a later trade`, "")}
+      ${th(WIN().h + " after", "After the whole plan, on real odds")}${th("vs now", "Change from your " + WIN().of + " today")}</tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <div class="panel-b small muted" ${line}>Staying balanced also tries every other build's trades and repeats each build's plan for as long as every trade still lifts your real odds, since it could make them too. So a punt only wins through moves it alone unlocks: its waiver adds, or trades that only pay off after a costly first one.</div></div>`;
+  return strategy + buy + every;
 }
 async function plan() {
   const P = S.strategy = { busy: true }; render();  // replaced on team switch / refresh, so a late answer lands in the old one
@@ -901,7 +931,8 @@ document.addEventListener("click", async e => {
   const act = t.dataset.act;
   if (act === "apply-punt") { S.punt = [...new Set([...S.punt, ...S.state.profile.punt_suggestions])]; store.set("punt", S.punt); return loadState(); }
   if (act === "plan") return plan();
-  if (act === "plan-load") { const x = S.strategy.data.builds[+t.dataset.i].trade; setView("trades"); return loadDeal(x); }
+  if (act === "plan-load") { const x = S.strategy.data.builds[+t.dataset.i].steps[+t.dataset.j].trade; setView("trades"); return loadDeal(x); }
+  if (act === "plan-show") { S.strategy.sel = +t.dataset.i; render(); return reveal("#strategy"); }
   if (act === "open-team") return openTeam(t.dataset.team);
   if (act === "trade-with") { S.trade.team = t.dataset.team; S.trade.get.clear(); S.trade.result = null; return setView("trades"); }
   if (act === "shop" || act === "offers") {  // Find a buyer (My team) / buy-low rows (Hot & cold)
