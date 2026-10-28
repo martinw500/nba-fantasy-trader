@@ -160,6 +160,16 @@ th.punted-col, tr.punted-col td:first-child { text-decoration: line-through; }
 tr.sel td { background: var(--accent-soft); }
 tr.has-sub td:not([rowspan]), tr.has-sub:nth-last-child(2) td { border-bottom: 0; }
 tr.sub td { padding-top: 0; }
+.rowbtn[aria-expanded="true"] { color: var(--accent-ink); }
+/* player card: a recessed row under the name, pinned to the visible part of a sideways-scrolling table (100cqi) */
+.tw:has(.card-row) { container-type: inline-size; }
+tbody tr.card-row, tbody tr.card-row:hover { background: var(--panel-2); }
+tr.card-row > td { padding: 0; white-space: normal; }
+.pcard { position: sticky; left: 0; max-width: min(860px, 100cqi); padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 10px; }
+.pcard-h { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+.pcard .tw { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.pcard th { position: static; }
+.pcard .sep { border-left: 1px solid var(--line); padding-left: 24px; }
 
 /* matchups */
 .vs { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0; }
@@ -210,6 +220,13 @@ td.names { white-space: normal; min-width: 130px; }
 
 /* chat */
 .chat { display: grid; grid-template-rows: 1fr auto; height: calc(100vh - 170px); min-height: 420px; }
+.hist { display: flex; flex-direction: column; height: calc(100vh - 170px); min-height: 420px; }
+.hist-list { overflow: auto; }
+.hist-list button { display: flex; flex-direction: column; gap: 1px; width: 100%; min-width: 0; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; padding: 8px 14px; cursor: pointer; transition: background .12s; }
+.hist-list button:hover { background: var(--panel-2); }
+.hist-list button[aria-current="true"] { background: var(--accent-soft); color: var(--accent-ink); }
+.hist-list button:disabled { cursor: not-allowed; }
+.hist-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
 .msgs { overflow: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .msg { max-width: 76ch; white-space: pre-wrap; line-height: 1.55; }
 .msg.user { align-self: flex-end; background: var(--accent-soft); color: var(--accent-ink); padding: 8px 13px; border-radius: 12px 12px 4px 12px; }
@@ -243,7 +260,9 @@ td.names { white-space: normal; min-width: 130px; }
   .punts { margin-left: 0; width: 100%; }
   .grid2[style] { grid-template-columns: 1fr !important; }
   .chat { height: calc(100vh - 120px); }
+  .hist { height: auto; min-height: 0; max-height: 210px; }
   .cats { grid-template-columns: repeat(3, 1fr); }
+  .pcard .sep { border-left: 0; padding-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
@@ -306,7 +325,10 @@ const S = {
   improve: { kind: null, list: null, busy: false, sort: null },
   saved: { list: store.get("saved", []), evals: {}, loading: false },
   players: null,
+  card: {},  // { name, t, data, error }: the open player card, under that name in the t-th player table of the view
   chat: store.get("chat", []), chatBusy: false, chatSession: store.get("chatSession", null),
+  chatId: store.get("chatId", null), chats: null,  // the open conversation's id in data/chats.json, and the History list
+  gmSet: { model: "claude-opus-5-5", effort: "medium", web: true, ...store.get("gmSet", {}) },  // AI GM tab's Model / Effort / Web search
 };
 const OUT = new Set(["O", "INJ", "IL", "IL+", "NA", "SUSP"]);
 
@@ -369,17 +391,19 @@ const mktTone = d => Math.abs(d) < 5 ? "" : tone(d);
 const mktDeal = m => `<span class="muted small">${Math.round(m.give)} → ${Math.round(m.get)}</span> <span class="${mktTone(m.diff_pct)}">${(m.diff_pct > 0 ? "+" : "") + Math.round(m.diff_pct)}%</span>`;
 const MKT_TIP = "Market value you send → get (100 = the market's top player, from Yahoo's preseason and current ranks), roster spots included. % = what you gain on market, as a share of the bigger side";
 
+let TBL = 0;  // player tables drawn so far in this render: S.card.t says which one holds the open card
 function playerTable(players, { extra = [], empty = "No players.", dim = [] } = {}) {  // dim: grey these columns too (a build's punt)
+  const t = TBL++;
   if (!players?.length) return `<div class="empty">${empty}</div>`;
   const cats = S.state.cats, punted = c => S.punt.includes(c) || dim.includes(c);
-  const wk = players.some(p => p.games !== undefined);
+  const wk = players.some(p => p.games !== undefined), cols = 6 + extra.length + wk + (isPoints() ? 1 : cats.length);
   const head = `<tr><th>Player</th>${extra.map(x => `<th class="n">${x.h}</th>`).join("")}${wk ? `<th class="n" title="Games left this week (Monday to Sunday), after any return date">Wk</th>` : ""}<th class="n">GP</th>
     <th class="n" title="Expected share of remaining games played (games-played history + Yahoo injury status)">Plays</th>
     <th class="n" title="Rest-of-season value on your build">Value</th><th class="n" title="How this season looks so far (what Yahoo ranks show)">Now</th>
     <th class="n" title="Trade-market value (100 = the market's top player) and market rank: Yahoo's preseason rank blended with this season's, weighted by games played">Mkt</th>
     ${isPoints() ? `<th class="n">FP/G</th>` : cats.map(c => `<th class="n z ${punted(c) ? "punted-col" : ""}" style="text-align:center">${lab(c)}</th>`).join("")}</tr>`;
-  const rows = players.map(p => `<tr>
-    <td><span class="pname">${esc(p.name)}</span>${statusTag(p)}${p.pos ? ` <span class="muted small">${esc(p.pos)}</span>` : ""}</td>
+  const rows = players.map(p => { const open = S.card.t === t && S.card.name === p.name; return `<tr${open ? ` class="sel"` : ""}>
+    <td><button class="rowbtn" data-act="card" data-name="${esc(p.name)}" data-t="${t}" aria-expanded="${open}" title="${open ? "Close" : "Open"} his player card">${esc(p.name)}</button>${statusTag(p)}${p.pos ? ` <span class="muted small">${esc(p.pos)}</span>` : ""}</td>
     ${extra.map(x => `<td class="n">${x.v(p)}</td>`).join("")}
     ${wk ? `<td class="n ${p.games >= 4 ? "pos" : p.games <= 1 ? "neg" : ""}">${p.games ?? ""}</td>` : ""}
     <td class="n muted"${gpNote(p)}>${p.gp}</td>
@@ -388,8 +412,45 @@ function playerTable(players, { extra = [], empty = "No players.", dim = [] } = 
     <td class="n ${tone(p.value_now - p.value)}">${Number(p.value_now).toFixed(isPoints() ? 1 : 2)}</td>
     <td class="n">${p.mkt == null ? "" : mktCell(p)}</td>
     ${isPoints() ? `<td class="n">${p.fp.toFixed(1)}</td>` : cats.map(c => `<td class="z ${punted(c) ? "punted-col" : ""}" style="--c:${heat(p.z[c])}"><span>${p.z[c].toFixed(1)}</span></td>`).join("")}
-  </tr>`).join("");
+  </tr>${open ? `<tr class="card-row"><td colspan="${cols}">${playerCard()}</td></tr>` : ""}`; }).join("");
   return `<div class="tw"><table><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+}
+
+// ---------- player card: click a name in any player table ----------
+const LINES = { ros: ["Rest of season", "The model's projection: the last two seasons blended with this one"], season: ["This season"],
+  last14: ["Last 14 days"], last7: ["Last 7 days"] };
+const span = (a, b) => mdy(a) + "–" + (a.slice(5, 7) === b.slice(5, 7) ? +b.slice(8) : mdy(b));
+function playerCard() {
+  const C = S.card, d = C.data, me = S.state.me, cats = S.state.cats;
+  if (!d) return `<div class="pcard">${C.error ? `<span class="neg">Couldn't load ${esc(C.name)}: ${esc(C.error)}</span>` : `<div class="skel" style="margin:4px 0"></div><div class="skel" style="margin:4px 0;width:60%"></div>`}</div>`;
+  const theirs = d.team && d.team !== "FA" && d.team !== me;
+  const own = d.team === me ? "your team" : theirs ? esc(d.team) : d.waiver ? `free agent, on waivers until ${esc(d.waiver)}` : "free agent";
+  const act = d.team === me ? `<button class="btn" data-act="shop" data-name="${esc(d.name)}">Find buyers</button>`
+    : theirs ? `<button class="btn" data-act="offers" data-name="${esc(d.name)}" data-team="${esc(d.team)}">Find offers</button>` : "";
+  const lines = Object.entries(d.lines).map(([k, l]) => `<tr><td${LINES[k][1] ? ` title="${LINES[k][1]}"` : ""}>${LINES[k][0]}</td><td class="n muted">${l.gp ?? ""}</td><td class="n muted">${l.MIN.toFixed(1)}</td>
+    ${cats.map(c => `<td class="n ${punted(c) ? "punted-col" : ""}">${l[c] == null ? "—" : l[c].toFixed(1)}</td>`).join("")}</tr>`).join("");
+  const games = d.weeks.map((w, i) => `<div><dt${i ? "" : ` title="NBA games left in your matchup week"`}>${i ? span(w.start, w.end) : "This week"}</dt>
+    <dd class="${w.games <= 1 ? "neg" : w.games >= 4 ? "pos" : ""}">${w.games}</dd></div>`).join("");
+  const g = d.fit - d.mkt;  // the buy list's gap: his worth to your build vs what the market pays, both on the market's 100 scale
+  const read = Math.abs(g) < 5 ? "The market prices him about right for your build."
+    : g > 0 ? `The market prices him below his worth to your build${theirs ? ", so he's one to buy" : d.team === me ? ", so don't sell him cheap" : ""}.`
+    : `The market prices him above his worth to your build${d.team === me ? ", so he's one to sell" : theirs ? ", so don't overpay" : ""}.`;
+  return `<div class="pcard">
+    <div class="pcard-h"><div><b>${esc(d.name)}</b>${statusTag(d)} <span class="muted small">${[esc(d.nba), esc(d.pos), own].filter(Boolean).join(" · ")}</span></div>
+      <div class="toolbar">${act}<button class="btn ghost" data-act="card" data-name="${esc(C.name)}" data-t="${C.t}">Close</button></div></div>
+    ${d.injury ? `<div class="small">${esc(d.injury)}${d.return ? ` <span class="muted">Expected back ${mdy(d.return)}.</span>` : ""}</div>` : ""}
+    <div class="tw"><table><thead><tr><th>Per game</th><th class="n">GP</th><th class="n">MIN</th>${cats.map(c => `<th class="n ${punted(c) ? "punted-col" : ""}">${lab(c)}</th>`).join("")}</tr></thead>
+      <tbody>${lines}</tbody></table></div>
+    <dl class="side-by">${games}
+      <div class="sep"><dt title="Trade-market value (100 = the market's top player) and market rank, from Yahoo's preseason and current ranks">Market</dt><dd>${mktCell(d)}</dd></div>
+      <div><dt title="His rank on your build (rest-of-season value over the games he'll play), valued on the same curve as the market">Your build</dt><dd>${Math.round(d.fit)} <span class="muted small">#${d.fit_rank}</span></dd></div></dl>
+    <div class="small muted">${read}</div></div>`;
+}
+async function openCard(name, t) {
+  if (S.card.name === name && S.card.t === t) { S.card = {}; return render(); }
+  const C = S.card = { name, t }; render();
+  try { C.data = await api("/api/player", { name }); } catch (e) { C.error = e.message; }
+  if (S.card === C) render();
 }
 
 // ---------- views ----------
@@ -870,23 +931,67 @@ function viewMovers() {
 }
 
 const SUGS = ["Who should I drop and pick up?", "Find me a fair trade that helps my weakest category", "Should I punt anything? Why?", "Who are my best sell-high candidates?"];
+const EFFORT = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
 function viewGM() {
-  const msgs = S.chat.length ? S.chat.map(m => `<div class="msg ${m.role}">${esc(m.text)}</div>`).join("") + (S.chatBusy ? `<div class="msg ai thinking">Running the numbers. Answers take 10–30 seconds…</div>` : "")
-    : `<div class="empty" style="margin:auto"><b>Ask your GM anything</b>It runs the same numbers as the rest of the app (trades, waivers, punts, hot &amp; cold) and explains them. ${S.punt.length ? `It knows you're punting ${S.punt.map(lab).join(", ")}.` : ""}</div>`;
+  const G = S.gmSet;
+  const msgs = S.chat.length ? S.chat.map(m => `<div class="msg ${m.role}">${esc(m.text)}</div>`).join("") + (S.chatBusy ? `<div class="msg ai thinking">Running the numbers. Answers take 10–30 seconds, longer on a higher effort or with a web search…</div>` : "")
+    : `<div class="empty" style="margin:auto"><b>Ask your GM anything</b>It runs the same numbers as the rest of the app (trades, waivers, punts, hot &amp; cold) and explains them.${G.web ? " With web search on, it can also check the latest news." : ""} ${S.punt.length ? `It knows you're punting ${S.punt.map(lab).join(", ")}.` : ""}</div>`;
   return `<div class="head"><div><h1>AI GM</h1><p class="sub">Every number it quotes comes from the model, not guesswork.</p></div>
-      ${S.chat.length ? `<button class="btn ghost" data-act="reset-chat">New conversation</button>` : ""}</div>
-    <div class="panel chat"><div class="msgs" id="msgs">${msgs}</div>
+      <div class="toolbar"><label class="field">Model <select id="gm-model">${opt("claude-opus-5-5", "Opus 5.5", G.model)}${opt("claude-fable-5-1", "Fable 5.1 (usage credits)", G.model)}</select></label>
+        <label class="field" title="How hard it thinks before answering. Higher is slower and uses more of your plan">Effort <select id="gm-effort">${Object.entries(EFFORT).map(([k, h]) => opt(k, h, G.effort)).join("")}</select></label>
+        <label class="field" title="Lets it look up news the model can't see: injuries, minutes and role changes, trades"><input type="checkbox" id="gm-web" ${G.web ? "checked" : ""}>Web search</label>
+        ${S.chatId ? `<button class="btn ghost" data-act="chat-delete" ${S.chatBusy ? "disabled" : ""}>Delete</button>` : ""}
+        ${S.chat.length ? `<button class="btn ghost" data-act="reset-chat" ${S.chatBusy ? "disabled" : ""}>New conversation</button>` : ""}</div></div>
+    <div class="grid2" style="grid-template-columns: 240px minmax(0, 1fr)">
+      <div class="panel hist"><div class="panel-h"><h2>History</h2></div>${historyList()}</div>
+      <div class="panel chat"><div class="msgs" id="msgs">${msgs}</div>
       <div class="compose"><div class="sugs">${SUGS.map(s => `<button class="chip" data-sug="${esc(s)}">${esc(s)}</button>`).join("")}</div>
         <form id="chat-form"><textarea id="chat-in" rows="1" placeholder="e.g. Is Jokić for Wembanyama + Suggs good for me?" ${S.chatBusy ? "disabled" : ""}></textarea>
-        <button class="btn primary" ${S.chatBusy ? "disabled" : ""} aria-label="Send"><svg class="i"><use href="#i-send"/></svg>Send</button></form></div></div>`;
+        <button class="btn primary" ${S.chatBusy ? "disabled" : ""} aria-label="Send"><svg class="i"><use href="#i-send"/></svg>Send</button></form></div></div></div>`;
+}
+// ---------- chat history: every conversation is kept in data/chats.json (app.py chats()), so any browser sees it ----------
+function historyList() {
+  if (S.chats == null) loadChats();
+  if (!Array.isArray(S.chats)) return SKEL;
+  if (!S.chats.length) return `<div class="empty small">Past conversations show up here. New conversation keeps the old one.</div>`;
+  return `<div class="hist-list">${S.chats.map(c => `<button data-act="chat-open" data-id="${esc(c.id)}" aria-current="${c.id === S.chatId}" ${S.chatBusy ? "disabled" : ""}>
+    <span class="hist-t" title="${esc(c.title)}">${esc(c.title)}</span><span class="muted small">${when(c.updated)}</span></button>`).join("")}</div>`;
+}
+async function loadChats() {
+  S.chats = "loading";
+  try {
+    if (S.chat.length && !S.chatId) await saveChat();  // a conversation from before history existed
+    else S.chats = await api("/api/chats", {});
+  } catch (e) { S.chats = []; toast(e.message); }
+  if (S.view === "gm") render();
+}
+async function saveChat() {
+  if (!S.chatId) store.set("chatId", S.chatId = crypto.randomUUID());
+  S.chats = await api("/api/chats", { save: { id: S.chatId, title: S.chat.find(m => m.role === "user")?.text, session: S.chatSession, messages: S.chat } });
+}
+async function openChat(id) {
+  try {
+    const c = await api("/api/chats", { open: id });
+    Object.assign(S, { chatId: c.id, chat: c.messages, chatSession: c.session });
+    store.set("chatId", c.id); store.set("chat", c.messages); store.set("chatSession", c.session);
+  } catch (e) { toast(e.message); }
+  render();
+}
+async function newChat() {  // the old conversation stays in History
+  Object.assign(S, { chat: [], chatSession: null, chatId: null });
+  store.set("chat", []); store.set("chatSession", null); store.set("chatId", null);
+  try { await api("/api/chat", { reset: true }); } catch {}
+  render();
 }
 async function ask(text) {
   if (!text.trim() || S.chatBusy) return;
   S.chat.push({ role: "user", text }); S.chatBusy = true; render();
-  try { const r = await api("/api/chat", { message: text, session: S.chatSession }); S.chat.push({ role: "ai", text: r.reply });
+  try { const r = await api("/api/chat", { message: text, session: S.chatSession, ...S.gmSet }); S.chat.push({ role: "ai", text: r.reply });
     if (r.session) store.set("chatSession", S.chatSession = r.session); }
   catch (e) { S.chat.push({ role: "ai", text: "Error: " + e.message }); }
-  S.chatBusy = false; store.set("chat", S.chat.slice(-40)); render();
+  S.chatBusy = false; store.set("chat", S.chat); render();
+  try { await saveChat(); } catch (e) { toast("Couldn't save this conversation: " + e.message); }
+  if (S.view === "gm") render();
 }
 
 // ---------- shell ----------
@@ -907,10 +1012,11 @@ function render() {
   const demo = S.state.demo && S.view === "team" ? `<div class="notice">This is a demo league drafted from real stats. Connect your Yahoo league with <code>python yahoo.py</code> (see README) to see your real team.</div>` : "";
   const st = S.state, age = st.pulled ? (Date.now() - new Date(st.pulled)) / 864e5 : 0;
   const stale = st.rolled || age > 1 ? `<div class="notice">Your snapshot ${st.rolled ? "is from last week's matchup" : `is ${Math.floor(age)} day${age >= 2 ? "s" : ""} old`} (pulled ${when(st.pulled)}), so the score and recent moves aren't in. Drop a new snapshot in the project folder and press Refresh.</div>` : "";
+  TBL = 0;
   v.innerHTML = demo + stale + ({ team: viewTeam, week: viewWeek, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, gm: viewGM }[S.view] || viewTeam)();
   const m = $("#msgs"); if (m) m.scrollTop = m.scrollHeight;
 }
-function setView(v) { S.view = v; store.set("view", v); history.replaceState(null, "", "#" + v); render(); window.scrollTo(0, 0); }
+function setView(v) { S.view = v; S.card = {}; store.set("view", v); history.replaceState(null, "", "#" + v); render(); window.scrollTo(0, 0); }
 
 document.addEventListener("click", async e => {
   const t = e.target.closest("button, [data-pick]"); if (!t) return;
@@ -921,7 +1027,7 @@ document.addEventListener("click", async e => {
     S.punt = punted(c) ? S.punt.filter(x => x !== c) : [...S.punt, c];
     const re = S.trade.result;
     store.set("punt", S.punt); S.trade.result = null; S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {};
-    S.league.data = null; S.trade.roster = null; S.week = {};
+    S.league.data = null; S.trade.roster = null; S.week = {}; S.card = {};
     await loadState();
     return re && evaluate();
   }
@@ -940,6 +1046,7 @@ document.addEventListener("click", async e => {
   if (act === "plan") return plan();
   if (act === "plan-load") { const x = S.strategy.data.builds[+t.dataset.i].steps[+t.dataset.j].trade; setView("trades"); return loadDeal(x); }
   if (act === "plan-show") { S.strategy.sel = +t.dataset.i; render(); return reveal("#strategy"); }
+  if (act === "card") return openCard(t.dataset.name, +t.dataset.t);
   if (act === "open-team") return openTeam(t.dataset.team);
   if (act === "trade-with") { S.trade.team = t.dataset.team; S.trade.get.clear(); S.trade.result = null; return setView("trades"); }
   if (act === "shop" || act === "offers") {  // Find a buyer (My team) / buy-low rows (Hot & cold)
@@ -969,7 +1076,13 @@ document.addEventListener("click", async e => {
     setView("gm");
     return ask(`Evaluate this trade and write a short casual pitch I can send to ${r.other_team}: I give ${r.give.map(p => p.name).join(", ")}, I get ${r.get.map(p => p.name).join(", ")}.`);
   }
-  if (act === "reset-chat") { S.chat = []; S.chatSession = null; store.set("chat", []); store.set("chatSession", null); try { await api("/api/chat", { reset: true }); } catch {} return render(); }
+  if (act === "reset-chat") return newChat();
+  if (act === "chat-open") return openChat(t.dataset.id);
+  if (act === "chat-delete") {
+    if (!confirm("Delete this conversation? This can't be undone.")) return;
+    try { S.chats = await api("/api/chats", { delete: S.chatId }); } catch (err) { return toast(err.message); }
+    return newChat();
+  }
 });
 document.addEventListener("change", async e => {
   const t = e.target;
@@ -977,12 +1090,13 @@ document.addEventListener("change", async e => {
   if (t.id === "trade-team") { S.trade.team = t.value; S.trade.get.clear(); S.trade.result = null; return render(); }
   if (t.id === "find-player") return pickPlayer(t.value);
   if (t.id === "week-opp") { S.week = {}; loadWeek(t.value); return render(); }
+  if (t.id.startsWith("gm-")) { S.gmSet[t.id.slice(3)] = t.type === "checkbox" ? t.checked : t.value; store.set("gmSet", S.gmSet); return render(); }
   if (t.id === "me-team") {  // switch which team is yours: everything team-specific starts over
     t.disabled = true;
     try {
       S.state = await api("/api/me", { team: t.value });
       Object.assign(S.trade, { give: new Set(), get: new Set(), team: null, roster: null, result: null });
-      S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null; S.week = {}; S.strategy = {};
+      S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null; S.week = {}; S.strategy = {}; S.card = {};
       toast(`You're ${t.value} now`);
     } catch (err) { toast(err.message); }
     return render();
@@ -1011,7 +1125,7 @@ document.addEventListener("keydown", e => {
 $("#refresh").addEventListener("click", async e => {
   const b = e.currentTarget; b.classList.add("busy"); b.disabled = true;
   try {
-    S.state = await api("/api/refresh", {}); S.league.data = null; S.trade.roster = null; S.find.list = null; S.saved.evals = {}; S.players = null; S.week = {}; S.strategy = {};
+    S.state = await api("/api/refresh", {}); S.league.data = null; S.trade.roster = null; S.find.list = null; S.saved.evals = {}; S.players = null; S.week = {}; S.strategy = {}; S.card = {};
     toast("League refreshed");
   } catch (err) { toast("Refresh failed: " + err.message); }
   b.classList.remove("busy"); b.disabled = false; render();

@@ -52,7 +52,11 @@ When the file lists free agents, those are used, with roster % and "claim by" da
 
 ### Turn on the AI GM (optional)
 
-Nothing to set up if Claude Code is installed and logged in: the chat runs `claude -p` on your own login, no API key. Answers take 10–30 seconds. Its sessions show up in Claude Code's `/resume` list for this folder.
+Nothing to set up if Claude Code is installed and logged in: the chat runs `claude -p` on your own login, no API key. It uses whatever account `claude auth status` shows, and its usage counts against that plan's limits. Answers take 10–30 seconds. Its sessions show up in Claude Code's `/resume` list for this folder.
+
+The AI GM tab has three settings, saved in your browser: **Model** (Opus 5.5, or Fable 5.1, which needs usage credits on a Pro plan), **Effort** (Medium by default; higher thinks longer and uses more of your plan) and **Web search** (on by default: it can look up injury, role and trade news the model can't see, and names its sources, but every number still comes from `model.py`). They only apply to the `claude -p` chat, not to `ai.py`.
+
+**History** on the AI GM tab lists past conversations, newest first. New conversation keeps the old one there. Click one to reopen it and keep going (Claude resumes that session, so it remembers), and **Delete** removes the open one. They're saved in `data/chats.json` on your Mac, so every browser sees the same list, and `data/` isn't in git.
 
 With `ANTHROPIC_API_KEY=sk-ant-...` in `.env` (key from https://console.anthropic.com, billed separately), it uses `ai.py` and the API instead. Everything except the chat works without either.
 
@@ -148,12 +152,15 @@ Points leagues keep the simpler finder: Fair or Finesse, 1-for-1 up to 2-for-2, 
 ### "What does team X have?"
 **League** tab: every team, its weak spots (what it would value less in a trade), and your projected head-to-head record against it. Click a team to see its roster, then **Trade with them**.
 
+### "Tell me about this player"
+Click a player's name in any player table to open his card under the row. It shows his per-game line for the rest of the season (the model's projection), this season, and the last 14 and 7 days. A window that holds the same games as the one before is left out. It also shows the injury note and expected return, NBA games left this matchup week and in each of the next three, and his market rank next to his rank on your build, with a one-line read. **Find buyers** (your player) and **Find offers** (another team's) open the trade finder on him. Recent lines come from this season's NBA box scores, refreshed every 12 hours. Names in deal rows and sentences don't open cards yet: **Load** a deal to see its players in a table.
+
 ### Ask the AI GM
 **AI GM** tab, or in Claude Code (see `/gm` below). Ask anything: "who should I drop?", "find me steals without losing assists", "should I punt FT%?". It calls the same engine as the rest of the app, so its numbers match the tables.
 
 ## How the numbers work
 
-**Player lines (the projection).** Every player has a rest-of-season per-game line. The pre-season baseline blends the last two seasons (a game in 2024-25 counts half as much as one in 2025-26) and is pulled toward a fringe-rotation line by 25 games, so a 5-game season isn't taken as gospel and a player back from a lost season isn't treated as a rookie. The line then shifts toward this season as games pile up: this season's weight is `GP / (GP + 20)`. That's 13% after 3 games and half after 20. Rookies start from a fringe-roster line, so three hot games don't make them stars. These are home-made projections; expert ones (Hashtag Basketball, FantasyPros) aren't plugged in yet (ROADMAP, Build next #4).
+**Player lines (the projection).** Every player has a rest-of-season per-game line. The pre-season baseline blends the last two seasons (a game in 2024-25 counts half as much as one in 2025-26) and is pulled toward a fringe-rotation line by 25 games, so a 5-game season isn't taken as gospel and a player back from a lost season isn't treated as a rookie. The line then shifts toward this season as games pile up, in two parts: minutes per game × production per minute. Minutes move fast, `GP / (GP + 6)` (a third after 3 games, half after 6), because a new role or team shows up at once and sticks. Production per minute moves slowly, by minutes played against 20 games of baseline minutes (13% after 3 games at his usual minutes, less if he barely played), because 3 games of shooting is noise. So a starter who lost his spot drops fast, and a bench player who got 8 minutes a night barely moves his per-minute numbers. Replaying 2025-26, this cut the error of each Monday's rest-of-season lines by 8% in the first six weeks (10% for players whose minutes changed), and the matchup backtest improved slightly. Rookies start from a fringe-roster line, so three hot games don't make them stars. These are home-made projections; expert ones (Hashtag Basketball, FantasyPros) aren't plugged in yet (ROADMAP, Build next #4).
 
 **Plays %.** The share of games a player is expected to suit up for. It comes from games played over the last two seasons plus this one, shrunk toward 85% (one bad injury year shouldn't count fully), then cut by the injury tag (GTD 90%, O 70%, INJ 60%, IL 50%). When ESPN's injury report has an expected return date, that replaces the tag: the player counts for the share of remaining games after that date. Missed games are half-covered by a waiver-level fill-in, the way a bench player or streamer would cover them.
 
@@ -176,7 +183,7 @@ A trade, add or drop is judged by how much it changes your win %, with both rost
 - **What everyone else has.** Odds are computed against every real roster in your league.
 - **Punting.** A category you can't win stops mattering on its own. The Punt chips make it explicit: punted categories count as automatic losses, so the advice optimizes for the other categories.
 
-**Now / How it looks to them.** The same line weighted harder toward this season (`GP / (GP + 10)`: 23% after 3 games). For trades, a player's look is counted over the games he actually plays (managers remember who missed a season) and never below what the best free agents look like. A manager taking back extra players feels the loss of the players they'd drop. Sell-high uses it; trades show it as a note.
+**Now / How it looks to them.** The same line with production per minute weighted harder toward this season (10 games of baseline minutes instead of 20: 23% after 3 games at his usual minutes). For trades, a player's look is counted over the games he actually plays (managers remember who missed a season) and never below what the best free agents look like. A manager taking back extra players feels the loss of the players they'd drop. Sell-high uses it; trades show it as a note.
 
 **Market value (Mkt).** What other managers pay for a player comes from outside the model: Yahoo's preseason rank blended with its current (season-to-date) rank, the current one weighted `GP / (GP + 10)` because it's noise early (injured players sink to 600+), then re-ranked. A player Yahoo hasn't ranked uses the model's own rank, marked `*`. Value = `100 × 0.97^(rank − 1)`: rank 1 = 100, 25 = 48, 50 = 22, 100 = 5, 150 = 1, so a star is worth more than the sum of spare parts. A trade's market counts roster spots: the side taking more players loses the market value of the ones it drops, and the side with open spots gains the free agents it picks up. Trade tiers and "Will they say yes" run on it.
 

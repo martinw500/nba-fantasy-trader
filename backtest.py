@@ -21,14 +21,8 @@ LEAGUES, TEAMS, ROSTER = 20, 12, 13
 
 
 def logs(season):
-    """Every player's box score for the regular season, cached in data/."""
-    cache = model.DATA / f"gamelogs_{season}.csv"
-    if not cache.exists():
-        from nba_api.stats.endpoints import leaguegamelog
-        leaguegamelog.LeagueGameLog(season=season, player_or_team_abbreviation="P", timeout=90,
-                                    season_type_all_star="Regular Season").get_data_frames()[0].to_csv(cache, index=False)
-    g = pd.read_csv(cache, parse_dates=["GAME_DATE"])
-    g["key"] = g.PLAYER_NAME.map(model.norm)
+    """Every player's box score for the regular season (model.gamelogs), with its week number."""
+    g = model.gamelogs(season)
     start = g.GAME_DATE.min() - pd.Timedelta(days=g.GAME_DATE.min().weekday())  # Monday of week 1
     g["week"] = (g.GAME_DATE - start).dt.days // 7
     return g

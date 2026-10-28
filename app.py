@@ -5,8 +5,10 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import traceback
 import webbrowser
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -34,16 +36,24 @@ the app keeps data/league.json current, so skip step 1; the only command you can
 there's no humanizer skill here, so write pitches short and casual yourself; and the chat shows replies as plain text,
 so no markdown (no tables, headers, bold or backticks). Keep answers short.
 """
+WEB = """You can also search the web (WebSearch) for news model.py can't see: injuries, minutes and role changes, trades.
+Search when the question needs fresh news, name the site you got it from, and still take every number from model.py.
+"""
+# the chat settings the AI GM tab can pick (the first of each is the default). Fable needs usage credits on a Pro plan.
+MODELS, EFFORTS = ("claude-opus-5-5", "claude-fable-5-1"), ("medium", "low", "high", "xhigh", "max")
 
 
-def claude_chat(message, punt, session=None):
+def claude_chat(message, punt, session=None, model=None, effort=None, web=True):
     """Answer through Claude Code headless (`claude -p`) on the user's own login, so no API key is needed.
-    --safe-mode keeps Martin's CLAUDE.md, memory, plugins and hooks out; the GM playbook is SKILL.md."""
+    --safe-mode keeps Martin's CLAUDE.md, memory, plugins and hooks out; the GM playbook is SKILL.md.
+    model / effort fall back to the defaults unless they're on the lists; web adds the WebSearch tool."""
     skill = (ROOT / ".claude" / "skills" / "gm" / "SKILL.md").read_text(encoding="utf-8").split("---", 2)[2]
     flag = f'add --punt "{",".join(punt)}" to every model.py command' if punt else "no --punt"
-    cmd = [shutil.which("claude"), "-p", "--output-format", "json", "--safe-mode", "--model", "claude-opus-5-5",
-           "--effort", "medium", "--system-prompt", GM_PROMPT + skill, "--tools", "Bash",
-           "--allowedTools", "Bash(.venv/bin/python model.py:*)", "--permission-mode", "dontAsk"]
+    web = ["WebSearch"] if web else []
+    cmd = [shutil.which("claude"), "-p", "--output-format", "json", "--safe-mode",
+           "--model", model if model in MODELS else MODELS[0], "--effort", effort if effort in EFFORTS else EFFORTS[0],
+           "--system-prompt", GM_PROMPT + (WEB if web else "") + skill, "--tools", "Bash", *web,
+           "--allowedTools", "Bash(.venv/bin/python model.py:*)", *web, "--permission-mode", "dontAsk"]
     if session:
         cmd += ["--resume", session]
     # the message goes in on stdin, so one starting with "-" can't be read as a flag
@@ -54,6 +64,31 @@ def claude_chat(message, punt, session=None):
     except json.JSONDecodeError:
         raise RuntimeError(f"claude -p failed: {(r.stderr or r.stdout).strip()[-300:]}") from None
     return {"reply": out.get("result") or "No answer came back.", "session": out.get("session_id")}
+
+
+CHATS, chats_lock = model.DATA / "chats.json", threading.Lock()
+
+
+def chats(body):
+    """The AI GM's past conversations, kept in data/chats.json as {id: {title, updated, session, messages}}.
+    {save: {id, title, session, messages}} stores one, {open: id} returns it, {delete: id} removes it; every other
+    call (and save / delete) returns the list, newest first, without the messages."""
+    with chats_lock:  # ponytail: one lock for the whole file; fine for one user
+        saved = json.loads(CHATS.read_text(encoding="utf-8")) if CHATS.exists() else {}
+        if body.get("open"):
+            return {"id": body["open"], **saved[body["open"]]}
+        if c := body.get("save"):
+            saved[str(c["id"])[:64]] = {"title": str(c.get("title") or "Untitled")[:80], "session": c.get("session"),
+                                        "updated": datetime.now().isoformat(timespec="seconds"),
+                                        "messages": list(c["messages"])}
+        if body.get("delete"):
+            saved.pop(body["delete"], None)
+        if c or body.get("delete"):  # write a copy, then swap it in, so a crash never leaves half a file
+            tmp = CHATS.with_suffix(".tmp")
+            tmp.write_text(json.dumps(saved, indent=1, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(CHATS)
+    return sorted(({"id": k, "title": v["title"], "updated": v["updated"], "n": len(v["messages"])}
+                   for k, v in saved.items()), key=lambda x: x["updated"], reverse=True)
 
 
 def api(path, q, body):
@@ -76,6 +111,8 @@ def api(path, q, body):
                          max_overpay=None if body.get("max_overpay") is None else float(body["max_overpay"]))
     if path == "/api/strategy":  # punt planner, ~15s on the real league
         return lg.strategy()
+    if path == "/api/player":  # the player card
+        return lg.card(body["name"], punt)
     if path == "/api/players":
         return sorted(({"name": n, "team": t} for t, ks in lg.rosters.items() for n in lg.names(ks)), key=lambda p: p["name"])
     if path == "/api/me":  # which team is yours
@@ -106,11 +143,15 @@ def api(path, q, body):
             yahoo.demo()
         lg, gm = model.load(), None
         return lg.state(punt)
+    if path == "/api/chats":
+        return chats(body)
     if path == "/api/chat":
         if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
             if not shutil.which("claude"):
                 return {"reply": "Install Claude Code and log in (or add ANTHROPIC_API_KEY=... to .env) to chat with the AI GM."}
-            return {"reply": ""} if body.get("reset") else claude_chat(body["message"], punt, body.get("session"))
+            return {"reply": ""} if body.get("reset") else claude_chat(body["message"], punt, body.get("session"),
+                                                                       body.get("model"), body.get("effort"),
+                                                                       body.get("web", True) is not False)
         if gm is None:
             import ai
             gm = ai.GM(lg)
@@ -153,8 +194,8 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/players", "/api/me",
-       "/api/week", "/api/refresh", "/api/chat"}
+API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player",
+       "/api/players", "/api/me", "/api/week", "/api/refresh", "/api/chat", "/api/chats"}
 
 if __name__ == "__main__":
     # ponytail: localhost-only, single user; no auth because it never listens on the network

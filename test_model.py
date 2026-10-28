@@ -230,6 +230,22 @@ def test_all():
     assert sl.starts(["player 198", "twin a", "twin b"], {"twin a": "2026-10-30"}) == {"player 198": 4, "twin a": 2,
                                                                                          "twin b": 1}
     sl.lineup = 10
+    # player card: games this matchup week and the next three (Monday-Sunday without a season schedule), after his
+    # return date; without box scores, this season's stats line
+    c = sl.card("Twin C")
+    assert [w["games"] for w in c["weeks"]] == [0, 2, 0, 0] and c["weeks"][1]["start"] == "2026-11-02"
+    assert set(c["lines"]) == {"ros", "season"} and c["lines"]["season"]["gp"] == 60 and c["lines"]["ros"]["gp"] is None
+    assert c["fit_rank"] >= 1 and c["mkt_rank"] >= 1 and c["team"] == "Me"
+    # with box scores: this season, last 14 and last 7 days (Oct 26: since Oct 12 and Oct 19)
+    box = pd.DataFrame([{**line("Twin A", 180, PTS=p), "GAME_DATE": pd.Timestamp(d)}
+                        for p, d in ((30, "2026-10-24"), (20, "2026-10-20"), (10, "2026-10-15"), (40, "2026-10-01"))])
+    sl.logs = box.assign(key=box.PLAYER_NAME.map(model.norm))
+    c = sl.card("Twin A")["lines"]
+    assert [(w, c[w]["gp"], c[w]["PTS"]) for w in ("season", "last14", "last7")] == [
+        ("season", 4, 25), ("last14", 3, 20), ("last7", 2, 25)]
+    sl.logs = sl.logs[sl.logs.GAME_DATE > "2026-10-16"]  # the same 2 games in every window: shown once
+    assert set(sl.card("Twin A")["lines"]) == {"ros", "season"}
+    sl.logs = None
 
     # this week: no opponent until one is known; streams score more games higher, a waiver claim plays from the day
     # it clears; banked totals decide a category, a punt concedes it, last week's matchup is ignored
