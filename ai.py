@@ -36,7 +36,9 @@ and build_after (categories the user would win under 35% of weeks, a punt hint).
 Use find_trades for "who can I get for X", "who wants Y", "fix my steals" or "beat team Z"; offer a harder tier
 when nothing clears the bar. Use this_week for "how's my matchup" and streaming: "score" is the expected
 categories won-lost this week (lead with it in a categories league), "win" the chance to win more categories, stream
-"gain" is this week's win % and "season" what keeping him does to the season-long win %. If it returns no opponent,
+"gain" is this week's win % and "season" what keeping him does to the season-long win %, "day" the best day to make
+the add (the drop plays until then). "adds" = adds used and left this week (4 a week in the user's league): "plan"
+is the best way to spend the ones left, and with none left there are no streams. If it returns no opponent,
 ask who the user plays. Early in the season, small samples swing hard.
 For trades: say who wins, which categories move, the risk (injury, role, age, sample size), and when asked,
 write a short casual pitch the user can paste to the other manager. Keep answers short and concrete."""
@@ -119,7 +121,8 @@ class GM:
         @beta_tool
         def this_week(opponent: str | None = None) -> str:
             """This week's matchup: odds per category and for the week, totals so far and projected, a
-            safe / chase / lost call per category, and streaming adds scored on this week's odds.
+            safe / chase / lost call per category, streaming adds scored on this week's odds (each with its best
+            "day"), adds used and left this week ("adds") and "plan": the best streams for the adds left.
 
             Args:
                 opponent: exact team name; omit to use the opponent saved for this week
@@ -128,6 +131,48 @@ class GM:
                 return dump(lg.this_week(opponent, gm.punt))
             except KeyError as e:
                 return f"Error: {e}"
+
+        @beta_tool
+        def compare_players(players: list[str]) -> str:
+            """2 to 4 players side by side for "who do I keep / start / trade for": each one's value, form, per-game
+            lines, games in this matchup week and the next three, availability, market and build rank, and "slot":
+            the user's season win % with him in one of their roster spots (their compared players all leave; "cut":
+            he wouldn't make the roster). "best" names who's ahead on each number.
+
+            Args:
+                players: 2 to 4 player names
+            """
+            try:
+                return dump(lg.compare(players, gm.punt))
+            except KeyError as e:
+                return f"Error: {e}"
+
+        @beta_tool
+        def evaluate_move(add: str, drop: str | None = None, day: str | None = None) -> str:
+            """Evaluate one add/drop: the change in the user's season win % and this week's vs the saved opponent
+            ("week", null without one), per-category odds before -> after, the added player's games this week (a
+            waiver claim counts from the day it clears; "week.day" = the day it's made, the drops play until then).
+            Scored on today's roster, like the waivers list, not on top of other free moves. An injured add parks in
+            a free IL slot ("parks"); "auto" drops are made for room. "adds" = adds left this week; "capped" = none
+            left, so the move waits for next week (no week numbers).
+
+            Args:
+                add: a free agent's name
+                drop: one of the user's players; omit for an open spot, or the player they'd miss least
+                day: YYYY-MM-DD this matchup week to make the move; omit for its best day
+            """
+            try:
+                return dump(lg.add_drop(add, drop, gm.punt, day=day))
+            except KeyError as e:
+                return f"Error: {e}"
+
+        @beta_tool
+        def schedule_planner() -> str:
+            """The user's NBA games per day for the rest of this matchup week and the next three: each day's starters
+            (best 10 with a game), who sits on overflow days, and open slots (room to stream). Plus every NBA team's
+            games in those weeks, on the user's open days ("open": games a streamer from there would start) and in
+            the fantasy playoff weeks, with the best free agent on each team."""
+            return dump(lg.planner(gm.punt))
 
         @beta_tool
         def roster(team: str) -> str:
@@ -140,7 +185,7 @@ class GM:
                 return f"Error: unknown team. Teams: {list(lg.rosters)}"
             return dump(lg.team_roster(team, gm.punt))
 
-        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, this_week, roster]
+        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, this_week, compare_players, evaluate_move, schedule_planner, roster]
 
     def ask(self, text, punt=()):
         self.punt = list(punt)

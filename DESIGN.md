@@ -133,7 +133,7 @@ components:
 
 A working tool for one fantasy manager on a laptop. It is the category standard played straight: the density of Basketball Monster, the calm of Linear, the friendliness of Sleeper. Chrome stays neutral and out of the way so the numbers carry the color.
 
-Every screen is a left nav, a sticky top bar (league, punt chips, refresh), and a single column of panels. Data shows up as tables and category strips, never as KPI tiles.
+Every screen is a left nav, a sticky top bar (league, player search, punt chips, refresh), and a single column of panels. Data shows up as tables and category strips, never as KPI tiles.
 
 **Key Characteristics:**
 - Cool grey ground, white panels, hairline borders.
@@ -211,6 +211,15 @@ Category cells are centered numbers on an inset 4px-rounded fill (`--c`) whose s
 
 ### Selectable rows
 A table row that picks what another panel shows (Strategy's Every build) gets an `accent-soft` fill and `accent-ink` name. A step row's follow-up line (a trade's waiver moves) sits under it in a muted sub-row, with the step's result cells spanning both.
+
+### Player card from the top bar
+The top bar's player search opens the card under the player's row when a player table on screen holds him. Otherwise the same card sits in its own panel at the top of the view (`.card-panel`, first in the column, under the top bar), closed by its Close button or a tab change. Never a modal or a popover.
+
+### Compare table
+Rows are numbers, columns are deals (Saved trades) or players (Compare), the row label in muted 12px. On Compare, bold marks who's ahead on each number, a muted grey sub-heading row starts each group (NBA games, Per game) and category rows are z-score cells with the chosen per-game line beside them. A punted category dims its whole row (`tr.punted-col`).
+
+### Schedule calendar
+A row per calendar week, a column per weekday, each cell a button with the number of your players who have a game and a muted note under it (`2 sit`, `3 open`, `full`). The fill follows that count minus the starting spots on the z-cell scale: red for players who'd sit, green for open spots. A day with no NBA games shows a muted dash. The picked day gets a 2px accent ring (selection) and its starters and sitters show under the table.
 
 ### Category strip
 Equal columns per category: label, rank `n / 12`, signed total, and a 4px bar. The bar is green in the top 40%, red in the bottom 35%, grey between.

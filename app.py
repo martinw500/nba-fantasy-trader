@@ -113,10 +113,16 @@ def api(path, q, body):
         return lg.strategy()
     if path == "/api/player":  # the player card
         return lg.card(body["name"], punt)
+    if path == "/api/compare":  # 2 to 4 players side by side
+        return lg.compare(body.get("players", []), punt)
+    if path == "/api/move":  # Waivers' add/drop evaluator: any add and any drop, this week and the season
+        return lg.add_drop(body["add"], body.get("drop") or None, punt, day=body.get("day") or None)
+    if path == "/api/schedule":  # schedule planner: your games per day, NBA teams' games ahead
+        return lg.planner(punt)
     if path == "/api/news":  # My team's News panel
         return lg.roster_news()
-    if path == "/api/players":
-        return sorted(({"name": n, "team": t} for t, ks in lg.rosters.items() for n in lg.names(ks)), key=lambda p: p["name"])
+    if path == "/api/players":  # rostered players, plus free agents (team "FA") with {"fa": true}
+        return lg.pool(bool(body.get("fa")))
     if path == "/api/me":  # which team is yours
         if body.get("team") not in lg.rosters:
             raise KeyError(f"Unknown team: {body.get('team')}")
@@ -131,6 +137,7 @@ def api(path, q, body):
             remember(matchup=lg.matchup)
         return lg.this_week(punt=punt)
     if path == "/api/refresh":
+        refetch = ()
         if os.environ.get("YAHOO_LEAGUE_ID"):
             yahoo.snapshot()
         elif lg.snap.get("text"):  # imported from a snapshot file: read the newest one (and refetch injuries)
@@ -140,10 +147,10 @@ def api(path, q, body):
             newest = max(ROOT.glob("*snapshot*.txt"), key=lambda p: (day(p), p.stat().st_mtime),
                          default=lg.snap["text"])
             yahoo.from_text(newest, lg.me)
-            (model.DATA / "injuries.json").unlink(missing_ok=True)
+            refetch = ("injuries",)  # offline, the old copy stays (the sidebar says so)
         else:
             yahoo.demo()
-        lg, gm = model.load(), None
+        lg, gm = model.load(refetch=refetch), None
         return lg.state(punt)
     if path == "/api/chats":
         return chats(body)
@@ -196,7 +203,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/news",
+API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/compare", "/api/move", "/api/schedule", "/api/news",
        "/api/players", "/api/me", "/api/week", "/api/refresh", "/api/chat", "/api/chats"}
 
 if __name__ == "__main__":

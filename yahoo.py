@@ -226,10 +226,12 @@ def parse_text(text):
     adds = re.match(r"\d+", rules.get("Max adds/week", ""))
     seats = re.match(r"(\d+) teams", rules.get("Playoffs", ""))
     scoring = next((k for k, w in (("categories", "categor"), ("one_win", "one win")) if w in rules.get("Scoring type", "").lower()), None)
+    po = re.match(r"[^(]*?Weeks? ([\d, and]+)", rules.get("Playoffs", ""))  # "8 teams, Weeks 21, 22 and 23 (Mon Mar 22 ..."
     out["settings"] = {**({"roster": int(slots[1]) + int(slots[2]), "starters": int(slots[1]),
                            **({"il": int(slots[3])} if slots[3] else {})} if slots else {}),
                        **({"scoring": scoring} if scoring else {}), **({"max_adds": int(adds[0])} if adds else {}),
-                       **({"playoff_teams": int(seats[1])} if seats else {})}
+                       **({"playoff_teams": int(seats[1])} if seats else {}),
+                       **({"playoff_weeks": [int(x) for x in re.findall(r"\d+", po[1])]} if po else {})}
     out["free_agents"] = list(fa.values())
     return out
 
