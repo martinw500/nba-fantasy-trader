@@ -23,6 +23,7 @@ CLI (prints JSON, used by Claude Code and for quick checks):
   python model.py news                      # ESPN news on your players and their teammates since the snapshot
   python model.py compare --players "A, B"  # 2 to 4 players side by side, with your win % with each in a roster spot
   python model.py move --add "A" --drop "B" # any add/drop: win % change this week and for the season (today's roster)
+  python model.py sources                   # when stats, box scores, schedule, injuries, projections, news were fetched
   add --punt "FT%,TOV" to any of them
 """
 import argparse
@@ -146,16 +147,34 @@ def match(name, keys):
     return next(iter(difflib.get_close_matches(k, keys, n=1, cutoff=0.8)), None)
 
 
+# Freshness (Q9): the caches load() reads, as (key, label, file in data/, refresh window in hours, what's lost without it)
+SOURCES = [("stats", "Stats", f"stats_{CUR}.csv", 12, "this season's stats"),
+           ("logs", "Box scores", f"gamelogs_{CUR}.csv", 12, "recent form, the card's recent lines and teammates' injury boosts"),
+           ("schedule", "Schedule", f"schedule_{CUR}.json", 24, "NBA games per week (a flat 3.4 is used)"),
+           ("injuries", "Injuries", "injuries.json", 3, "ESPN's injury notes and return dates (Yahoo's tags still count)"),
+           ("projections", "Projections", f"projections_{CUR}.json", 24, "ESPN's projections (Yahoo's still count)"),
+           ("news", "News", "news_index.json", 3, "ESPN's news")]
+FAILED = {}  # cache file name -> why its last refresh failed in this process; a good refresh clears it
+
+
 def fetch(season, max_age_hours=None):
-    """Per-game stats from stats.nba.com, cached in data/. The current season refreshes when the cache is stale."""
+    """Per-game stats from stats.nba.com, cached in data/. The current season refreshes when the cache is stale;
+    offline, the old copy (logged in FAILED for freshness()). No copy at all and no network raises."""
     cache = DATA / f"stats_{season}.csv"
     stale = max_age_hours and cache.exists() and time.time() - cache.stat().st_mtime > max_age_hours * 3600
     if not cache.exists() or stale:
-        from nba_api.stats.endpoints import leaguedashplayerstats
-        df = leaguedashplayerstats.LeagueDashPlayerStats(
-            season=season, per_mode_detailed="PerGame", timeout=60).get_data_frames()[0]
-        DATA.mkdir(exist_ok=True)
-        df[["PLAYER_NAME", "TEAM_ABBREVIATION", "GP", "MIN"] + RAW].to_csv(cache, index=False)
+        try:
+            from nba_api.stats.endpoints import leaguedashplayerstats
+            df = leaguedashplayerstats.LeagueDashPlayerStats(
+                season=season, per_mode_detailed="PerGame", timeout=60).get_data_frames()[0]
+            DATA.mkdir(exist_ok=True)
+            df[["PLAYER_NAME", "TEAM_ABBREVIATION", "GP", "MIN"] + RAW].to_csv(cache, index=False)
+            FAILED.pop(cache.name, None)
+        except Exception as e:
+            FAILED[cache.name] = str(e)[:200]
+            if not cache.exists():
+                raise
+            print(f"Couldn't refresh {cache.name} ({e}); using the old copy.", file=sys.stderr)
     return keyed(pd.read_csv(cache))
 
 
@@ -163,13 +182,16 @@ TRICODE = {"GS": "GSW", "NY": "NYK", "SA": "SAS", "NO": "NOP", "PHO": "PHX", "WS
            "CHO": "CHA"}  # Yahoo/ESPN short forms -> NBA tricodes
 
 
-def _cached(cache, hours, get):
-    """Read a JSON cache, refreshing it with get() when older than `hours`. Offline: the stale cache, or {}."""
-    if not cache.exists() or time.time() - cache.stat().st_mtime > hours * 3600:
+def _cached(cache, hours, get, force=False):
+    """Read a JSON cache, refreshing it with get() when older than `hours` (or `force`). Offline: the stale cache, or {}.
+    A failed refresh is logged in FAILED for freshness()."""
+    if force or not cache.exists() or time.time() - cache.stat().st_mtime > hours * 3600:
         try:
             DATA.mkdir(exist_ok=True)
             cache.write_text(json.dumps(get(), ensure_ascii=False), encoding="utf-8")
+            FAILED.pop(cache.name, None)
         except Exception as e:
+            FAILED[cache.name] = str(e)[:200]
             print(f"Couldn't refresh {cache.name} ({e}); using {'the old copy' if cache.exists() else 'nothing'}.",
                   file=sys.stderr)
     return json.loads(cache.read_text(encoding="utf-8")) if cache.exists() else {}
@@ -189,9 +211,10 @@ def schedule(season=CUR):
     return _cached(DATA / f"schedule_{season}.json", 24, get)
 
 
-def injuries():
-    """{player name: {status, note, return}} from ESPN's public injury feed, cached for 3 hours, each day's last copy
-    kept as data/injuries_<date>.json: the return dates it gave, to measure backtest.py's RETURN_NOISE against later.
+def injuries(force=False):
+    """{player name: {status, note, return}} from ESPN's public injury feed, cached for 3 hours (`force`: refetch now,
+    keeping the old copy if that fails), each day's last copy kept as data/injuries_<date>.json: the return dates it
+    gave, to measure backtest.py's RETURN_NOISE against later.
     ponytail: unofficial endpoint (personal use); if ESPN changes it, this goes quiet and Yahoo's status tags still work."""
     def get():
         url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries"
@@ -203,7 +226,7 @@ def injuries():
                for team in feed.get("injuries", []) for i in team.get("injuries", [])}
         (DATA / f"injuries_{date.today()}.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
         return out
-    return _cached(DATA / "injuries.json", 3, get)
+    return _cached(DATA / "injuries.json", 3, get, force)
 
 
 ESPN_STAT = {"MIN": "40", "FGM": "13", "FGA": "14", "FTM": "15", "FTA": "16", "FG3M": "17", "PTS": "0", "REB": "6",
@@ -297,13 +320,37 @@ def gamelogs(season=CUR, max_age_hours=None):
                                             season_type_all_star="Regular Season").get_data_frames()[0]
             DATA.mkdir(exist_ok=True)
             g.to_csv(cache, index=False)
+            FAILED.pop(cache.name, None)
         except Exception as e:
+            FAILED[cache.name] = str(e)[:200]
             print(f"Couldn't refresh {cache.name} ({e}); using {'the old copy' if cache.exists() else 'nothing'}.",
                   file=sys.stderr)
     if not cache.exists():
         return None
     g = pd.read_csv(cache, parse_dates=["GAME_DATE"])
     return g.assign(key=g.PLAYER_NAME.map(norm))
+
+
+def freshness(now=None, data=None, failed=None, times=None):
+    """When each cache load() reads was last fetched (SOURCES): [{key, label, fetched (UTC ISO, "" when missing),
+    hours (its refresh window), age (hours), status, error, lost}]. status: "ok" inside the window; "stale" past it
+    (refetched on the next load, i.e. Refresh); "failed" = the last refresh failed, so this is the old copy; "missing" =
+    no copy at all, so the model runs without it (`lost`). `times` = {file name: mtime or None} in place of the files'
+    own (a League's copies as loaded). Never fetches."""
+    now, data, failed = now or time.time(), Path(data or DATA), FAILED if failed is None else failed
+    out = []
+    for key, label, name, hours, lost in SOURCES:
+        t = times[name] if times and name in times else mtime(data / name)
+        age = None if t is None else (now - t) / 3600
+        status = "missing" if t is None else "failed" if name in failed else "stale" if age > hours else "ok"
+        out.append({"key": key, "label": label, "hours": hours, "status": status, "error": failed.get(name, ""),
+                    "fetched": "" if t is None else datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "age": None if age is None else round(age, 1), "lost": lost})
+    return out
+
+
+def mtime(f):
+    return f.stat().st_mtime if f.exists() else None
 
 
 def keyed(df):
@@ -522,6 +569,7 @@ class League:
         cur = fetch(CUR, max_age_hours=12) if cur is None else cur
         self.cur, self.logs = cur, logs  # this season's per-game stats and box scores (gamelogs()), for card()
         self.news = news  # news() from load(), for card() and roster_news(); never moves a number
+        self.loaded = None  # {cache file: mtime or None} this copy was built from (load()), for freshness()
         pool = self.teams_n * self.roster_n
         # expert projections: the snapshot's (Yahoo), and ESPN's (proj, from load()) for players Yahoo doesn't list
         self.proj = experts(snap.get("projections", {}), proj or {}, base, base.index.union(cur.index))
@@ -1853,27 +1901,38 @@ class League:
         return {"league": self.snap.get("name", "League"), "mode": self.mode, "scoring": self.scoring, "cats": self.cats,
                 "me": self.me, "teams": list(self.rosters), "fetched": self.snap.get("fetched", ""), "demo": self.snap.get("demo", False),
                 "pulled": self.snap.get("pulled", ""), "rolled": self.rolled,  # snapshot time; its week is over
+                "sources": self.sources(),  # when stats, box scores, schedule, injuries, projections, news were fetched
                 "roster": sorted((self.player(k, punt) for k in self.rosters[self.me]), key=lambda p: -p["value"]),
                 "profile": self.profile() if self.mode != "points" else None,
                 "waivers": {**self.waivers(punt), "dropped": self.dropped(punt)}, "movers": self.movers(punt)}
+
+    def sources(self):
+        """freshness() of the caches this copy was built from (news live: news() reads its index on each call).
+        [] for a League built directly (tests), which reads no caches."""
+        return [] if self.loaded is None else freshness(times=self.loaded)
 
     def team_roster(self, team, punt=()):
         return sorted((self.player(k, punt) for k in self.rosters[team]), key=lambda p: -p["value"])
 
 
-def load(path=DATA / "league.json"):
+def load(path=DATA / "league.json", refetch=()):
+    """The league from the snapshot, with every cache refreshed once past its window (refetch=("injuries",): now).
+    It keeps each cache's file time (`loaded`), so sources() shows what this copy was built from."""
     if not Path(path).exists():
         import yahoo
         yahoo.demo()
-    return League(json.loads(Path(path).read_text(encoding="utf-8")), sched=schedule(), inj=injuries(),
-                  logs=gamelogs(CUR, 12), proj=espn(), news=news)
+    lg = League(json.loads(Path(path).read_text(encoding="utf-8")), sched=schedule(), inj=injuries("injuries" in refetch),
+                logs=gamelogs(CUR, 12), proj=espn(), news=news)
+    news_index()  # news() reads it when a card or the News panel asks (My team, at once); fetch it now so its time shows
+    lg.loaded = {name: mtime(DATA / name) for _, _, name, _, _ in SOURCES if name != "news_index.json"}
+    return lg
 
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster", "week",
-                                    "strategy", "news", "compare", "schedule", "move"])
+                                    "strategy", "news", "compare", "schedule", "move", "sources"])
     ap.add_argument("--give", default="")
     ap.add_argument("--get", default="")
     ap.add_argument("--mode", default="fair", choices=["fair", "finesse"])
@@ -1907,6 +1966,7 @@ def main():
            "compare": lambda: lg.compare(split(a.players), punt),
            "schedule": lambda: lg.planner(punt),
            "move": lambda: lg.add_drop(a.add, a.drop or None, punt, a.vs),
+           "sources": lg.sources,
            "roster": lambda: lg.team_roster(a.team or lg.me, punt)}[a.cmd]()
     print(json.dumps(out, indent=1, ensure_ascii=False))
 

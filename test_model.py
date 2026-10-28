@@ -756,6 +756,71 @@ Sharks has an open SF slot.""")
     yc = ex.card("Player 150")["lines"]["yahoo"]
     assert yc["MIN"] is None and yc["PTS"] == round(2 * line("", 150)["PTS"], 1) and "espn" in ex.card("Player 152")["lines"]
 
+    test_freshness(lg)
+
+
+def test_freshness(lg):
+    """Q9: freshness() reads each cache's file time against its window; a failed refresh keeps the old copy and says
+    so, a good one clears it; a League built directly (no caches) has no sources."""
+    import os, tempfile, time
+    from pathlib import Path
+    assert lg.sources() == [] and lg.state()["sources"] == []
+    now, old_data, old_failed = time.time(), model.DATA, dict(model.FAILED)
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        model.DATA = d
+        try:
+            model.FAILED.clear()
+            name = {k: f for k, _, f, _, _ in model.SOURCES}
+            for k, hours_ago in {"stats": 2, "logs": 13, "schedule": 23, "injuries": 1}.items():
+                (d / name[k]).write_text("{}")
+                os.utime(d / name[k], (now - hours_ago * 3600,) * 2)
+            got = {x["key"]: x for x in model.freshness(now)}
+            assert list(got) == ["stats", "logs", "schedule", "injuries", "projections", "news"]
+            assert {k: x["status"] for k, x in got.items()} == {"stats": "ok", "logs": "stale", "schedule": "ok",
+                                                                "injuries": "ok", "projections": "missing", "news": "missing"}
+            assert got["logs"]["age"] == 13 and got["projections"]["fetched"] == "" and got["projections"]["lost"]
+            assert got["stats"]["fetched"].endswith("Z") and got["stats"]["hours"] == 12
+            # a refresh that fails keeps the old copy, flagged "failed" with the reason; the next good one clears it
+            inj = d / name["injuries"]
+            inj.write_text('{"A": 1}')
+            os.utime(inj, (now - 4 * 3600,) * 2)
+            def down():
+                raise OSError("403 blocked")
+            assert model._cached(inj, 3, down) == {"A": 1}
+            x = next(x for x in model.freshness() if x["key"] == "injuries")
+            assert x["status"] == "failed" and "403" in x["error"] and 3.9 < x["age"] < 4.1
+            assert model._cached(inj, 3, lambda: {"B": 2}, force=True) == {"B": 2}  # Refresh's refetch
+            assert model._cached(inj, 3, lambda: {"C": 3}) == {"B": 2}  # inside its window: not refetched
+            x = next(x for x in model.freshness() if x["key"] == "injuries")
+            assert x["status"] == "ok" and x["error"] == "" and x["age"] < 0.1
+            assert model._cached(d / name["projections"], 24, down) == {}  # nothing to fall back on
+            assert next(x for x in model.freshness() if x["key"] == "projections")["status"] == "missing"
+            # this season's stats past their window, network down: the old copy, flagged; none at all still raises
+            from nba_api.stats.endpoints import leaguedashplayerstats as lds
+            real, lds.LeagueDashPlayerStats = lds.LeagueDashPlayerStats, lambda **kw: down()
+            try:
+                pd.DataFrame([line("Player 1", 1)]).to_csv(d / name["stats"], index=False)
+                os.utime(d / name["stats"], (now - 13 * 3600,) * 2)
+                assert list(model.fetch(model.CUR, max_age_hours=12).index) == ["player 1"]
+                assert next(x for x in model.freshness() if x["key"] == "stats")["status"] == "failed"
+                try:
+                    model.fetch(model.LAST)
+                    assert False, "no stats and no network must raise"
+                except OSError:
+                    pass
+            finally:
+                lds.LeagueDashPlayerStats = real
+            # a League keeps the file times it was built from: a later refetch elsewhere doesn't show as its own
+            lg.loaded = {name["stats"]: now - 3600, name["logs"]: None}
+            got = {x["key"]: x for x in lg.state()["sources"]}
+            assert got["stats"]["status"] == "failed" and 0.9 < got["stats"]["age"] < 1.1  # the failure is live
+            assert got["logs"]["status"] == "missing" and got["injuries"]["status"] == "ok"  # not in loaded: the file
+        finally:
+            model.DATA, lg.loaded = old_data, None
+            model.FAILED.clear()
+            model.FAILED.update(old_failed)
+
 
 if __name__ == "__main__":
     test_all()

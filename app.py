@@ -137,6 +137,7 @@ def api(path, q, body):
             remember(matchup=lg.matchup)
         return lg.this_week(punt=punt)
     if path == "/api/refresh":
+        refetch = ()
         if os.environ.get("YAHOO_LEAGUE_ID"):
             yahoo.snapshot()
         elif lg.snap.get("text"):  # imported from a snapshot file: read the newest one (and refetch injuries)
@@ -146,10 +147,10 @@ def api(path, q, body):
             newest = max(ROOT.glob("*snapshot*.txt"), key=lambda p: (day(p), p.stat().st_mtime),
                          default=lg.snap["text"])
             yahoo.from_text(newest, lg.me)
-            (model.DATA / "injuries.json").unlink(missing_ok=True)
+            refetch = ("injuries",)  # offline, the old copy stays (the sidebar says so)
         else:
             yahoo.demo()
-        lg, gm = model.load(), None
+        lg, gm = model.load(refetch=refetch), None
         return lg.state(punt)
     if path == "/api/chats":
         return chats(body)
