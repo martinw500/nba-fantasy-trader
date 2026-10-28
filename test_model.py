@@ -476,10 +476,12 @@ Sharks has an open SF slot.""")
     stat = lambda i, x=1.0, cols=model.RAW: {c: line("", i)[c] * x for c in cols}
     full = ["MIN"] + model.RAW
     ex = model.League({**lg.snap, "projections": {"Player 150": stat(150, 2), "Zed Unknown": stat(150)}}, base, cur,
-                      proj={"Player 150": stat(150, cols=full), "Player 152": stat(152, 1.5, full),
+                      proj={"Player 150": stat(150, cols=full),
+                            "Player 152": {c: v for c, v in stat(152, 1.5, full).items() if c != "FG3M"},  # ESPN drops 0s
                             "Nikola Jokich": stat(199, 0.5, full), "New Rookie": stat(190, cols=full)})
     pj = ex.proj
     assert pj.at["player 150", "src"] == "Yahoo" and pj.at["player 152", "src"] == "ESPN"
+    assert pj.at["player 152", "FG3M"] == 0 and not ex.z.isna().any().any()  # a missing stat is 0, never NaN
     assert abs(pj.at["player 150", "MIN"] - 2 * line("", 150)["MIN"]) < 1e-9  # twice the output: twice ESPN's minutes
     assert "nikola jokic" in pj.index and "zed unknown" not in pj.index  # Yahoo-only, no minutes to go on: left out
     pre = model.prior(base, pj)

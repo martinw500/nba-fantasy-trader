@@ -250,9 +250,10 @@ def experts(yahoo, espn, base, keys=()):
     him, else ESPN's. Names are matched to `keys` (the stats' players) like League.find, so a spelling variant lands on
     the player it means; the rest are rookies yet to play. Yahoo shows no minutes, so his are ESPN's (else the
     baseline's) scaled by how much more or less Yahoo has him scoring, rebounding and assisting: a role change moves
-    minutes, not rates."""
+    minutes, not rates. A stat a source leaves out is 0: ESPN drops zeros (Duren: no 3PM, PTS = 2 FGM + FTM)."""
     def frame(d):
         df = pd.DataFrame([{"PLAYER_NAME": n, **x} for n, x in d.items()], columns=["PLAYER_NAME", "MIN"] + RAW)
+        df[RAW] = df[RAW].fillna(0)
         df["key"] = [match(n, keys) or norm(n) for n in df.PLAYER_NAME]
         return df.drop_duplicates("key").set_index("key").astype({c: float for c in ["MIN"] + RAW})
     y, e = frame(yahoo), frame(espn)
