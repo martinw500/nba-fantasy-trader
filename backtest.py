@@ -16,7 +16,7 @@ import pandas as pd
 
 import model
 
-ARGS = [a for a in sys.argv[1:] if a != "replay"]
+ARGS = [a for a in sys.argv[1:] if a not in ("replay", "teammates")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
@@ -164,10 +164,76 @@ def replay(weights=(0, 0.25, 0.5, 0.6, 0.75, 1)):
         print(f"  weight {x:<5} week 0 {err[0]:.4f}   weeks 1-6 {np.mean(err[1:7]):.4f}   season {np.mean(err):.4f}")
 
 
+def mondays():
+    """What the model knew each Monday from week 1 on: this season so far (past, cur), the rest-of-season line, each
+    player's team, the regulars, who was out (sat his team's last game, until his next one: exact return dates, which
+    ESPN's feed only estimates) and next week's box scores."""
+    g, base = logs(SEASON), model.baseline(model.fetch(PREV), model.fetch(PREV2))
+    pre, T = model.prior(base, experts(g, base)), "TEAM_ABBREVIATION"
+    first = g.sort_values("GAME_DATE").groupby("key")[T].first()
+    back = lambda w: g[g.week >= w].groupby("key").GAME_DATE.min()
+    for w in range(1, int(g.week.max()) + 1):
+        past, nxt = g[g.week < w], g[g.week == w]
+        cur = per_game(past)
+        line = model.ros(pre, cur)
+        team = past.sort_values("GAME_DATE").groupby("key")[T].last().combine_first(first)
+        regs = line.index[line.MIN >= model.REGULAR]
+        last, played, ret = past.groupby(T).GAME_DATE.max(), set(zip(past.key, past.GAME_DATE)), back(w)
+        out = {k: ret.get(k, pd.Timestamp.max) for k in regs if team.get(k) in last and (k, last[team[k]]) not in played}
+        yield {"pre": pre, "past": past, "cur": cur, "line": line, "team": team, "regs": regs, "out": out, "nxt": nxt}
+
+
+def lifted(m, deboost=True):
+    """Week m's per-game lines with teammates' injuries (League does the same): this season net of the lifts players
+    had (model.had()), plus each out regular's lift over a player's games before his return."""
+    lift = model.lifts(m["line"][m["line"].index.isin(m["cur"].index) | m["line"].index.isin(m["regs"])], m["team"],
+                       m["regs"])
+    line = m["line"]
+    if deboost:
+        h = model.had(m["past"], m["team"], lift).reindex(m["cur"].index).dropna()
+        full = m["cur"].copy()
+        full.loc[h.index, h.columns] = (full.loc[h.index, h.columns] - h).clip(lower=0)
+        line = model.ros(m["pre"], full)
+    lift = lift[lift.index.get_level_values("by").isin(list(m["out"]))]
+    games = m["nxt"][["key", "GAME_DATE"]].merge(lift.index.to_frame(index=False), on="key")
+    games["on"] = games.GAME_DATE < games.by.map(m["out"])
+    share = games.groupby(["key", "by"]).on.mean()
+    boost = lift.loc[share.index].mul(share, axis=0).groupby(level="key").sum()
+    return line, boost[boost.MIN > 0]
+
+
+def teammates(grid=((0.37, 0.25),)):
+    """Next week's per-game lines with and without teammates' injuries (model.lifts), vs what players did that week,
+    as in replay(), for players with an injured teammate and for everyone. Fitted SHARE and USAGE on 2025-26."""
+    weeks, cols = list(mondays()), ["MIN"] + model.RAW
+    print(f"\n== {SEASON}: next week's lines with teammates' injuries ==")
+    for share, usage in grid:
+        model.SHARE, model.USAGE = share, usage
+        rows = {k: [] for k in ("act", "off", "on", "fwd", "hit")}
+        for m in weeks:
+            act = per_game(m["nxt"])
+            act = act[act.index.isin(m["line"].index)]
+            on, boost = lifted(m)
+            fwd, _ = lifted(m, deboost=False)
+            add = boost.reindex(act.index).fillna(0)
+            rows["act"].append(act[cols]); rows["off"].append(m["line"].loc[act.index, cols])
+            rows["on"].append(on.loc[act.index, cols] + add); rows["fwd"].append(fwd.loc[act.index, cols] + add)
+            rows["hit"].append(pd.Series(act.index.isin(boost.index), index=act.index))
+        act, hit = pd.concat(rows["act"]), pd.concat(rows["hit"]).to_numpy()
+        for name, sub in (("injured teammate", hit), ("everyone", np.ones(len(hit), bool))):
+            a = act[sub]
+            err = lambda p: ((p[sub] - a).abs() / a.mean()).mean()
+            out = {v: err(pd.concat(rows[v])) for v in ("off", "on", "fwd")}
+            print(f"  SHARE {share} USAGE {usage}  {name:16} n {sub.sum():5}  " + "   ".join(
+                f"{v} MIN {e.MIN:.4f} stats {e[model.RAW].mean():.4f}" for v, e in out.items()))
+
+
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     if "replay" in sys.argv:
         replay()
+    elif "teammates" in sys.argv:
+        teammates([(s, u) for s in (0.25, 0.37, 0.5) for u in (0, 0.25, 0.5)])
     else:
         for games in ("fixed", "schedule"):
             report(*build(games), f"{SEASON}, games per week: {games}")

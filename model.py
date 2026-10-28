@@ -66,6 +66,12 @@ WEAK = 0.35                                        # a "weak spot" / punt hint: 
 FILL = 0.5                                         # share of a sat-out player's games your bench/streamers cover
                                                    # (not in backtest.py: its rosters never change, so nobody fills in)
 STATUS_AVAIL = {"GTD": 0.9, "DTD": 0.9, "O": 0.7, "SUSP": 0.8, "INJ": 0.6, "IL": 0.5, "IL+": 0.4, "NA": 0.0}
+# Teammates' injuries (lifts()), fitted on 2025-26 box scores (python backtest.py teammates): while a regular (REGULAR+
+# minutes) sits, SHARE of his minutes go to teammates playing 10+, split by their room under ROOM minutes x
+# e^(ROLE x role similarity) and played at their own rates; USAGE of the USAGE_STATS those minutes don't replace go to
+# the same players by their output. The rest goes to the end of the bench.
+REGULAR, SHARE, ROOM, ROLE, USAGE = 25, 0.37, 36, 0.5, 0.25
+USAGE_STATS = ["FGM", "FGA", "FTM", "FTA", "PTS", "AST", "TOV"]  # rebounds, steals, blocks and threes barely move
 
 # Trade market: what managers pay for a player, from his market rank (League.market): 100 x MARKET^(rank - 1).
 # Steep, so a star is worth more than the sum of spare parts: rank 1 = 100, 25 = 48, 50 = 22, 100 = 5, 150 = 1.
@@ -299,6 +305,56 @@ def ros(base, cur, k=SHRINK, k_min=MIN_SHRINK):
     return out
 
 
+def lifts(line, team, keys):
+    """Per-game change to teammates' lines (MIN + RAW) while each regular in `keys` sits, as if he sat alone (the
+    knobs above). line: per-game lines of everyone who can take his minutes (this season's players) and of `keys`;
+    team: {player: NBA team}. Role similarity: cosine of per-minute AST, REB, BLK and 3PM, standardized over the
+    rotation. Rows (player, by)."""
+    cols = ["MIN"] + RAW
+    rot = line.loc[line.MIN >= 10, cols].astype(float)
+    pm = rot[["AST", "REB", "BLK", "FG3M"]].div(rot.MIN, axis=0)
+    prof = ((pm - pm.mean()) / pm.std()).to_numpy()
+    at, tm = {k: i for i, k in enumerate(rot.index)}, pd.Series(team).reindex(rot.index).to_numpy()
+    out = []
+    for j in keys:
+        if j not in at or rot.at[j, "MIN"] < REGULAR:
+            continue
+        mates = (tm == team.get(j)) & (rot.index != j)
+        if not mates.any():
+            continue
+        b, p, q = rot[mates], prof[mates], prof[at[j]]
+        sim = p @ q / np.sqrt((p * p).sum(1) * (q @ q) + 1e-9)
+        w = np.clip(ROOM - b.MIN.to_numpy(), 0, None) * np.exp(ROLE * sim)
+        if w.sum() <= 0:
+            continue
+        mins = SHARE * rot.at[j, "MIN"] * w / w.sum()
+        rate = b[RAW].div(b.MIN, axis=0)
+        d = rate.mul(mins, axis=0)  # his minutes at their own rates
+        used = rate[USAGE_STATS].mul(b.MIN + mins, axis=0)  # and what those don't replace, by output
+        d[USAGE_STATS] += USAGE * used / used.sum().clip(lower=1e-9) * (rot.loc[j, USAGE_STATS] - d[USAGE_STATS].sum())
+        out.append(d.assign(MIN=mins, by=j))
+    if not out:
+        return pd.DataFrame(columns=cols, index=pd.MultiIndex.from_tuples([], names=["key", "by"]), dtype=float)
+    return pd.concat(out).set_index("by", append=True).rename_axis(["key", "by"])[cols]
+
+
+def had(logs, team, lift):
+    """The lift (lifts()) each player had per game in these box scores: every game a teammate in `lift` sat out (one of
+    his team's games from his first for it, or all of them if he's yet to play) adds that teammate's lift, averaged
+    over the player's games. ros() reads this season net of it, as if everyone played."""
+    T, cols = "TEAM_ABBREVIATION", ["MIN"] + RAW
+    games, sat = logs.drop_duplicates([T, "GAME_ID"]), []
+    for j in lift.index.get_level_values("by").unique():
+        mine = logs[(logs.key == j) & (logs[T] == team.get(j))]
+        tg = games[(games[T] == team.get(j)) & (games.GAME_DATE >= mine.GAME_DATE.min() if len(mine) else True)]
+        sat.append(tg.loc[~tg.GAME_ID.isin(mine.GAME_ID), [T, "GAME_ID"]].assign(by=j))
+    if not sat:
+        return pd.DataFrame(columns=cols, dtype=float)
+    n = logs[[T, "GAME_ID", "key"]].merge(pd.concat(sat), on=[T, "GAME_ID"]).groupby(["key", "by"]).size()
+    n = n[n.index.isin(lift.index)]  # games each player played while `by` sat
+    return lift.loc[n.index].mul(n, axis=0).groupby(level=0).sum().div(logs.key.value_counts(), axis=0).dropna()
+
+
 def zscores(df, pool_size):
     """z per category vs the top `pool_size` players by minutes. FG%/FT% are volume-weighted, TOV inverted."""
     pool = df.nlargest(pool_size, "MIN")
@@ -386,13 +442,8 @@ class League:
         self.proj = experts(snap.get("projections", {}), proj or {}, base, base.index.union(cur.index))
         pre = prior(base, self.proj)
         line = ros(pre, cur)
-        self.p = line[["PLAYER_NAME", "MIN", "GP_CUR"] + RAW].copy()
-        self.z = zscores(line, pool)[self.cats]                      # ROS value
-        # "cur" = perceived value: reputation plus a heavily weighted hot/cold start (roughly what Yahoo ranks show)
-        seen = ros(pre, cur, HYPE)
-        self.zcur = zscores(seen, pool)[self.cats]
-        self.fp = sum(line[c] * w for c, w in self.points.items() if c in line)
-        self.fp_cur = sum(seen[c] * w for c, w in self.points.items() if c in seen)
+        cols = ["PLAYER_NAME", "MIN", "GP_CUR"] + RAW
+        self.p = line[cols].copy()  # find() works from here; teammates' injuries adjust the numbers below
         self.meta, self.rosters = {}, {}
         for team, players in snap["teams"].items():
             self.rosters[team] = self._keys(players)
@@ -409,7 +460,6 @@ class League:
                 self.inj[k] = i
                 m = self.meta.setdefault(k, {})
                 m["status"] = m.get("status") or i["status"]  # the league's own tag wins
-        self.rate, self.avail = self._availability(base, cur)
         # this week's opponent and totals so far (Yahoo pull, snapshot, or picked in the app). Once that week is over,
         # the season schedule names the next opponent and its dates (weeks 7 and 17 run 14 days), with no score yet.
         # ponytail: without either, weeks are assumed to run Monday-Sunday
@@ -421,6 +471,31 @@ class League:
             m = {"week_start": wk["start"], "week_end": wk["end"], **({"opponent": opp} if opp else {})} if wk else {}
         self.matchup = m
         self.week_end = m.get("week_end") or sunday
+        # teammates' injuries: every regular's lift (lifts()) read off this season's box scores (had()), so a teammate's
+        # minutes while he sat aren't counted as the new normal; the injured ones' lifts then go back on for the share
+        # of each teammate's games before the return (_boost): rest of season here, this week in p_week
+        regs = line.index[line.MIN >= REGULAR]
+        lift = lifts(line[line.index.isin(cur.index) | line.index.isin(regs)], self.nba, regs)
+        if logs is not None and len(lift):
+            h = had(logs, self.nba, lift).reindex(cur.index).dropna()
+            full = cur.copy()
+            full.loc[h.index, h.columns] = (full.loc[h.index, h.columns] - h).clip(lower=0)
+            line = ros(pre, full)
+        back = {k for k, i in self.inj.items() if (i.get("return") or "") > self.today}
+        self.lift = lift[lift.index.get_level_values("by").isin(back)]
+        ahead = self._boost("9999")
+        line.loc[ahead.index, ahead.columns] += ahead
+        self.p = line[cols].copy()
+        self.z = zscores(line, pool)[self.cats]                      # ROS value
+        # "cur" = perceived value: reputation plus a heavily weighted hot/cold start (roughly what Yahoo ranks show)
+        seen = ros(pre, cur, HYPE)
+        self.zcur = zscores(seen, pool)[self.cats]
+        self.fp = sum(line[c] * w for c, w in self.points.items() if c in line)
+        self.fp_cur = sum(seen[c] * w for c, w in self.points.items() if c in seen)
+        self.p_week = self.p.copy()  # this week's per-game lines: the lifts for this week's games instead
+        wk = self._boost(self.week_end).sub(ahead, fill_value=0)
+        self.p_week.loc[wk.index, wk.columns] += wk
+        self.rate, self.avail = self._availability(base, cur)
         self.games_week = pd.Series({k: len(self.game_days(k, self.week_end)) for k in self.p.index}, dtype=float)
         # expected weekly contribution: games played at his line, missed games partly covered at waiver level
         fill = self.p.loc[self._waiver_level(self.value()), RAW].mean()
@@ -456,6 +531,15 @@ class League:
             for d in self.game_days(k, self.week_end, (start or {}).get(k)):
                 day.setdefault(d, []).append(k)
         return collections.Counter(k for ks in day.values() for k in ks[:self.lineup])
+
+    def _boost(self, end):
+        """Per-game lift each player gets from injured teammates (self.lift) over his games from today through `end`:
+        each one's lift times the share of those games before his return."""
+        share = []
+        for k, j in self.lift.index:
+            days = self.game_days(k, end)
+            share.append(sum(d < self.inj[j]["return"] for d in days) / max(len(days), 1))
+        return self.lift.mul(share, axis=0).groupby(level="key").sum()
 
     def _availability(self, base, cur):
         """Share of games a player suits up for: GP rate over last season + this one, shrunk halfway toward 85%
@@ -572,9 +656,21 @@ class League:
                 **({} if self.market.at[k, "yahoo"] else {"mkt_model": True}),  # no Yahoo rank: the model's own
                 **({"games": int(self.games_week[k])} if self.sched else {}),
                 **({"injury": self.inj[k]["note"], "return": self.inj[k]["return"]} if k in self.inj else {}),
+                **({"lift": self.lifted[k]} if k in self.lifted else {}),  # injured teammates whose minutes he takes
                 **({"proj": self.proj.at[k, "src"]} if k in self.proj.index else {}),  # whose projection his line blends in
                 **{f: m[f] for f in ("owned", "waiver") if f in m},  # Yahoo roster % / on waivers until
                 "z": {c: round(float(self.z.at[k, c]), 2) for c in self.cats}}
+
+    @functools.cached_property
+    def lifted(self):
+        """{player: [each injured teammate whose minutes he takes (self.lift), back when, and his per-game lift while
+        that one sits]}, for players who play some of those games."""
+        out = {}
+        for (k, j), d in self.lift.iterrows():
+            if d.MIN >= 0.5 and (self.inj.get(k, {}).get("return") or "") < self.inj[j]["return"]:
+                out.setdefault(k, []).append({"by": self.p.at[j, "PLAYER_NAME"], "return": self.inj[j]["return"],
+                                              **{c: round(float(d[c]), 1) for c in ["MIN"] + COUNTING}})
+        return out
 
     def weeks(self, n=3):
         """The n matchup weeks after this one, (start, end): the season schedule's (some run 14 days), else
@@ -628,7 +724,7 @@ class League:
         if not self.sched:
             return self.vec(keys)
         g = pd.Series(self.starts([k for k in keys if k in self.p.index], start), dtype=float)
-        return (g * self.rate.reindex(g.index)).to_numpy() @ self.p.loc[g.index, RAW].to_numpy()
+        return (g * self.rate.reindex(g.index)).to_numpy() @ self.p_week.loc[g.index, RAW].to_numpy()
 
     @functools.cached_property
     def _value(self):
