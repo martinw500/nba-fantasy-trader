@@ -29,7 +29,7 @@ Since summer 2026, Yahoo only gives Fantasy API access to applications it approv
 2. Run `.venv/bin/python yahoo.py import mchc-fantasy-snapshot-2026-10-26.txt`. Your team comes from the file's `My team:` line; name it after the file to pick another (`... import file.txt "fatty zhou"`). It lists any player it couldn't match to NBA stats (usually rookies who haven't played yet).
 3. Restart `python app.py`. For a new snapshot, drop the file in the repo folder and press **Refresh**: it imports the newest `*snapshot*.txt`. The sidebar shows when the snapshot was pulled, and every view warns once it's over a day old or its matchup week is over.
 
-Pick your team from the dropdown under the league name in the top bar. Snapshot files (`*snapshot*.txt`) are gitignored.
+Pick your team from the dropdown under the league name in the top bar. Snapshot files (`*snapshot*.txt`) are committed, so `git pull` brings them to your other computers.
 
 When the file lists free agents, those are used, with roster % and "claim by" dates in Waivers. Otherwise free agents are the best players nobody rosters.
 
@@ -62,7 +62,7 @@ With `ANTHROPIC_API_KEY=sk-ant-...` in `.env` (key from https://console.anthropi
 
 ## Moving to a new computer
 
-The code lives on GitHub (`martinw500/nba-fantasy-trader`). Two things are deliberately **not** in git: `.env` (your keys) and `data/` (cached stats + your league snapshot).
+The code lives on GitHub (`martinw500/nba-fantasy-trader`). Two things are deliberately **not** in git: `.env` (your keys) and `data/` (cached stats and the imported league, rebuilt from the newest snapshot on Refresh).
 
 **Before you leave the old computer:**
 ```
@@ -84,7 +84,7 @@ Also copy `.env` somewhere private (password manager, or a USB stick) if you cre
    .venv/bin/python test_model.py      # should print: ok
    ```
 3. Put your `.env` back in the folder, or redo "Connect your Yahoo league" above.
-4. `python yahoo.py` to pull your league, or skip it to use the demo.
+4. `python yahoo.py import <newest>-snapshot.txt` (or press **Refresh** in the app), or skip it to use the demo.
 5. `python app.py`. NBA stats download on their own the first time (`data/` is rebuilt automatically).
 6. In Claude Code: open the folder and accept the prompt to install the project's plugins. Run `/mcp` → context7 → authenticate if you want it. The project skills (`/gm`, humanizer, impeccable, design-taste-frontend) come with the repo.
 

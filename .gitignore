@@ -7,6 +7,3 @@ __pycache__/
 .impeccable/config.local.json
 .venv/
 .playwright-mcp/
-
-# league snapshots exported from Yahoo (private league data)
-*snapshot*.txt
