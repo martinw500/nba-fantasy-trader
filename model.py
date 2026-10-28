@@ -633,11 +633,17 @@ class League:
         """{player: games he starts the rest of this week}. Yahoo only scores starters, so each day the best `lineup`
         players with a game count and bench games fill in on light days. start: {player: first day}, for claims.
         ponytail: best = per-game value, position eligibility ignored; a lineup set by hand can count fewer."""
+        day = self._days(keys, self.week_end, start or {})
+        return collections.Counter(k for ks in day.values() for k in ks[:self.lineup])
+
+    def _days(self, keys, end, start=None):
+        """{date: players with a game that day, best first (per-game value)}, from today through `end`. start: a first
+        day for everyone (a later week), or {player: first day} (claims); game_days() adds return dates."""
         day = {}
         for k in sorted(keys, key=self._value.get, reverse=True):
-            for d in self.game_days(k, self.week_end, (start or {}).get(k)):
+            for d in self.game_days(k, end, start.get(k) if isinstance(start, dict) else start):
                 day.setdefault(d, []).append(k)
-        return collections.Counter(k for ks in day.values() for k in ks[:self.lineup])
+        return day
 
     def _boost(self, end):
         """Per-game lift each player gets from injured teammates (self.lift) over his games from today through `end`:
@@ -1667,6 +1673,71 @@ class League:
                              "odds": round(100 * float(x), 1), "call": call(c, x)} for c, x in zip(self.cats, p)},
                 "streams": streams}
 
+    def playoff_weeks(self):
+        """The fantasy playoffs' matchup weeks as (week, start, end): settings' playoff_weeks (yahoo.py reads the
+        snapshot's Playoffs line), else the season schedule's weeks with no pairings after the last week with some."""
+        sched = self.snap.get("schedule", ())
+        nums = self.snap["settings"].get("playoff_weeks")
+        if nums is None:
+            last = max((w["week"] for w in sched if w["matchups"]), default=None)
+            nums = [w["week"] for w in sched if last is not None and w["week"] > last and not w["matchups"]]
+        return [(w["week"], w["start"], w["end"]) for w in sched if w["week"] in nums]
+
+    def planner(self, punt=(), n=3):
+        """Schedule planner (Q4): your active players' NBA games per day for the rest of this matchup week and the
+        next n (weeks()), each day's starters (the best `lineup` with a game, as starts() picks them), who sits on an
+        overflow day, and open slots (fewer than `lineup` of yours play while the NBA does: room to stream). Players in
+        IL slots sit, injured players count from their return date. teams: every NBA team's games in those weeks,
+        on your open days (games a streamer from there would start), and in the fantasy playoff weeks, with your
+        players there and the best healthy free agent on your build (effective()). ponytail: today's roster in every
+        week, positions ignored, and a player tagged out with no return date still counts."""
+        if not self.sched:
+            return {"lineup": self.lineup, "weeks": [], "teams": [], "roster": [], "il": [], "playoffs": []}
+        me = self.rosters[self.me]
+        play, name = self._playing(me), lambda ks: [self.p.at[k, "PLAYER_NAME"] for k in ks]
+        spans = [(max(self.today, self.matchup.get("from", "")), self.week_end)] + self.weeks(n)
+        sched = self.snap.get("schedule", ())
+        nba = {t: ds for t, ds in self.sched.items() if t in set(self.nba.values())}  # no All-Star or exhibition teams
+        busy = collections.Counter(d for ds in nba.values() for d in ds)  # NBA teams playing each day
+        weeks, opened, starts = [], [], collections.defaultdict(list)
+        for s, e in spans:
+            day, days = self._days(play, e, s), []
+            d = date.fromisoformat(s)
+            while d.isoformat() <= e:
+                x, ks = d.isoformat(), day.get(d.isoformat(), [])
+                days.append({"date": x, "nba": busy[x], "players": name(ks[:self.lineup]), "sit": name(ks[self.lineup:]),
+                             "open": max(self.lineup - len(ks), 0) if busy[x] else 0})
+                d += timedelta(1)
+            c = collections.Counter(k for ks in day.values() for k in ks[:self.lineup])
+            for k in play:
+                starts[k].append(c[k])
+            opened.append({x["date"] for x in days if x["open"]})
+            weeks.append({"start": s, "end": e, "week": next((w["week"] for w in sched if w["start"] <= s <= w["end"]), None),
+                          "games": sum(len(x["players"]) + len(x["sit"]) for x in days),
+                          "starts": sum(len(x["players"]) for x in days), "sit": sum(len(x["sit"]) for x in days),
+                          "open": sum(x["open"] for x in days), "days": days})
+        po = self.playoff_weeks()
+        within = lambda ds, s, e: sum(s <= d <= e for d in ds)
+        healthy = [k for k in self.fa if self.meta.get(k, {}).get("status", "") not in OUT]
+        eff, val = self.effective(punt), self.value(punt=punt)
+        fa = {}
+        for k in sorted(healthy, key=eff.get, reverse=True):
+            fa.setdefault(self.nba.get(k), k)
+        teams = [{"nba": t, "weeks": [within(ds, s, e) for s, e in spans], "open": [len(o & set(ds)) for o in opened],
+                  "playoffs": [within(ds, s, e) for _, s, e in po], "mine": name(k for k in me if self.nba.get(k) == t),
+                  **({"fa": {"name": self.p.at[fa[t], "PLAYER_NAME"], "value": round(float(val[fa[t]]), 2)}} if t in fa else {})}
+                 for t, ds in nba.items()]
+        for t in teams:
+            t["total"] = sum(t["weeks"])
+        teams.sort(key=lambda t: (-t["total"], -sum(t["playoffs"]), t["nba"]))
+        roster = [{**self.player(k, punt), "sched": [{"games": len(self.game_days(k, e, s)), "starts": st}
+                                                     for (s, e), st in zip(spans, starts[k])]}
+                  for k in sorted(play, key=self._value.get, reverse=True)]
+        return {"lineup": self.lineup, "weeks": weeks, "teams": teams, "roster": roster,
+                "il": [{"name": self.p.at[k, "PLAYER_NAME"], **({"return": self.inj[k]["return"]} if self.inj.get(k, {}).get("return") else {})}
+                       for k in me if k not in play],
+                "playoffs": [{"week": w, "start": s, "end": e} for w, s, e in po]}
+
     def movers(self, punt=(), limit=10):
         """Sell high: your players beating their rest-of-season value over the last FORM_DAYS (this season without box
         scores). Buy low: good rest-of-season players on other teams below it. gap = form - value, past TREND."""
@@ -1717,7 +1788,7 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster", "week",
-                                    "strategy", "news", "compare"])
+                                    "strategy", "news", "compare", "schedule"])
     ap.add_argument("--give", default="")
     ap.add_argument("--get", default="")
     ap.add_argument("--mode", default="fair", choices=["fair", "finesse"])
@@ -1747,6 +1818,7 @@ def main():
            "strategy": lambda: lg.strategy(a.size),
            "news": lg.roster_news,
            "compare": lambda: lg.compare(split(a.players), punt),
+           "schedule": lambda: lg.planner(punt),
            "roster": lambda: lg.team_roster(a.team or lg.me, punt)}[a.cmd]()
     print(json.dumps(out, indent=1, ensure_ascii=False))
 

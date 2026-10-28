@@ -297,6 +297,41 @@ def test_all():
     # compare: twin A's 4 games this week beat twin B's 2; level numbers (2 games each next week) name nobody
     b = sl.compare(["Twin A", "Twin B"])["best"]
     assert b["week0"] == ["Twin A"] and "week1" not in b
+    # schedule planner (Q4): 15 of your 16 play Monday (Twin C is out until Nov 3), so 5 sit, your worst 5; the
+    # week's starts are This week's starts()
+    pl = sl.planner()
+    w0, play = pl["weeks"][0], sl._playing(sl.rosters["Me"])
+    mon = w0["days"][0]
+    assert mon["date"] == "2026-10-26" and len(mon["players"]) == 10 and mon["open"] == 0
+    assert set(mon["sit"]) == set(sl.names([k for k in sorted(play, key=sl._value.get) if k != "twin c"][:5]))
+    assert w0["starts"] == sum(sl.starts(play).values()) and w0["sit"] == w0["games"] - w0["starts"]
+    assert [w["start"] for w in pl["weeks"]] == ["2026-10-26", "2026-11-02", "2026-11-09", "2026-11-16"]
+    tc = next(r for r in pl["roster"] if r["name"] == "Twin C")
+    assert [x["games"] for x in tc["sched"]] == [0, 2, 0, 0]
+    # a 15-man lineup: Wednesday and Friday have one open slot (only XXX and AAA play), Tuesday has no NBA games at all.
+    # So an AAA streamer starts 2 games this week and a BBB one none, though BBB plays twice too
+    sl.lineup = 15
+    pl = sl.planner()
+    assert [(d["nba"], d["open"]) for d in pl["weeks"][0]["days"]][:5] == [(3, 0), (0, 0), (2, 1), (0, 0), (2, 1)]
+    assert pl["weeks"][0]["open"] == 2 and pl["weeks"][0]["sit"] == 0
+    t = {x["nba"]: x for x in pl["teams"]}
+    assert t["AAA"]["weeks"][:2] == [4, 2] and t["AAA"]["open"][0] == 2 and t["BBB"]["weeks"][0] == 2 and t["BBB"]["open"][0] == 0
+    assert t["AAA"]["fa"]["name"] == "Twin D" and set(t["AAA"]["mine"]) == {"Twin A", "Twin C"}
+    sl.lineup = 10
+    # playoff weeks: the schedule's weeks with no pairings after the last with some, unless settings name them; a
+    # player parked in an IL slot sits out the planner, listed with his return date
+    po = [{"week": 2, "start": "2026-10-26", "end": "2026-11-01", "matchups": [["Me", "Them"]]},
+          {"week": 3, "start": "2026-11-02", "end": "2026-11-08", "matchups": []}]
+    teams = {**snap["teams"], "Me": [{**x, "slot": "IL"} if x["name"] == "Twin C" else x for x in snap["teams"]["Me"]]}
+    pw = model.League({**snap, "schedule": po, "teams": teams}, pd.concat([base, twins]), pd.concat([cur, twins]),
+                      today=model.date(2026, 10, 26), sched=sl.sched, inj={"Twin C": sl.inj["twin c"]})
+    pp = pw.planner()
+    assert pp["playoffs"] == [{"week": 3, "start": "2026-11-02", "end": "2026-11-08"}] and pp["weeks"][0]["week"] == 2
+    assert next(x for x in pp["teams"] if x["nba"] == "AAA")["playoffs"] == [2]
+    assert pp["il"] == [{"name": "Twin C", "return": "2026-11-03"}] and "Twin C" not in {r["name"] for r in pp["roster"]}
+    assert model.League({**pw.snap, "settings": {**pw.snap["settings"], "playoff_weeks": []}}, pd.concat([base, twins]),
+                        pd.concat([cur, twins]), today=model.date(2026, 10, 26), sched=sl.sched).planner()["playoffs"] == []
+    assert lg.planner()["weeks"] == []  # no NBA schedule: nothing to plan
     # with box scores: this season, last 14 and last 7 days (Oct 26: since Oct 12 and Oct 19)
     box = pd.DataFrame([{**line("Twin A", 180, PTS=p), "GAME_DATE": pd.Timestamp(d)}
                         for p, d in ((30, "2026-10-24"), (20, "2026-10-20"), (10, "2026-10-15"), (40, "2026-10-01"))])
@@ -460,6 +495,7 @@ LEAGUE SETTINGS
 Scoring type:     Head-to-Head Categories, 9 cats (FG%, FT%, 3PTM, PTS, REB, AST, ST, BLK, TO)
 Roster slots:     PG, SG, G, SF, PF, F, C, C, Util, Util (10 starters) + 3 BN + 3 IL = 16
 Max adds/week:    4 (no season limit on adds or trades)
+Playoffs:         8 teams, Weeks 21, 22 and 23 (Mon Mar 22 - Sun Apr 11, 2027). Reseeding: yes. Tiebreaker: higher seed wins
 =====
 PART 1 - ALL 12 TEAM ROSTERS
 =====
@@ -524,7 +560,8 @@ Sharks has an open SF slot.""")
     assert list(got["teams"]) == ["fatty zhou", "Big Tuo Plumbing Inc.", "Sharks"]
     assert got["pulled"] == "2026-10-26T23:37:00-07:00" and got["from"] == "2026-10-27"  # Oct 26's games are banked
     assert got["week"] == {"week": 2, "start": "2026-10-26", "end": "2026-11-01"}
-    assert got["settings"] == {"roster": 13, "starters": 10, "il": 3, "scoring": "categories", "max_adds": 4}
+    assert got["settings"] == {"roster": 13, "starters": 10, "il": 3, "scoring": "categories", "max_adds": 4,
+                               "playoff_weeks": [21, 22, 23]}
     fz = got["teams"]["fatty zhou"]
     assert fz[0] == {"name": "Nikola Jokić", "nba": "DEN", "pos": "C", "status": "", "slot": "C",
                      "rank": {"pre": 1, "cur": 8}, "owned": 100}
