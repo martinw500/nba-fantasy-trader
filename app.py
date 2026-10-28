@@ -116,7 +116,7 @@ def api(path, q, body):
     if path == "/api/compare":  # 2 to 4 players side by side
         return lg.compare(body.get("players", []), punt)
     if path == "/api/move":  # Waivers' add/drop evaluator: any add and any drop, this week and the season
-        return lg.add_drop(body["add"], body.get("drop") or None, punt)
+        return lg.add_drop(body["add"], body.get("drop") or None, punt, day=body.get("day") or None)
     if path == "/api/schedule":  # schedule planner: your games per day, NBA teams' games ahead
         return lg.planner(punt)
     if path == "/api/news":  # My team's News panel
