@@ -96,6 +96,12 @@ def test_all():
     # injuries: an "INJ" tag lowers a player's expected weekly contribution
     lg.meta["player 199"] = {**lg.meta["player 199"], "status": "INJ"}
     assert lg._availability(base, cur)[1]["player 199"] < lg.avail["player 199"]
+    # availability (N9): one lost season isn't fragility (the baseline keeps his better season: 58, not 5), a repeat
+    # absentee (41 at best) stays below him, this season's games count, and a rookie starts from 85%
+    kess = model.baseline(*(model.keyed(pd.DataFrame([line("Kess", 100, gp=n)])) for n in (5, 58)))
+    a = model.availability(pd.Series([kess.GP["kess"], 41, np.nan]), pd.Series([3, 3, 3]), 3)
+    assert kess.GP["kess"] == 58 and a[0] > a[1] and a[2] == (3 + model.AVAIL_K * 0.85) / (3 + model.AVAIL_K)
+    assert model.availability(pd.Series([82]), pd.Series([20]), 20)[0] > model.availability(pd.Series([82]), pd.Series([10]), 20)[0]
 
     # finder honours its own rules
     for idea in lg.ideas("fair"):
@@ -548,6 +554,20 @@ Sharks has an open SF slot.""")
         d = s["trade"]["market"]["diff_pct"]
         assert abs(d) <= 15 or s["trade"]["their_net"] > 0 and abs(d) <= model.FAIR_FIT
     assert {p["name"] for p in ft["buy"][:3]} == {"Brick A", "Brick B", "Brick C"}  # far below their worth to FT%
+    # sell list, its mirror: your players the market prices 5+ above their worth to the build, biggest gap first, with
+    # why. Yahoo ranks Player 154 (about #46 to us) #1, Player 158 runs hot (Cur 1, Pre 30), and a free-throw
+    # specialist is only overpriced once FT% is punted
+    shooter = line("Shooter", 190, FTM=12, FTA=12.5)
+    me = rk(rk(lg.snap["teams"]["Me"], "Player 154", 1, 1), "Player 158", 30, 1) + [as_pl("Shooter")]
+    sl = model.League({**lg.snap, "teams": {**lg.snap["teams"], "Me": me}}, pd.concat([base, model.keyed(pd.DataFrame([shooter]))]),
+                      pd.concat([cur, model.keyed(pd.DataFrame([{**shooter, "GP": 5}]))]))
+    flat, ft = sl.sell(), sl.sell(["FT%"])
+    assert [p["name"] for p in flat[:2]] == ["Player 154", "Player 158"] and "Shooter" not in {p["name"] for p in flat}
+    assert all(p["team"] == "Me" and p["gap"] >= 5 for p in flat + ft) and [p["gap"] for p in flat] == sorted(
+        (p["gap"] for p in flat), reverse=True)
+    assert flat[0]["why"].startswith("Yahoo projects him #1, we have him #4") and flat[1]["why"].startswith(
+        "Hot start: Yahoo #1 this season, #30 projected")
+    assert next(p for p in ft if p["name"] == "Shooter")["why"].startswith("His value is in FT% (+")
     # balanced tries every build's deals and replays every chain while each trade lifts true odds, so a build that
     # never lowers them and makes no waiver moves can't beat it
     plan = lg.strategy(size=2)

@@ -62,14 +62,19 @@ OUT = {"O", "INJ", "IL", "IL+", "NA", "SUSP"}  # Yahoo statuses that mean "not p
 # with ESPN's); re-run it after changing how lines are projected.
 GAMES_WEEK = 3.4                                   # NBA games per team per week
 DISPERSION = {"FG3M": 1.75, "PTS": 3.0, "REB": 2.5, "AST": 3.0, "STL": 1.0, "BLK": 1.5, "TOV": 1.25}  # variance / mean
-SCHED_CV = 0.12                                    # week-to-week swing beyond box-score noise (schedule, rest, minutes,
-                                                   # and projection error); 0.17 while the backtest didn't know who's out
+SCHED_CV = 0.10                                    # week-to-week swing beyond box-score noise (schedule, rest, minutes,
+                                                   # and projection error); 0.12 before N9, 0.17 before it knew who's out
 PCT_NOISE = 1.5                                    # FG%/FT% variance vs coin-flip shooting at each player's rate (was 1.75)
 WEAK = 0.35                                        # a "weak spot" / punt hint: winning a category under 35% of
                                                    # weeks (about the bottom 10% of team-categories once odds are calibrated)
 FILL = 0.5                                         # share of a sat-out player's games your bench/streamers cover
                                                    # (not in backtest.py: its rosters never change, so nobody fills in)
 STATUS_AVAIL = {"GTD": 0.9, "DTD": 0.9, "O": 0.7, "SUSP": 0.8, "INJ": 0.6, "IL": 0.5, "IL+": 0.4, "NA": 0.0}
+# Availability (availability()): a game of his better past season counts AVAIL_PAST of one this season, pulled toward
+# AVAIL_T by AVAIL_K games. Fitted on 2024-25 and 2025-26 (python backtest.py availability: each Monday's guess vs the
+# share of games left that players who were playing then suited up for). Past games barely predict it (correlation
+# 0.04-0.18, this season's 0.26), and the worse past season adds nothing, so one lost season isn't fragility.
+AVAIL_PAST, AVAIL_K, AVAIL_T = 0.2, 50, 0.7
 # Teammates' injuries (lifts()), fitted on 2025-26 box scores (python backtest.py teammates): while a regular (REGULAR+
 # minutes) sits, SHARE of his minutes go to teammates playing 10+, split by their room under ROOM minutes x
 # e^(ROLE x role similarity) and played at their own rates; USAGE of the USAGE_STATS those minutes don't replace go to
@@ -302,8 +307,8 @@ def keyed(df):
 def baseline(last, older):
     """Pre-season per-game line from the last two seasons: GP-weighted, a game two seasons ago counting OLDER_W of one
     last season, pulled toward a fringe-rotation line by REGRESS games (so a 5-game season doesn't count as gospel, and
-    a player who missed all of last season isn't treated as a rookie). GP = the weighted games, for availability.
-    Backtested on 2025-26 (backtest.py): slightly better weekly odds than last season alone."""
+    a player who missed all of last season isn't treated as a rookie). GP = games in his better season, for
+    availability(). Backtested on 2025-26 (backtest.py): slightly better weekly odds than last season alone."""
     cols = ["MIN"] + RAW
     keys = last.index.union(older.index)
     fringe = last.nlargest(200, "MIN").tail(60)[cols].mean().to_numpy()
@@ -312,7 +317,15 @@ def baseline(last, older):
     line = (x1.mul(w1, axis=0) + x2.mul(w2, axis=0) + REGRESS * fringe).div(w1 + w2 + REGRESS, axis=0)
     return line.assign(PLAYER_NAME=last.PLAYER_NAME.combine_first(older.PLAYER_NAME).reindex(keys),
                        TEAM_ABBREVIATION=last.TEAM_ABBREVIATION.combine_first(older.TEAM_ABBREVIATION).reindex(keys),
-                       GP=w1 + w2)
+                       GP=pd.concat([last.GP, older.GP], axis=1).max(axis=1).reindex(keys))
+
+
+def availability(best, played, games):
+    """Share of the games left a player suits up for, before injury news: games in his better past season (`best`, of
+    82; NaN for a rookie), this season's `played` of the `games` his team has played so far (AVAIL_PAST and friends).
+    A rookie: this season pulled toward 85%."""
+    a = (AVAIL_PAST * best + played + AVAIL_K * AVAIL_T) / (AVAIL_PAST * 82 + games + AVAIL_K)
+    return a.where(best.notna(), (played + AVAIL_K * 0.85) / (games + AVAIL_K))
 
 
 def experts(yahoo, espn, base, keys=()):
@@ -620,14 +633,11 @@ class League:
         return self.lift.mul(share, axis=0).groupby(level="key").sum()
 
     def _availability(self, base, cur):
-        """Share of games a player suits up for: GP rate over last season + this one, shrunk halfway toward 85%
-        (one bad injury year shouldn't count fully), then cut by injury status. Returns (rate, rest-of-season, share of
-        games left after his return). A known return date replaces the status guess: rest of season he plays the share
-        of remaining games after it."""
-        played = base.GP.reindex(self.p.index).fillna(0) + cur.GP.reindex(self.p.index).fillna(0)
-        possible = base.GP.max() + cur.GP.max()
-        a = (played + 0.85 * possible / 2) / (possible * 1.5)
-        a[~self.p.index.isin(base.index)] = 0.85  # rookies: no history
+        """Share of games a player suits up for: availability() (his better past season and this one), then cut by
+        injury status. Returns (rate, rest-of-season, share of games left after his return). A known return date
+        replaces the status guess: rest of season he plays the share of remaining games after it."""
+        a = availability(base.GP.reindex(self.p.index), cur.GP.reindex(self.p.index).fillna(0),
+                         cur.GP.max() if len(cur) else 0)
         status = pd.Series({k: STATUS_AVAIL.get(m.get("status", ""), 1.0) for k, m in self.meta.items()}, dtype=float)
         share = pd.Series(1.0, index=a.index)
         for k, i in self.inj.items():
@@ -1350,7 +1360,8 @@ class League:
         punt only wins through what it alone unlocks (its waiver moves, or trades that only pay after a costly first
         one). pick: the build to play, [] (stay balanced) unless a punt beats balanced by more than VERDICT.
         stars: your top 5 players' weak spots (z <= -1) the build concedes. buy: the 5 players on other teams the
-        market prices furthest below their worth to the build (its effective() rank on the MARKET curve)."""
+        market prices furthest below their worth to the build (its effective() rank on the MARKET curve). sell: its
+        mirror on your team, each with why (sell())."""
         if self.mode == "points":
             raise KeyError("The punt planner needs a category league")
         me, now = self.me, round(100 * self.outlook(self.me)["win"], 1)
@@ -1398,10 +1409,41 @@ class League:
                         "stars": [{"name": self.p.at[k, "PLAYER_NAME"], "cat": c, "z": round(float(self.z.at[k, c]), 1)}
                                   for k in top5 for c in b if self.z.at[k, c] <= -1],
                         "buy": [{**self.player(k, b), "fit_rank": int(fit[k]), "gap": round(float(g), 1)}
-                                for k, g in gap.reindex(theirs).nlargest(5).items() if g > 0]})
+                                for k, g in gap.reindex(theirs).nlargest(5).items() if g > 0],
+                        "sell": self.sell(b)})
         out.sort(key=lambda x: -x["win"])  # stable: balanced wins ties
         edge = round(out[0]["win"] - next(x["win"] for x in out if not x["punt"]), 1)  # 62.1 - 61.9 isn't 0.2 in floats
         return {"win": now, "builds": out, "pick": out[0]["punt"] if edge > VERDICT * self.s else [], "edge": edge}
+
+    def sell(self, punt=(), n=5):
+        """The buy list's mirror: up to n players on your team the market prices furthest above their worth to the build
+        (its effective() rank on the MARKET curve), 5 points or more, each with why. The gap splits into parts on that
+        curve that add up to it, and why names the biggest: a hot start (market rank above Yahoo's projected one, Cur
+        ahead of Pre), Yahoo (the rest of the market rank against our per-game one; without a Yahoo rank, the model's
+        read of this season), games (our per-game rank against the one over the games he'll play) and the build (his
+        value is in what it punts)."""
+        V = lambda r: 100 * MARKET ** (r - 1)
+        fit, eff = self.effective(punt).rank(ascending=False), self.effective().rank(ascending=False)
+        per, mk = self.value().rank(ascending=False), self.market
+        rostered = self.avail.reindex([k for ks in self.rosters.values() for k in ks]).mean()
+        out = []
+        for k, g in (mk["value"] - V(fit)).reindex(self.rosters[self.me]).nlargest(n).items():
+            if g < 5:  # the player card's "about right" band
+                break
+            y, z, r = self.meta[k]["rank"] if mk.at[k, "yahoo"] else None, self.z.loc[k], mk.at[k, "rank"]
+            hot = V(r) - V(y["pre"]) if y and y["cur"] < y["pre"] else 0
+            cats = sorted((c for c in punt if round(z[c], 1) > 0), key=lambda c: -z[c])
+            parts = [(hot, y and f"hot start: Yahoo #{y['cur']} this season, #{y['pre']} projected"),
+                     (V(r) - V(per[k]) - hot, f"Yahoo projects him #{y['pre']}, we have him #{per[k]:.0f}" if y
+                      else "no Yahoo rank, so the market reads his season so far"),
+                     (V(per[k]) - V(eff[k]), f"plays {self.avail[k]:.0%} of games (rostered players: {rostered:.0%})"),
+                     (V(eff[k]) - V(fit[k]), "his value is in " + ", ".join(f"{c} ({z[c]:+.1f})" for c in cats) if cats
+                      else "the punt lifts other players past him")]
+            top = max(p for p, _ in parts)
+            why = "; ".join(t for p, t in sorted(parts, key=lambda x: -x[0]) if p >= top / 3)
+            out.append({**self.player(k, punt), "fit_rank": int(fit[k]), "gap": round(float(g), 1),
+                        "why": why[0].upper() + why[1:]})
+        return out
 
     def waivers(self, punt=(), limit=15):
         """Best free agents for your team + add/drop pairs. 9-cat: scored by the change in your weekly win %."""

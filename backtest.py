@@ -1,6 +1,7 @@
 """Backtest the 9-cat matchup model on a real NBA season, no Yahoo needed:  python backtest.py [2025-26]
 python backtest.py replay [2025-26]: rest-of-season error by expert-projection weight instead (fits PROJ_W).
 python backtest.py teammates [2025-26]: next week's error with and without teammates' injuries (fits SHARE, USAGE).
+python backtest.py availability: each Monday's games-played guess vs the real share, 2024-25 and 2025-26 (fits AVAIL_*).
 
 Drafts 20 simulated 12-team leagues from preseason projections. Each week the model predicts every matchup from what
 it would have known that Monday (last season blended with games so far, availability from games played, regulars who
@@ -18,7 +19,7 @@ import pandas as pd
 
 import model
 
-ARGS = [a for a in sys.argv[1:] if a not in ("replay", "teammates")]
+ARGS = [a for a in sys.argv[1:] if a not in ("replay", "teammates", "availability")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
@@ -63,10 +64,7 @@ def projections(g, base, pre, keys, w):
     cur = per_game(g[g.week < w])
     line = model.ros(pre, cur).reindex(keys)
     line[model.RAW] = line[model.RAW].fillna(0)
-    played = base.GP.reindex(keys).fillna(0) + cur.GP.reindex(keys).fillna(0)
-    possible = base.GP.max() + (cur.GP.max() if len(cur) else 0)
-    avail = (played + 0.85 * possible / 2) / (possible * 1.5)
-    avail[~pd.Index(keys).isin(base.index)] = 0.85
+    avail = model.availability(base.GP.reindex(keys), cur.GP.reindex(keys).fillna(0), cur.GP.max() if len(cur) else 0)
     return line, avail.to_numpy()
 
 
@@ -266,10 +264,71 @@ def teammates(grid=((0.37, 0.25),)):
                 f"{v} MIN {e.MIN:.4f} stats {e[model.RAW].mean():.4f} bias {b:+.2f}" for v, (e, b) in out.items()))
 
 
+def mondays_played(season):
+    """Each Monday from week 1 to 4 weeks from the end, the 200 best players on that Monday's line who played their
+    team's last game (one who sat it out is ESPN's to call): games in his better past season (best) and each one, games
+    so far (played, of `games`: the most anyone has played, as League does) and the share of his team's games left he
+    played (y)."""
+    prev, prev2 = (f"{int(season[:4]) - n}-{int(season[2:4]) - n + 1:02d}" for n in (1, 2))
+    g, last, older, T = logs(season), model.fetch(prev), model.fetch(prev2), "TEAM_ABBREVIATION"
+    base, first, rows = model.baseline(last, older), g.sort_values("GAME_DATE").groupby("key")[T].first(), []
+    for w in range(1, int(g.week.max()) - 3):
+        past, fut = g[g.week < w], g[g.week >= w]
+        cur = per_game(past)
+        team = past.sort_values("GAME_DATE").groupby("key")[T].last().combine_first(first)
+        pool = model.zscores(model.ros(base, cur).dropna(subset=["MIN"]), TEAMS * ROSTER).sum(axis=1).nlargest(200)
+        end, seen = past.groupby(T).GAME_DATE.max(), set(zip(past.key, past.GAME_DATE))
+        on = [k for k in pool.index if team.get(k) in end and (k, end[team[k]]) in seen]
+        left = team[on].map(fut.groupby(T).GAME_ID.nunique())
+        rows.append(pd.DataFrame({"season": season, "week": w, "best": base.GP.reindex(on), "last": last.GP.reindex(on),
+                                  "older": older.GP.reindex(on), "played": cur.GP.reindex(on), "games": cur.GP.max(),
+                                  "left": left, "y": (fut.groupby("key").GAME_ID.count().reindex(on).fillna(0) / left)
+                                  .clip(upper=1)}))
+    return pd.concat(rows)
+
+
+def availability(seasons=("2024-25", "2025-26")):
+    """Each Monday's availability guess (model.availability() over a grid of its knobs, and the rule before N9) vs the
+    share of games left that players who were playing then suited up for (mondays_played()): squared error weighted by
+    games left, and bias (guess - actual), pooled, per season, on the first 6 weeks and for players who lost one of the
+    two past seasons (under 30 games, 60+ in the other), repeat absentees (under 60 in both), sophomores and rookies.
+    Fitted AVAIL_PAST, AVAIL_K and AVAIL_T on 2024-25 and 2025-26 (Oct 28)."""
+    d = pd.concat(map(mondays_played, seasons), ignore_index=True)
+    lo, hi = d[["last", "older"]].fillna(0).min(axis=1), d[["last", "older"]].fillna(0).max(axis=1)
+    subs = {"all": d.week > 0, **{s: d.season == s for s in seasons}, "weeks 1-6": d.week <= 6,
+            "lost one": (lo < 30) & (hi >= 60) & d.older.notna(), "repeat": (hi < 60) & d.older.notna(),
+            "sophomore": d.older.isna() & d["last"].notna(), "rookie": d.best.isna()}
+    old = (d["last"].fillna(0) + 0.5 * d.older.fillna(0) + d.played + 0.85 * (123 + d.games) / 2) / (1.5 * (123 + d.games))
+    old = old.where(d.best.notna(), 0.85)  # before N9: both seasons (the older at half) and this one, 1/3 toward 85%
+
+    def err(p, sub):
+        e, w = (p - d.y)[sub], d.left[sub]
+        return float((w * e ** 2).sum() / w.sum()), float((w * e).sum() / w.sum())
+
+    def guess(knobs):
+        model.AVAIL_PAST, model.AVAIL_K, model.AVAIL_T = knobs
+        return model.availability(d.best, d.played, d.games)
+
+    chosen = model.AVAIL_PAST, model.AVAIL_K, model.AVAIL_T
+    grid = list(itertools.product((0, 0.1, 0.2, 0.33, 0.5, 1), (20, 30, 50, 70), (0.6, 0.65, 0.7, 0.75, 0.8, 0.85)))
+    p = {x: guess(x) for x in grid}
+    print(f"\n== availability: {len(d)} player-Mondays, actual {d.y.mean():.3f} ==")
+    print(" " * 26 + "".join(f"{s} ({sub.sum()})".rjust(19) for s, sub in subs.items()))
+    for name, x in [("before N9", old), (f"chosen {chosen}", guess(chosen))] + [
+            (f"{k}", p[k]) for k in sorted(grid, key=lambda k: err(p[k], subs["all"]))[:5]]:
+        print(f"{name:26}" + "".join(f"{e:.4f} {b:+.3f}".rjust(19) for e, b in (err(x, s) for s in subs.values())))
+    for a, b in itertools.permutations(seasons):
+        k = min(grid, key=lambda k: err(p[k], subs[a])[0])
+        print(f"best on {a} {k}: {b} {err(p[k], subs[b])[0]:.4f} (before N9 {err(old, subs[b])[0]:.4f})")
+    guess(chosen)
+
+
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     if "replay" in sys.argv:
         replay()
+    elif "availability" in sys.argv:
+        availability()
     elif "teammates" in sys.argv:
         teammates([(s, u) for s in (0.25, 0.37, 0.5) for u in (0, 0.25, 0.5)])
     else:
