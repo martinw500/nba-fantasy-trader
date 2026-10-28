@@ -115,6 +115,8 @@ def api(path, q, body):
         return lg.card(body["name"], punt)
     if path == "/api/compare":  # 2 to 4 players side by side
         return lg.compare(body.get("players", []), punt)
+    if path == "/api/move":  # Waivers' add/drop evaluator: any add and any drop, this week and the season
+        return lg.add_drop(body["add"], body.get("drop") or None, punt)
     if path == "/api/schedule":  # schedule planner: your games per day, NBA teams' games ahead
         return lg.planner(punt)
     if path == "/api/news":  # My team's News panel
@@ -200,7 +202,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/compare", "/api/schedule", "/api/news",
+API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/compare", "/api/move", "/api/schedule", "/api/news",
        "/api/players", "/api/me", "/api/week", "/api/refresh", "/api/chat", "/api/chats"}
 
 if __name__ == "__main__":

@@ -142,6 +142,22 @@ class GM:
                 return f"Error: {e}"
 
         @beta_tool
+        def evaluate_move(add: str, drop: str | None = None) -> str:
+            """Evaluate one add/drop: the change in the user's season win % and this week's vs the saved opponent
+            ("week", null without one), per-category odds before -> after, the added player's games this week (a
+            waiver claim counts from the day it clears). Scored on today's roster, like the waivers list, not on top
+            of other free moves. An injured add parks in a free IL slot ("parks"); "auto" drops are made for room.
+
+            Args:
+                add: a free agent's name
+                drop: one of the user's players; omit for an open spot, or the player they'd miss least
+            """
+            try:
+                return dump(lg.add_drop(add, drop, gm.punt))
+            except KeyError as e:
+                return f"Error: {e}"
+
+        @beta_tool
         def schedule_planner() -> str:
             """The user's NBA games per day for the rest of this matchup week and the next three: each day's starters
             (best 10 with a game), who sits on overflow days, and open slots (room to stream). Plus every NBA team's
@@ -160,7 +176,7 @@ class GM:
                 return f"Error: unknown team. Teams: {list(lg.rosters)}"
             return dump(lg.team_roster(team, gm.punt))
 
-        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, this_week, compare_players, schedule_planner, roster]
+        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, this_week, compare_players, evaluate_move, schedule_planner, roster]
 
     def ask(self, text, punt=()):
         self.punt = list(punt)
