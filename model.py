@@ -81,6 +81,10 @@ USAGE_STATS = ["FGM", "FGA", "FTM", "FTA", "PTS", "AST", "TOV"]  # rebounds, ste
 # Steep, so a star is worth more than the sum of spare parts: rank 1 = 100, 25 = 48, 50 = 22, 100 = 5, 150 = 1.
 # ponytail: starting guess; tune with the trade log (N6).
 MARKET = 0.97
+# Games until Yahoo's Cur rank counts half in the market (League.market). Market only: HYPE's 10, averaging ranks, let 4
+# cold games sink Jalen Brunson (Pre 27, Cur 217) to #81 behind a hot Paul George (Pre 75, Cur 23) at #50 (Martin, Oct 28:
+# managers don't trade like that). ponytail: a guess like MARKET; tune with the trade log (N6)
+CHASE = 20
 EVEN = 5  # market gap (%) that still reads as "even"
 # Trade search difficulty: (min gain for you, min gain for them, both win %; market gap range, % you gain on market).
 # easy: they win on market and you still gain. fair: market within 15% (or FAIR_FIT, below). finesse: market even or
@@ -678,13 +682,14 @@ class League:
     @functools.cached_property
     def market(self):
         """Every player's trade-market rank and value (MARKET curve). Rank: Yahoo's preseason rank blended with its
-        season-to-date one, weighted GP / (GP + HYPE) as in perceived value (Cur is noise early, and injured players
-        sink to 600+), then re-ranked. Players Yahoo didn't rank take the model's perceived rank (yahoo False)."""
+        season-to-date one, weighted GP / (GP + CHASE) (Cur is noise early, and injured players sink to 600+), as a
+        geometric mean so a cold start moves a player as much as an equally hot one (Cur runs to 700 but can't beat 1),
+        then re-ranked. Players Yahoo didn't rank take the model's perceived rank (yahoo False)."""
         rank = self.effective(frame="cur").rank(ascending=False)
         yahoo = [k for k, m in self.meta.items() if m.get("rank")]
         for k in yahoo:
-            w = self.p.at[k, "GP_CUR"] / (self.p.at[k, "GP_CUR"] + HYPE)
-            rank[k] = (1 - w) * self.meta[k]["rank"]["pre"] + w * self.meta[k]["rank"]["cur"]
+            w = self.p.at[k, "GP_CUR"] / (self.p.at[k, "GP_CUR"] + CHASE)
+            rank[k] = self.meta[k]["rank"]["pre"] ** (1 - w) * max(self.meta[k]["rank"]["cur"], 1) ** w
         rank = rank.rank(method="first")
         return pd.DataFrame({"rank": rank.astype(int), "value": 100 * MARKET ** (rank - 1),
                              "yahoo": rank.index.isin(yahoo)})

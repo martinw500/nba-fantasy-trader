@@ -118,14 +118,16 @@ def test_all():
     assert model.priced(100, 65)["verdict"] == "you overpay 35%" and model.priced(65, 100)["diff_pct"] == 35
     assert model.priced(50, 52)["verdict"] == "even" and model.priced(0, 0)["diff_pct"] == 0
 
-    # market: Yahoo's preseason rank blended with its current one by GP / (GP + HYPE) (5 games: a third), re-ranked;
-    # players Yahoo didn't rank take the model's. Value = 100 x MARKET^(rank - 1)
+    # market: Yahoo's preseason rank blended with its current one by GP / (GP + CHASE) (5 games: a fifth) as a geometric
+    # mean, re-ranked; players Yahoo didn't rank take the model's. Value = 100 x MARKET^(rank - 1). Oct 28's real case:
+    # a cold-starting Brunson (Pre 27, Cur 217) stays ahead of a hot Paul George (Pre 75, Cur 23): 41 vs 59. Averaging
+    # ranks at HYPE's weight put him behind (90 vs 58)
     rk = lambda ps, name, pre, now: [{**p, "rank": {"pre": pre, "cur": now}} if p["name"] == name else p for p in ps]
-    mk = model.League({**lg.snap, "teams": {"Me": rk(lg.snap["teams"]["Me"], "Player 170", 1, 400),
-                                            "Them": rk(lg.snap["teams"]["Them"], "Player 171", 60, 60)}}, base, cur)
+    mk = model.League({**lg.snap, "teams": {"Me": rk(lg.snap["teams"]["Me"], "Player 170", 27, 217),
+                                            "Them": rk(lg.snap["teams"]["Them"], "Player 171", 75, 23)}}, base, cur)
     m = mk.market
     assert m.at["player 170", "yahoo"] and not m.at["player 174", "yahoo"] and mk.player("player 174")["mkt_model"]
-    assert m.at["player 171", "rank"] < m.at["player 170", "rank"]  # 2/3 x 1 + 1/3 x 400 = 134, behind 60
+    assert m.at["player 170", "rank"] < m.at["player 171", "rank"]
     assert sorted(m["rank"]) == list(range(1, len(m) + 1)) and np.allclose(m.value, 100 * model.MARKET ** (m["rank"] - 1))
     # drop cost: the side taking more players gives up its drops' market value; the other's open spot is worth the
     # waiver level (spot), whoever fills it: a free agent is free
