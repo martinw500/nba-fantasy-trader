@@ -306,6 +306,8 @@ def test_all():
         ("season", 4, 25), ("last14", 3, 20), ("last7", 2, 25)]
     sl.logs = sl.logs[sl.logs.GAME_DATE > "2026-10-16"]  # the same 2 games in every window: shown once
     assert set(sl.card("Twin A")["lines"]) == {"ros", "season"}
+    cl = sl.compare(["Twin A", "Twin B"])["players"]  # ... but compare keeps every window with games, to line them up
+    assert set(cl[0]["lines"]) == {"ros", "season", "last30", "last14", "last7"} and set(cl[1]["lines"]) == {"ros"}
     sl.logs = None
 
     # news (N8): My team's panel asks news() about your players and their NBA teammates (Twin D and E are free agents

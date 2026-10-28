@@ -799,10 +799,10 @@ class League:
             out.append((s.isoformat(), (s + timedelta(6)).isoformat()))
         return out
 
-    def card(self, name, punt=(), news=True):
+    def card(self, name, punt=(), news=True, every=False):
         """One player in full (the app's player card): player() plus per-game lines (rest of season; the Yahoo or ESPN
         projection blended into it; this season, the last 30, 14 and 7 days from the box scores, or this season's stats
-        without them; a window is left out when it holds the same games as the one before), his NBA games left this
+        without them; a window is left out when it holds no games, or the same games as the one before unless `every`), his NBA games left this
         matchup week and in the next 3, and his rank on your build (effective(), valued on the MARKET curve like
         strategy()'s buy list) to set against his market rank."""
         k, cols = self.find(name), ["MIN"] + RAW
@@ -819,7 +819,7 @@ class League:
             g, n = self.logs[self.logs.key == k], 0
             for w, days in (("season", None), ("last30", 30), ("last14", 14), ("last7", 7)):
                 x = g if days is None else g[g.GAME_DATE >= pd.Timestamp(self.today) - pd.Timedelta(days=days)]
-                if len(x) and len(x) != n:
+                if len(x) and (len(x) != n or every):
                     lines[w], n = (x[cols].mean(), len(x)), len(x)
         pct = lambda s, m, a: round(100 * float(s[m] / s[a]), 1) if s[a] else None
         fit = self.effective(punt).rank(ascending=False, method="first")[k]
@@ -834,7 +834,8 @@ class League:
                 **({"news": self.news([k]).get(k, [])[:3]} if self.news and news else {})}
 
     def compare(self, names, punt=()):
-        """2 to 4 players side by side (Q3): each one's card() without news and, in 9-cat, `slot`: your season win %
+        """2 to 4 players side by side (Q3): each one's card() without news, every box-score window that holds games
+        (so the same window lines up across players), and, in 9-cat, `slot`: your season win %
         with him in one of your roster spots. The compared players you own all leave, he comes in, and _after() keeps
         your number of active players as a trade would (an injured one parks in a free IL slot, a spot too many drops
         whoever you'd miss least, which can be him: `cut`; a spot short takes the best free agent outside the
@@ -843,7 +844,7 @@ class League:
         keys = list(dict.fromkeys(self.find(n) for n in names))
         if not 2 <= len(keys) <= 4:
             raise KeyError("Pick 2 to 4 different players to compare")
-        cards = [self.card(self.p.at[k, "PLAYER_NAME"], punt, news=False) for k in keys]
+        cards = [self.card(self.p.at[k, "PLAYER_NAME"], punt, news=False, every=True) for k in keys]
         out = {"players": cards}
         if self.mode != "points":
             mine, w0 = [k for k in keys if k in self.rosters[self.me]], self.outlook(self.me, punt=punt)["win"]
