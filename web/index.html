@@ -87,6 +87,7 @@ svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-widt
 select.me { field-sizing: content; border: 0; background: none; padding: 0 2px; font-size: 12px; color: var(--accent-ink); font-weight: 600; cursor: pointer; }
 .punts { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-left: auto; }
 .punts > span { color: var(--muted); font-size: 12px; margin-right: 4px; }
+.top-find { width: 220px; }
 .chip { border: 1px solid var(--line-strong); background: var(--panel); border-radius: 999px; padding: 2px 9px; font-size: 12px; font-weight: 550; cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
 .chip:hover { border-color: var(--faint); }
 .chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); text-decoration: line-through; text-decoration-thickness: 1.5px; }
@@ -170,6 +171,7 @@ tr.card-row > td { padding: 0; white-space: normal; }
 .pcard .tw { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
 .pcard th { position: static; }
 .pcard .sep { border-left: 1px solid var(--line); padding-left: 24px; }
+.card-panel .pcard { position: static; max-width: none; }  /* the top bar's search: a name on no table on screen */
 .news { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-width: 72ch; }
 h3.small { margin: 0; font-weight: 650; }
 details > summary { cursor: pointer; margin-top: 10px; color: var(--muted); }
@@ -280,6 +282,7 @@ tr.cmp-group td, tr.cmp-group:hover td { background: var(--panel-2); color: var(
   .nav span { white-space: nowrap; }
   .top, .content { padding-left: 16px; padding-right: 16px; }
   .punts { margin-left: 0; width: 100%; }
+  .top-find { flex: 1 1 140px; width: auto; }
   .grid2[style] { grid-template-columns: 1fr !important; }
   .chat { height: calc(100vh - 120px); }
   .hist { height: auto; min-height: 0; max-height: 210px; }
@@ -324,6 +327,8 @@ tr.cmp-group td, tr.cmp-group:hover td { background: var(--panel-2); color: var(
   <div class="main">
     <header class="top">
       <div class="league" id="league"><b>Loading…</b><span>&nbsp;</span></div>
+      <input type="search" class="input top-find" id="top-player" list="top-players" placeholder="Find a player" aria-label="Find any player and open his card" title="Any rostered player or free agent: opens his player card. Press / to jump here" autocomplete="off">
+      <datalist id="top-players"></datalist>
       <div class="punts" id="punts"></div>
       <button class="btn" id="refresh" title="Re-pull rosters and free agents"><svg class="i"><use href="#i-refresh"/></svg>Refresh</button>
     </header>
@@ -374,8 +379,8 @@ function toast(msg) {
   const t = document.createElement("div"); t.className = "toast"; t.textContent = msg;
   document.body.append(t); setTimeout(() => t.remove(), 3200);
 }
-function reveal(sel) {  // scroll to a panel, clear of the sticky top bar (taller on phones)
-  const el = $(sel);
+function reveal(sel) {  // scroll to a panel (a selector or the element), clear of the sticky top bar (taller on phones)
+  const el = typeof sel === "string" ? $(sel) : sel;
   if (el) window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - $(".top").offsetHeight - 12, behavior: "smooth" });
 }
 
@@ -500,6 +505,21 @@ function playerCard() {
       <div><dt title="His rank on your build (rest-of-season value over the games he'll play), valued on the same curve as the market">Your build</dt><dd>${Math.round(d.fit)} <span class="muted small">#${d.fit_rank}</span></dd></div></dl>
     <div class="small muted">${read}</div>
     ${d.news?.length ? `<div><h3 class="small muted">Latest news <span title="ESPN's fantasy news. It never changes a number by itself">(ESPN)</span></h3><ul class="news">${d.news.map(x => newsItem(x)).join("")}</ul></div>` : ""}</div>`;
+}
+// the top bar's search: under his name in a player table on screen, else in a panel at the top of the view (t -1)
+function showCard(name) {
+  const row = [...document.querySelectorAll("#view .rowbtn[data-act=card]")].find(b => b.dataset.name === name && b.offsetParent);
+  const t = row ? +row.dataset.t : -1;
+  if (S.card.name !== name || S.card.t !== t) openCard(name, t);
+  if (t < 0) window.scrollTo({ top: 0, behavior: "smooth" }); else reveal($("#view .card-row")?.previousElementSibling);
+}
+async function pickGlobal(q, exact) {
+  if (!S.state) return;
+  if (!S.pool) loadPool();
+  await S.poolLoad;
+  const p = matchPlayer(S.pool, q, exact); if (!p) return;
+  $("#top-player").value = "";
+  showCard(p.name);
 }
 async function openCard(name, t) {
   if (S.card.name === name && S.card.t === t) { S.card = {}; return render(); }
@@ -807,7 +827,7 @@ function viewTrades() {
   const theirs = T.roster && T.roster.team === T.team ? T.roster.roster.map(p => item(p, T.get)).join("") : `<div class="skel"></div><div class="skel"></div>`;
   const ready = T.give.size + T.get.size > 0;
   return `<div class="head"><div><h1>Trades</h1><p class="sub">Check players to build a trade, then evaluate it or find deals built around them.</p></div>
-      <input type="search" class="input" id="find-player" list="all-players" placeholder="Find any player" aria-label="Find any player" autocomplete="off" style="width:240px;max-width:100%">
+      <input type="search" class="input" id="find-player" list="all-players" placeholder="Add any player to the trade" aria-label="Add any rostered player to the trade" autocomplete="off" style="width:240px;max-width:100%">
       <datalist id="all-players">${S.players.map(p => `<option value="${esc(p.name)}">${esc(p.team)}</option>`).join("")}</datalist></div>
     <div class="grid2">
       <div class="panel picker"><div class="panel-h"><div><h2>You give</h2><p>${T.give.size ? [...T.give].map(esc).join(", ") : "Pick players from your roster"}</p></div></div>
@@ -1044,10 +1064,15 @@ async function loadPlayers() {
   try { S.players = await api("/api/players"); if (S.view === "trades") render(); } catch (e) { toast(e.message); }
 }
 const fold = s => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
-function pickPlayer(q, exact) {
-  const f = fold(q), hits = f ? S.players.filter(p => fold(p.name).includes(f)) : [];
+// the player searches (Trades, Compare, the top bar): an exact name (a datalist pick), else, on Enter, the only name holding what's typed
+function matchPlayer(list, q, exact, none = "No player matches") {
+  const f = fold(q), hits = f ? list.filter(p => fold(p.name).includes(f)) : [];
   const p = hits.find(p => fold(p.name) === f) || (!exact && hits.length === 1 && hits[0]);
-  if (!p) return exact || !f || toast(hits.length ? `${hits.length} players match “${q}”. Keep typing.` : `No rostered player matches “${q}”.`);
+  if (!p && !exact && f) toast(hits.length ? `${hits.length} players match “${q}”. Keep typing.` : `${none} “${q}”.`);
+  return p;
+}
+function pickPlayer(q, exact) {
+  const p = matchPlayer(S.players, q, exact, "No rostered player matches"); if (!p) return;
   const T = S.trade;
   if (p.team === S.state.me) T.give.add(p.name);
   else { if (T.team !== p.team) { T.team = p.team; T.get.clear(); } T.get.add(p.name); }
@@ -1145,9 +1170,14 @@ function compareTable(d) {
       ${P.some(act) ? `<tr><td></td>${P.map(p => `<td>${act(p)}</td>`).join("")}</tr>` : ""}
     </tbody></table></div></div>`;
 }
-async function loadPool() {
-  S.pool = [];
-  try { S.pool = await api("/api/players", { fa: true }); if (S.view === "compare") render(); } catch (e) { toast(e.message); }
+function loadPool() {  // every rostered player and free agent: Compare's search and the top bar's
+  const mine = S.pool = [];
+  return S.poolLoad = api("/api/players", { fa: true }).then(pool => {
+    if (S.pool !== mine) return;  // team switch or Refresh since: a newer list is on its way
+    S.pool = pool;
+    $("#top-players").innerHTML = pool.map(p => `<option value="${esc(p.name)}">${esc(p.team === S.state?.me ? "Your team" : p.team === "FA" ? "Free agent" : p.team)}</option>`).join("");
+    if (S.view === "compare") render();
+  }).catch(e => toast(e.message));
 }
 async function loadCompare() {
   const C = S.compare; C.busy = true;
@@ -1173,9 +1203,7 @@ function addCompare(name, go) {
   render();
 }
 function pickCompare(q, exact) {
-  const f = fold(q), hits = f ? (S.pool || []).filter(p => fold(p.name).includes(f)) : [];
-  const p = hits.find(p => fold(p.name) === f) || (!exact && hits.length === 1 && hits[0]);
-  if (!p) return exact || !f || toast(hits.length ? `${hits.length} players match “${q}”. Keep typing.` : `No player matches “${q}”.`);
+  const p = matchPlayer(S.pool || [], q, exact); if (!p) return;
   addCompare(p.name, false);
   $("#cmp-player")?.focus();
 }
@@ -1263,7 +1291,8 @@ function render() {
   const st = S.state, age = st.pulled ? (Date.now() - new Date(st.pulled)) / 864e5 : 0;
   const stale = st.rolled || age > 1 ? `<div class="notice">Your snapshot ${st.rolled ? "is from last week's matchup" : `is ${Math.floor(age)} day${age >= 2 ? "s" : ""} old`} (pulled ${when(st.pulled)}), so the score and recent moves aren't in. Drop a new snapshot in the project folder and press Refresh.</div>` : "";
   TBL = 0;
-  v.innerHTML = demo + stale + ({ team: viewTeam, week: viewWeek, schedule: viewSchedule, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, compare: viewCompare, gm: viewGM }[S.view] || viewTeam)();
+  const card = S.card.t === -1 ? `<div class="panel card-panel" role="region" aria-label="Player card">${playerCard()}</div>` : "";
+  v.innerHTML = card + demo + stale + ({ team: viewTeam, week: viewWeek, schedule: viewSchedule, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, compare: viewCompare, gm: viewGM }[S.view] || viewTeam)();
   const m = $("#msgs"); if (m) m.scrollTop = m.scrollHeight;
 }
 function setView(v) { S.view = v; S.card = {}; store.set("view", v); history.replaceState(null, "", "#" + v); render(); window.scrollTo(0, 0); }
@@ -1348,6 +1377,7 @@ document.addEventListener("change", async e => {
   if (t.id === "trade-team") { S.trade.team = t.value; S.trade.get.clear(); S.trade.result = null; return render(); }
   if (t.id === "find-player") return pickPlayer(t.value);
   if (t.id === "cmp-player") return pickCompare(t.value);
+  if (t.id === "top-player") return pickGlobal(t.value);
   if (t.id === "week-opp") { S.week = {}; loadWeek(t.value); return render(); }
   if (t.id.startsWith("gm-")) { S.gmSet[t.id.slice(3)] = t.type === "checkbox" ? t.checked : t.value; store.set("gmSet", S.gmSet); return render(); }
   if (t.id === "me-team") {  // switch which team is yours: everything team-specific starts over
@@ -1373,12 +1403,19 @@ document.addEventListener("change", async e => {
     F.list = null; S.improve = { kind: null, list: null }; return render();
   }
 });
-document.addEventListener("input", e => { if (e.target.id === "find-player") pickPlayer(e.target.value, true); if (e.target.id === "cmp-player") pickCompare(e.target.value, true); });
+document.addEventListener("input", e => {
+  if (e.target.id === "find-player") pickPlayer(e.target.value, true);
+  if (e.target.id === "cmp-player") pickCompare(e.target.value, true);
+  // the top bar opens a card as soon as a name is picked or pasted, not while one is typed ("Player 1" on the way to "Player 15")
+  if (e.target.id === "top-player" && !/^(insertText|insertCompositionText|delete)/.test(e.inputType || "")) pickGlobal(e.target.value, true);
+});
+document.addEventListener("focusin", e => { if (e.target.id === "top-player" && !S.pool && S.state) loadPool(); });
 document.addEventListener("submit", e => {
   if (e.target.id !== "chat-form") return;
   e.preventDefault(); const i = $("#chat-in"); const text = i.value; i.value = ""; ask(text);
 });
 document.addEventListener("keydown", e => {
+  if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest("input, textarea, select, [contenteditable]")) { e.preventDefault(); $("#top-player").focus(); }
   if (e.target.id === "chat-in" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chat-form").requestSubmit(); }
 });
 $("#refresh").addEventListener("click", async e => {
