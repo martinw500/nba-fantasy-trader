@@ -45,6 +45,8 @@ def api(path, q, body):
                          body.get("cats", []), body.get("vs"), bool(body.get("healthy")), body.get("shape"), punt,
                          limit=30, their_free=bool(body.get("their_free")),
                          max_overpay=None if body.get("max_overpay") is None else float(body["max_overpay"]))
+    if path == "/api/strategy":  # punt planner, ~15s on the real league
+        return lg.strategy()
     if path == "/api/players":
         return sorted(({"name": n, "team": t} for t, ks in lg.rosters.items() for n in lg.names(ks)), key=lambda p: p["name"])
     if path == "/api/me":  # which team is yours
@@ -120,8 +122,8 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/players", "/api/me", "/api/week",
-       "/api/refresh", "/api/chat"}
+API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/players", "/api/me",
+       "/api/week", "/api/refresh", "/api/chat"}
 
 if __name__ == "__main__":
     # ponytail: localhost-only, single user; no auth because it never listens on the network

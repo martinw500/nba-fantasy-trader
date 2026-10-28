@@ -98,6 +98,10 @@ Then see [ROADMAP.md](ROADMAP.md) for what's next.
 ### "Should I punt something?"
 **My team** shows your odds in each category. Categories you win under 35% of weeks get a **Punt …** suggestion. You can also toggle any category with the **Punt** chips in the top bar. A punted column greys out in every table, and trades, waivers and ideas re-optimize with that category treated as a loss.
 
+Toggling a chip always lowers today's number, because it concedes a category without changing your roster. A punt only pays off through the moves it unlocks. The **Strategy** panel on My team tests that: **Compare builds** tries staying balanced, every single punt and six common pairs (FT%+TO, FG%+TO, FG%+FT%, AST+TO, 3PM+FT%, FG%+3PM). Each build gets its own waiver adds and the fair trade, searched with that punt, that helps most. Then all of them are scored on your real odds, with nothing conceded. The verdict says "Stay balanced" unless a punt's moves beat staying balanced by more than a toss-up. Staying balanced also gets credit for every trade the other builds found, so a punt only wins through moves it alone unlocks. It takes about 15 seconds (one trade search per build). **Load** opens a build's trade in Trades. CLI: `python model.py strategy [--size 2]`.
+
+Under the category odds, **Cheapest to move** lists the three categories where one more z (a player's category cell going up by 1.0) raises your odds most. That's where a trade or stream pays most. Odds near 50% move most, but noisy categories move less than their odds suggest.
+
 Classic pairings: big men punt FT%, high-usage guards punt TO, wings punt AST.
 
 ### "Is this trade good?"

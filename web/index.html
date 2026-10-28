@@ -295,6 +295,7 @@ const S = {
   state: null, error: null,
   league: { team: null, data: null },
   week: {},  // { data, loading }; replaced on punt / team / refresh, so late answers land in the old object
+  strategy: {},  // { data, busy }: the punt planner, ignores your punt, so only team / refresh replace it
   trade: { give: new Set(), get: new Set(), team: null, roster: null, result: null, busy: false },
   locks: new Set(store.get("locks", [])),
   find: { tier: "fair", goal: "win", cats: [], vs: "", size: 3, healthy: false, theirs: store.get("theirs", false), shape: "", overpay: "", team: "", list: null, busy: false, ran: "", sort: null },
@@ -391,13 +392,14 @@ function viewTeam() {
   const st = S.state, prof = st.profile, n = st.teams.length;
   let strip = "", vs = "";
   if (prof) {
-    const ranks = prof.ranks[st.me];
+    const ranks = prof.ranks[st.me], cheap = prof.cheap.filter(x => !punted(x.cat)).slice(0, 3);
     strip = `<div class="panel"><div class="panel-h"><div><h2>Category odds</h2><p>Chance you win each category in a typical week, averaged over every opponent. Rank is where those odds place you in the league.</p></div>
       ${prof.punt_suggestions.length && !prof.punt_suggestions.every(punted) ? `<button class="btn" data-act="apply-punt" title="You win these under 35% of weeks">Punt ${prof.punt_suggestions.map(lab).join(" + ")}</button>` : ""}</div>
       <div class="cats" style="--n:${st.cats.length}">${st.cats.map(c => `<div class="cat ${punted(c) ? "punted" : ""}"><span class="lbl">${lab(c)}</span>
           <span class="rk">${pct(prof.odds[c])}</span>
           <span class="tot muted">rank ${ranks[c]} / ${n}</span>
-          <div class="bar"><i style="width:${pct(prof.odds[c])};background:${oddsColor(prof.odds[c])}"></i></div></div>`).join("")}</div></div>`;
+          <div class="bar"><i style="width:${pct(prof.odds[c])};background:${oddsColor(prof.odds[c])}"></i></div></div>`).join("")}</div>
+      ${cheap.length ? `<div class="panel-b small muted" style="border-top:1px solid var(--line)">Cheapest to move: ${and(cheap.map(x => `<b>${lab(x.cat)}</b> ${delta(x.per_z, "win%")}`))}. That's your odds in the category from one more z (a player's cell going up by 1.0), so a trade or stream pays most there.</div>` : ""}</div>`;
     const rows = Object.entries(prof.vs).sort((a, b) => b[1].pct - a[1].pct);
     const fav = rows.filter(([, r]) => r.pct > 0.5).length;
     vs = `<div class="panel"><div class="panel-h"><div><h2>Head-to-head vs every team</h2>
@@ -416,7 +418,49 @@ function viewTeam() {
   return `<div class="head"><div><h1>${esc(st.me)}</h1><p class="sub">${outlook}${st.roster.length} players${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}</p></div></div>
     ${strip}${todo}
     <div class="panel"><div class="panel-h"><div><h2>Roster</h2><p>Category cells are z-scores vs a typical rostered player. Green helps you, red hurts.</p></div></div>${playerTable(st.roster)}</div>
-    ${vs}`;
+    ${prof ? strategyPanel() : ""}${vs}`;
+}
+
+// ---------- punt planner: every build's best moves on real odds, on demand (a trade search per build, ~15s) ----------
+const buildName = b => b.length ? b.map(lab).join(" + ") : "No punt";
+const deal = x => `${x.give.map(esc).join(" + ")} for ${x.get.map(esc).join(" + ")}`;
+const planText = b => and([...(b.free.length ? [`adding ${and(b.free.map(m => esc(m.add)))} off waivers`] : []),
+  ...(b.trade ? [`trading ${deal(b.trade)}`] : [])]) || "no moves";
+function strategyPanel() {
+  const P = S.strategy, d = P.data;
+  let body;
+  if (P.busy) body = `<div class="empty"><b>Comparing builds…</b>Each one runs a full trade search, so this takes about 15 seconds.</div>${SKEL}`;
+  else if (!d) body = `<div class="empty"><b>Should you punt?</b>Punting a category only lowers today's odds. It pays off through the moves it unlocks: compare builds to see if any punt's moves beat staying balanced.</div>`;
+  else {
+    const best = d.builds[0], flat = d.builds.find(b => !b.punt.length), p1 = v => v.toFixed(1) + "%";
+    const [cls, pill, why] = d.pick.length
+      ? ["accept", `Punt ${buildName(d.pick)}`, `It unlocks ${planText(best)}, taking your ${WIN().of} from ${p1(d.win)} to ${p1(best.win)}: ${delta(d.edge, "win%")} more than staying balanced.`]
+      : ["toss-up", "Stay balanced", `${best.punt.length ? `The best punt, ${buildName(best.punt)}, is only ${delta(d.edge, "win%")} ahead, too close to call.` : "No punt beats it once its moves are made."}
+        Plan: ${planText(flat)}, ${p1(d.win)} → ${p1(flat.win)}.`];
+    const th = (h, tip, cls = "n") => `<th class="${cls}" title="${esc(tip)}">${h}</th>`;
+    const rows = d.builds.map((b, i) => `<tr><td><span class="pname">${buildName(b.punt)}</span>${b.punt.length === S.punt.length && b.punt.every(punted) ? `<span class="tag">current</span>` : ""}</td>
+      <td class="names"${b.free.length ? ` title="${freeList(b.free)}"` : ""}>${b.free.length ? b.free.map(m => esc(m.add)).join(", ") : `<span class="muted">None</span>`}</td>
+      <td class="names">${b.trade ? `${deal(b.trade)} <span class="muted small">${esc(b.trade.team)}</span>` : `<span class="muted">No fair trade helps</span>`}</td>
+      <td class="n">${b.trade ? `<span class="${tone(b.trade.their_net)}">${delta(b.trade.their_net, "win%")}</span>` : ""}</td>
+      <td class="n">${b.trade ? mktDeal(b.trade.market) : ""}</td>
+      <td class="n val">${b.win.toFixed(1)}%</td><td class="n ${tone(b.gain)}">${delta(b.gain, "win%")}</td>
+      <td class="n">${b.trade ? `<button class="btn ghost" data-act="plan-load" data-i="${i}" title="Open it in Trades, scored on your current build">Load</button>` : ""}</td></tr>`).join("");
+    body = `<div class="panel-b"><div class="verdict"><span class="pill ${cls}" style="text-transform:none">${pill}</span><span class="small">${why}</span></div></div>
+      <div class="tw" style="border-top:1px solid var(--line)"><table><thead><tr>${th("Build", "The categories this build concedes", "")}
+        ${th("Waiver adds", "Free-agent moves this build makes before any trade (hover for the drops)", "")}${th("Best fair trade", "The fair offer, searched with this punt, that lifts your real odds most on top of those adds", "")}
+        ${th("Them", "Change in their " + WIN().of + " from the trade")}${th("Market", MKT_TIP)}
+        ${th(WIN().h + " after", "After this build's adds and trade, on real odds: a punted category still counts when you win it")}${th("vs now", "Change from your " + WIN().of + " today")}<th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+      <div class="panel-b small muted" style="border-top:1px solid var(--line)">Staying balanced is also scored on every other build's trades, since it could make them too, so a punt only wins through moves it alone unlocks.</div>`;
+  }
+  return `<div class="panel"><div class="panel-h"><div><h2>Strategy</h2><p>Staying balanced, every single punt and six common pairs, each with its own waiver adds and best fair trade, scored on your real odds.</p></div>
+    <button class="btn primary" data-act="plan" ${P.busy ? "disabled" : ""}>${P.busy ? "Comparing…" : d ? "Compare again" : "Compare builds"}</button></div>${body}</div>`;
+}
+async function plan() {
+  const P = S.strategy = { busy: true }; render();  // replaced on team switch / refresh, so a late answer lands in the old one
+  try { P.data = await api("/api/strategy", {}); } catch (e) { toast(e.message); }
+  P.busy = false;
+  if (S.strategy === P && S.view === "team") render();
 }
 
 const CALL = { safe: "Ahead", chase: "Chase", lost: "Behind", punt: "Punted" };
@@ -856,6 +900,8 @@ document.addEventListener("click", async e => {
   if (t.dataset.sug) return ask(t.dataset.sug);
   const act = t.dataset.act;
   if (act === "apply-punt") { S.punt = [...new Set([...S.punt, ...S.state.profile.punt_suggestions])]; store.set("punt", S.punt); return loadState(); }
+  if (act === "plan") return plan();
+  if (act === "plan-load") { const x = S.strategy.data.builds[+t.dataset.i].trade; setView("trades"); return loadDeal(x); }
   if (act === "open-team") return openTeam(t.dataset.team);
   if (act === "trade-with") { S.trade.team = t.dataset.team; S.trade.get.clear(); S.trade.result = null; return setView("trades"); }
   if (act === "shop" || act === "offers") {  // Find a buyer (My team) / buy-low rows (Hot & cold)
@@ -898,7 +944,7 @@ document.addEventListener("change", async e => {
     try {
       S.state = await api("/api/me", { team: t.value });
       Object.assign(S.trade, { give: new Set(), get: new Set(), team: null, roster: null, result: null });
-      S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null; S.week = {};
+      S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null; S.week = {}; S.strategy = {};
       toast(`You're ${t.value} now`);
     } catch (err) { toast(err.message); }
     return render();
@@ -927,7 +973,7 @@ document.addEventListener("keydown", e => {
 $("#refresh").addEventListener("click", async e => {
   const b = e.currentTarget; b.classList.add("busy"); b.disabled = true;
   try {
-    S.state = await api("/api/refresh", {}); S.league.data = null; S.trade.roster = null; S.find.list = null; S.saved.evals = {}; S.players = null; S.week = {};
+    S.state = await api("/api/refresh", {}); S.league.data = null; S.trade.roster = null; S.find.list = null; S.saved.evals = {}; S.players = null; S.week = {}; S.strategy = {};
     toast("League refreshed");
   } catch (err) { toast("Refresh failed: " + err.message); }
   b.classList.remove("busy"); b.disabled = false; render();

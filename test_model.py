@@ -376,6 +376,28 @@ Sharks has an open SF slot.""")
     assert yahoo.parse_text("Pulled Tuesday, October 27, 2026, 12:55 PM MST (UTC-7) from Yahoo Fantasy. No Oct 27 games "
                             "had started at pull time; all earlier games were final.")["from"] == "2026-10-27"
 
+    # punt planner: each build's free moves and best fair trades, re-scored on true odds. Bricks (stars everywhere but
+    # 1 for 12 at the line) sink FT% from 50% to nothing, more than the first one adds, so staying balanced never takes
+    # one; with FT% punted all three pay, and the punt clearly wins on true odds
+    bricks = [line(f"Brick {j}", 260, FTM=1, FTA=12) for j in "ABC"]
+    bl = model.League({**lg.snap, "free_agents": lg.snap["free_agents"] + [as_pl(f"Brick {j}") for j in "ABC"]},
+                      pd.concat([base, model.keyed(pd.DataFrame(bricks))]),
+                      pd.concat([cur, model.keyed(pd.DataFrame([{**x, "GP": 5} for x in bricks]))]))
+    plan = bl.strategy(size=1)
+    assert plan["pick"] == ["FT%"] and plan["edge"] > 2 and next(b for b in plan["builds"] if not b["punt"])["free"] == []
+    assert {m["add"] for m in plan["builds"][0]["free"]} == {"Brick A", "Brick B", "Brick C"}
+    assert plan["builds"][0]["win"] == round(100 * bl.after_free(["FT%"]).outlook("Me")["win"], 1)  # nothing conceded
+    # balanced is scored on every build's trades, so a build with the same free moves never beats it
+    plan = lg.strategy(size=2)
+    flat = plan["builds"][0]
+    assert plan["pick"] == [] and not flat["punt"] and len(plan["builds"]) == 1 + len(model.CATS) + len(model.PAIRS)
+    assert all(b["win"] <= flat["win"] for b in plan["builds"] if b["free"] == flat["free"])
+    assert flat["trade"]["net"] == lg.trade(flat["trade"]["give"], flat["trade"]["get"])["net"] > 0
+    # cheapest categories: one more player-z helps in every category, most where it moves the odds most
+    cheap = lg.cheapest()
+    assert {x["cat"] for x in cheap} == set(model.CATS) and all(x["per_z"] > 0 for x in cheap)
+    assert [x["per_z"] for x in cheap] == sorted((x["per_z"] for x in cheap), reverse=True)
+
     w = lg.waivers()
     assert all(m["gain"] >= model.MOVE * lg.s for m in w["moves"])
     assert set(lg.profile()["odds"]) == set(model.CATS)

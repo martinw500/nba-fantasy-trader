@@ -18,6 +18,7 @@ CLI (prints JSON, used by Claude Code and for quick checks):
   python model.py waivers                   # trades and search are scored on top of the free moves it lists
   python model.py movers                    # sell-high / buy-low
   python model.py week --vs "Team"          # this week's matchup (--vs defaults to the snapshot's opponent)
+  python model.py strategy                  # punt planner: every build's best moves on true odds (~15s)
   add --punt "FT%,TOV" to any of them
 """
 import argparse
@@ -80,6 +81,8 @@ VERDICT, MOVE, GUARD = 0.5, 0.5, 1  # trade accept/decline beyond +-; waiver mov
 # The win-% cutoffs above (and accept()'s) are in One Win terms. A categories league's win % moves about 2.5x less
 # per move (measured Oct 26 on the real league), so League scales them by this.
 CAT_SCALE = 0.4
+# Punt planner (strategy()): staying balanced, every single-category punt, and these pairs
+PAIRS = [("FT%", "TOV"), ("FG%", "TOV"), ("FG%", "FT%"), ("AST", "TOV"), ("FG3M", "FT%"), ("FG%", "FG3M")]
 
 
 def accept(mkt, their_net, s=1.0):
@@ -891,7 +894,53 @@ class League:
                 "odds": {c: round(p, 3) for c, p in o["odds"].items()}, "win": round(o["win"], 3),
                 "rank": st[self.me]["rank"], "standings": st,
                 "punt_suggestions": self.build(self.me), "builds": {t: self.build(t) for t in self.rosters},
-                "strengths": sorted(o["odds"], key=lambda c: -o["odds"][c])[:3]}
+                "strengths": sorted(o["odds"], key=lambda c: -o["odds"][c])[:3], "cheap": self.cheapest()}
+
+    def cheapest(self):
+        """Categories where one more player-z (a week of games) raises your odds most, averaged over the league: where a
+        trade or stream pays off. Odds near 50% move most, but a noisy category (STL) moves less than its odds suggest."""
+        pool = self.p.nlargest(self.teams_n * self.roster_n, "MIN")  # zscores()' pool: one z = one pool std
+        unit = np.zeros((len(self.cats), len(RAW)))
+        for i, c in enumerate(self.cats):
+            if c in ("FG%", "FT%"):  # makes over the pool's rate at the same attempts
+                m, a = c[:2] + "M", c[:2] + "A"
+                unit[i, RAW.index(m)] = (pool[m] - pool[m].sum() / pool[a].sum() * pool[a]).std()
+            else:
+                unit[i, RAW.index(c)] = pool[c].std() * (-1 if c == "TOV" else 1)
+        _, O = self._others(self.me)
+        up = cat_probs((self.vecs[self.me] + GAMES_WEEK * unit)[:, None], O[None], self.cats).mean(1).diagonal()
+        odds = self.outlooks[self.me]["odds"]
+        return sorted(({"cat": c, "odds": round(odds[c], 3), "per_z": round(100 * float(u - odds[c]), 1)}
+                       for c, u in zip(self.cats, up)), key=lambda x: -x["per_z"])
+
+    def strategy(self, size=3, top=5):
+        """Punt planner. Conceding a category only lowers today's odds: a punt pays off through the moves it unlocks.
+        So each build (staying balanced, each category, PAIRS) gets its own free moves and its top `top` fair trades
+        (search() with that punt), re-scored on true odds, nothing conceded. Balanced is re-scored on every build's
+        trades, since it can make any of them: a punt only wins through what it alone unlocks (its waiver moves, or a
+        trade that only pays after them). Builds rank by your true win % after the best of these (waivers alone, or
+        plus one trade). pick: the build to play, [] (stay balanced) unless a punt beats balanced by more than VERDICT."""
+        if self.mode == "points":
+            raise KeyError("The punt planner needs a category league")
+        now, out = round(100 * self.outlook(self.me)["win"], 1), []
+        builds = [[]] + [[c] for c in self.cats] + [list(p) for p in PAIRS if set(p) <= set(self.cats)]
+        found = [self.search(tier="fair", punt=b, size=size, limit=top) for b in builds]
+        every = list({(frozenset(x["give"]), frozenset(x["get"])): x for xs in found for x in xs}.values())
+        for b, xs in zip(builds, found):
+            lg = self.after_free(b)
+            win, deal = round(100 * lg.outlook(self.me)["win"], 1), None
+            for x in xs if b else every:
+                try:  # on top of this build's free moves, as search scored it
+                    r = lg.trade(x["give"], x["get"], free=False)
+                except KeyError:  # offers a player these free moves drop
+                    continue
+                if r["win_after"] > win:
+                    win, deal = r["win_after"], {**x, "net": r["net"], "their_net": r["their_net"]}
+            out.append({"punt": b, "free": lg._moves_out(lg.free.get(self.me, ())), "trade": deal, "win": win,
+                        "gain": round(win - now, 1)})
+        out.sort(key=lambda x: -x["win"])  # stable: balanced wins ties
+        edge = round(out[0]["win"] - next(x["win"] for x in out if not x["punt"]), 1)  # 62.1 - 61.9 isn't 0.2 in floats
+        return {"win": now, "builds": out, "pick": out[0]["punt"] if edge > VERDICT * self.s else [], "edge": edge}
 
     def waivers(self, punt=(), limit=15):
         """Best free agents for your team + add/drop pairs. 9-cat: scored by the change in your weekly win %."""
@@ -1078,7 +1127,8 @@ def load(path=DATA / "league.json"):
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster", "week"])
+    ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster", "week",
+                                    "strategy"])
     ap.add_argument("--give", default="")
     ap.add_argument("--get", default="")
     ap.add_argument("--mode", default="fair", choices=["fair", "finesse"])
@@ -1104,6 +1154,7 @@ def main():
            "waivers": lambda: lg.waivers(punt),
            "movers": lambda: lg.movers(punt),
            "week": lambda: lg.this_week(a.vs, punt),
+           "strategy": lambda: lg.strategy(a.size),
            "roster": lambda: lg.team_roster(a.team or lg.me, punt)}[a.cmd]()
     print(json.dumps(out, indent=1, ensure_ascii=False))
 
