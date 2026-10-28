@@ -142,6 +142,14 @@ class GM:
                 return f"Error: {e}"
 
         @beta_tool
+        def schedule_planner() -> str:
+            """The user's NBA games per day for the rest of this matchup week and the next three: each day's starters
+            (best 10 with a game), who sits on overflow days, and open slots (room to stream). Plus every NBA team's
+            games in those weeks, on the user's open days ("open": games a streamer from there would start) and in
+            the fantasy playoff weeks, with the best free agent on each team."""
+            return dump(lg.planner(gm.punt))
+
+        @beta_tool
         def roster(team: str) -> str:
             """A team's roster with values and per-category z-scores.
 
@@ -152,7 +160,7 @@ class GM:
                 return f"Error: unknown team. Teams: {list(lg.rosters)}"
             return dump(lg.team_roster(team, gm.punt))
 
-        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, this_week, compare_players, roster]
+        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, this_week, compare_players, schedule_planner, roster]
 
     def ask(self, text, punt=()):
         self.punt = list(punt)
