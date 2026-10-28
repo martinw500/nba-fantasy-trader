@@ -212,6 +212,9 @@ Category cells are centered numbers on an inset 4px-rounded fill (`--c`) whose s
 ### Selectable rows
 A table row that picks what another panel shows (Strategy's Every build) gets an `accent-soft` fill and `accent-ink` name. A step row's follow-up line (a trade's waiver moves) sits under it in a muted sub-row, with the step's result cells spanning both.
 
+### Compare table
+Rows are numbers, columns are deals (Saved trades) or players (Compare), the row label in muted 12px. On Compare, bold marks who's ahead on each number, a muted grey sub-heading row starts each group (NBA games, Per game) and category rows are z-score cells with the chosen per-game line beside them. A punted category dims its whole row (`tr.punted-col`).
+
 ### Category strip
 Equal columns per category: label, rank `n / 12`, signed total, and a 4px bar. The bar is green in the top 40%, red in the bottom 35%, grey between.
 

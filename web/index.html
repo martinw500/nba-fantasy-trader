@@ -208,6 +208,11 @@ td.why { white-space: normal; min-width: 240px; }
 .deals { max-height: 456px; overflow: auto; border-radius: 0 0 var(--radius) var(--radius); }  /* ~10 deals; headers stay sticky */
 .compare th, .compare td { white-space: normal; min-width: 150px; vertical-align: top; }
 .compare th:first-child, .compare td:first-child { min-width: 0; white-space: nowrap; color: var(--muted); font-size: 12px; font-weight: 600; }
+.cmp td.z { min-width: 150px; }
+.cmp b { font-weight: 700; }
+.cmp th { vertical-align: top; }
+.btn.cmp-x { margin: 4px 0 0 -8px; padding: 2px 8px; font-size: 12px; }
+tr.cmp-group td, tr.cmp-group:hover td { background: var(--panel-2); color: var(--muted); font-size: 12px; font-weight: 600; padding: 6px 10px; }
 .verdict { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 .big { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
 .pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-weight: 650; font-size: 12.5px; text-transform: capitalize; }
@@ -281,6 +286,7 @@ td.why { white-space: normal; min-width: 240px; }
   <symbol id="i-trade" viewBox="0 0 24 24"><path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/></symbol>
   <symbol id="i-wire" viewBox="0 0 24 24"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.6-3.6 3.2-5.5 6.5-5.5 1.3 0 2.5.3 3.5.8M18 14v6M15 17h6"/></symbol>
   <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3 16.5l5.5-5.5 4 4L21 6.5"/><path d="M15.5 6.5H21V12"/></symbol>
+  <symbol id="i-compare" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="7" height="15" rx="1.5"/><rect x="13.5" y="4.5" width="7" height="15" rx="1.5"/><path d="M5.8 9h2.4M15.8 9h2.4M5.8 12.5h2.4M15.8 12.5h2.4"/></symbol>
   <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5.5h16v10.5H9.5L5 20v-4H4z"/><path d="M8.5 10.5h7"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/></symbol>
   <symbol id="i-ball" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5v17M6 6c2.5 2 3.5 4 3.5 6s-1 4-3.5 6M18 6c-2.5 2-3.5 4-3.5 6s1 4 3.5 6"/></symbol>
@@ -298,6 +304,7 @@ td.why { white-space: normal; min-width: 240px; }
     <button class="nav" data-view="trades"><svg class="i"><use href="#i-trade"/></svg><span>Trades</span></button>
     <button class="nav" data-view="waivers"><svg class="i"><use href="#i-wire"/></svg><span>Waivers</span></button>
     <button class="nav" data-view="movers"><svg class="i"><use href="#i-trend"/></svg><span>Hot &amp; cold</span></button>
+    <button class="nav" data-view="compare"><svg class="i"><use href="#i-compare"/></svg><span>Compare</span></button>
     <button class="nav" data-view="gm"><svg class="i"><use href="#i-chat"/></svg><span>AI GM</span></button>
     <div class="side-foot" id="fetched"></div>
   </nav>
@@ -334,6 +341,8 @@ const S = {
   saved: { list: store.get("saved", []), evals: {}, loading: false },
   players: null,
   card: {},  // { name, t, data, error }: the open player card, under that name in the t-th player table of the view
+  compare: { names: store.get("compare", []), line: "ros" },  // + data, busy, error; data is dropped on punt / team / refresh
+  pool: null,  // every rostered player and free agent, for Compare's search
   chat: store.get("chat", []), chatBusy: false, chatSession: store.get("chatSession", null),
   chatId: store.get("chatId", null), chats: null,  // the open conversation's id in data/chats.json, and the History list
   gmSet: { model: "claude-opus-5-5", effort: "medium", web: true, ...store.get("gmSet", {}) },  // AI GM tab's Model / Effort / Web search
@@ -443,6 +452,13 @@ const span = (a, b) => mdy(a) + "–" + (a.slice(5, 7) === b.slice(5, 7) ? +b.sl
 // ESPN's fantasy news (Rotowire's blurbs): context only, it never moves a number
 const newsItem = (x, who = "", story = true) => `<li><div class="small"><span class="muted">${when(x.date)}</span>${who}${x.new ? `<span class="tag safe" title="Since your snapshot">new</span>` : ""}</div>
   <div>${esc(x.headline)}</div>${story && x.story ? `<div class="small muted">${esc(x.story)}</div>` : ""}</li>`;
+// the buy list's gap: his worth to your build vs what the market pays, both on the market's 100 scale
+function mktRead(d) {
+  const g = d.fit - d.mkt, me = S.state.me, theirs = d.team && d.team !== "FA" && d.team !== me;
+  return Math.abs(g) < 5 ? "The market prices him about right for your build."
+    : g > 0 ? `The market prices him below his worth to your build${theirs ? ", so he's one to buy" : d.team === me ? ", so don't sell him cheap" : ""}.`
+    : `The market prices him above his worth to your build${d.team === me ? ", so he's one to sell" : theirs ? ", so don't overpay" : ""}.`;
+}
 function playerCard() {
   const C = S.card, d = C.data, me = S.state.me, cats = S.state.cats;
   if (!d) return `<div class="pcard">${C.error ? `<span class="neg">Couldn't load ${esc(C.name)}: ${esc(C.error)}</span>` : `<div class="skel" style="margin:4px 0"></div><div class="skel" style="margin:4px 0;width:60%"></div>`}</div>`;
@@ -454,13 +470,10 @@ function playerCard() {
     ${cats.map(c => `<td class="n ${punted(c) ? "punted-col" : ""}">${l[c] == null ? "—" : l[c].toFixed(1)}</td>`).join("")}</tr>`).join("");
   const games = d.weeks.map((w, i) => `<div><dt${i ? "" : ` title="NBA games left in your matchup week"`}>${i ? span(w.start, w.end) : "This week"}</dt>
     <dd class="${w.games <= 1 ? "neg" : w.games >= 4 ? "pos" : ""}">${w.games}</dd></div>`).join("");
-  const g = d.fit - d.mkt;  // the buy list's gap: his worth to your build vs what the market pays, both on the market's 100 scale
-  const read = Math.abs(g) < 5 ? "The market prices him about right for your build."
-    : g > 0 ? `The market prices him below his worth to your build${theirs ? ", so he's one to buy" : d.team === me ? ", so don't sell him cheap" : ""}.`
-    : `The market prices him above his worth to your build${d.team === me ? ", so he's one to sell" : theirs ? ", so don't overpay" : ""}.`;
+  const read = mktRead(d), inCmp = S.compare.names.includes(d.name);
   return `<div class="pcard">
     <div class="pcard-h"><div><b>${esc(d.name)}</b>${statusTag(d)} <span class="muted small">${[esc(d.nba), esc(d.pos), own].filter(Boolean).join(" · ")}</span></div>
-      <div class="toolbar">${act}<button class="btn ghost" data-act="card" data-name="${esc(C.name)}" data-t="${C.t}">Close</button></div></div>
+      <div class="toolbar">${act}<button class="btn" data-act="cmp-add" data-name="${esc(d.name)}" title="${inCmp ? "Open Compare" : "Add him to Compare (2 to 4 players side by side)"}">${inCmp ? "Open compare" : "Compare"}</button><button class="btn ghost" data-act="card" data-name="${esc(C.name)}" data-t="${C.t}">Close</button></div></div>
     ${d.injury ? `<div class="small">${esc(d.injury)}${d.return ? ` <span class="muted">Expected back ${mdy(d.return)}.</span>` : ""}</div>` : ""}
     ${d.lift ? `<div class="small">${d.lift.map(l => `While ${liftWhen(l)}: ${[["MIN", "min"], ...cats.filter(c => l[c] != null).map(c => [c, lab(c)])]
       .filter(([c]) => c === "MIN" || Math.abs(l[c]) >= 0.2).map(([c, n]) => `<span class="${punted(c) ? "punted-col" : ""}">${l[c] > 0 ? "+" : ""}${l[c].toFixed(1)} ${n}</span>`).join(", ")} a game.`).join(" ")}
@@ -986,6 +999,98 @@ function viewMovers() {
       ${playerTable(m.buy_low, { extra: [owner, gap, offers], empty: "<b>No slumping studs</b>Check back after a few more games." })}</div>`;
 }
 
+// ---------- compare: 2 to 4 players side by side ----------
+const CMP_LINES = { ros: "Rest of season", season: "This season", last30: "Last 30 days", last14: "Last 14 days", last7: "Last 7 days" };
+function viewCompare() {
+  const C = S.compare, n = C.names.length, d = C.data;
+  if (!S.pool) loadPool();
+  if (n >= 2 && !d && !C.busy && !C.error) loadCompare();
+  const full = n >= 4;
+  const head = `<div class="head"><div><h1>Compare</h1><p class="sub">Two to four players side by side on your build: who to keep, start or trade for. Add players from any player card, or search here.</p></div>
+      <input type="search" class="input" id="cmp-player" list="cmp-players" placeholder="${full ? "Remove a player to add another" : "Add any player"}" aria-label="Add a player to compare" autocomplete="off" style="width:240px;max-width:100%" ${full ? "disabled" : ""}>
+      <datalist id="cmp-players">${(S.pool || []).filter(p => !C.names.includes(p.name)).map(p => `<option value="${esc(p.name)}">${esc(p.team === "FA" ? "Free agent" : p.team)}</option>`).join("")}</datalist></div>`;
+  const picked = n ? `<div class="toolbar"><span class="muted small">Comparing</span>${C.names.map(x => `<span class="pname">${esc(x)}</span><button class="btn ghost" data-act="cmp-remove" data-name="${esc(x)}" aria-label="Remove ${esc(x)}">Remove</button>`).join("")}
+      ${n > 1 ? `<button class="btn ghost" data-act="cmp-clear">Clear all</button>` : ""}</div>` : "";
+  if (n >= 2 && S.view === "compare") history.replaceState(null, "", "#compare?players=" + C.names.map(encodeURIComponent).join(","));
+  if (n < 2) return head + `<div class="panel"><div class="empty"><b>${n ? `Pick one more to compare with ${esc(C.names[0])}` : "Pick two to four players"}</b>You'll see each one's value, recent form, per-game line, schedule, availability and market price side by side${isPoints() ? "" : `, plus your ${WIN().of} with him in one of your roster spots`}.</div>${n ? `<div class="panel-b" style="border-top:1px solid var(--line)">${picked}</div>` : ""}</div>`;
+  if (!d) return head + `<div class="panel">${C.error ? `<div class="err">Couldn't compare them: ${esc(C.error)} <button class="btn ghost" data-act="cmp-retry">Try again</button></div>` : SKEL}</div>${picked}`;
+  return head + compareTable(d);
+}
+function compareTable(d) {
+  const P = d.players, B = d.best, cats = S.state.cats, me = S.state.me, C = S.compare;
+  const top = (f, p, html) => (B[f] || []).includes(p.name) ? `<b>${html}</b>` : html;  // who's ahead on this number
+  const row = (h, f, cls = "", tip = "") => `<tr class="${cls}"><td${tip ? ` title="${tip}"` : ""}>${h}</td>${P.map((p, i) => `<td>${f(p, i)}</td>`).join("")}</tr>`;
+  const group = h => `<tr class="cmp-group"><td colspan="${P.length + 1}">${h}</td></tr>`;
+  const num = v => Number(v).toFixed(isPoints() ? 1 : 2);
+  const owner = p => p.team === me ? "your team" : p.team && p.team !== "FA" ? esc(p.team) : p.waiver ? `free agent, waivers until ${esc(p.waiver)}` : "free agent";
+  const wins = Object.keys(CMP_LINES).filter(k => P.some(p => p.lines[k]));
+  if (!wins.includes(C.line)) C.line = "ros";
+  const ln = p => p.lines[C.line];
+  const stat = (l, c) => l?.[c] == null ? "—" : c.endsWith("%") ? l[c].toFixed(1) + "%" : l[c].toFixed(1);
+  const slot = p => { const s = p.slot;
+    const note = s.cut ? "He wouldn't make your roster" : s.drop.length ? `You'd drop ${and(s.drop.map(esc))}` : s.add.length ? `${and(s.add.map(esc))} fills the other spot` : "";
+    return `${top("slot", p, `${s.win.toFixed(1)}%`)} <span class="small ${tone(s.delta)}">${delta(s.delta, "win%")}</span>${note ? `<div class="small muted">${note}</div>` : ""}`; };
+  const act = p => p.team === me ? `<button class="btn ghost" data-act="shop" data-name="${esc(p.name)}">Find buyers</button>`
+    : p.team && p.team !== "FA" ? `<button class="btn ghost" data-act="offers" data-name="${esc(p.name)}" data-team="${esc(p.team)}">Find offers</button>` : "";
+  const weeks = P.find(p => p.weeks.length)?.weeks || [];
+  return `<div class="panel"><div class="panel-h"><div><h2>Side by side</h2><p>Bold = ahead on that number. Category cells are rest-of-season z-scores on your build, next to the per-game line you pick.</p></div>
+      <div class="toolbar">
+      <div class="seg" role="group" aria-label="Per-game line">${wins.map(k => `<button data-act="cmp-line" data-line="${k}" aria-pressed="${C.line === k}">${CMP_LINES[k]}</button>`).join("")}</div>
+      <button class="btn ghost" data-act="cmp-clear">Clear all</button></div></div>
+    <div class="tw"><table class="compare cmp"><thead><tr><th></th>${P.map(p => `<th><div class="pname">${esc(p.name)}${statusTag(p)}</div><div class="small muted">${[esc(p.nba), esc(p.pos), owner(p)].filter(Boolean).join(" · ")}</div>
+      <button class="btn ghost cmp-x" data-act="cmp-remove" data-name="${esc(p.name)}" aria-label="Remove ${esc(p.name)}">Remove</button></th>`).join("")}</tr></thead><tbody>
+      ${P.some(p => p.injury) ? row("Injury", p => p.injury ? `<span class="small">${esc(p.injury)}</span>${p.return ? ` <span class="small muted">Back ${mdy(p.return)}.</span>` : ""}` : `<span class="muted">—</span>`) : ""}
+      ${d.win != null ? row(WIN().h + " with him", slot, "", `Your season ${WIN().of} with him in one of your roster spots: the compared players you own all leave, your other players and the best free agents fill the rest. Change vs today's ${d.win}%. Other teams stay as they are, so it isn't a trade's result`) : ""}
+      ${row("Value", p => `${trendTag(p)}${top("value", p, num(p.value))}`, "", "Rest-of-season value per game on your build")}
+      ${row("Now", p => `<span class="${tone(p.value_now - p.value)}">${top("value_now", p, num(p.value_now))}</span>`, "", "How this season looks so far (what Yahoo ranks show)")}
+      ${row(cap(formWin().replace(/^the /, "")), p => p.form == null ? `<span class="muted small">Under 3 games</span>` : `${top("form", p, num(p.form))} <span class="muted small">${p.form_gp} games</span>`, "", "His value over the recent window, on the same scale as Value")}
+      ${row("Plays", p => `<span class="${p.avail < 0.6 ? "neg" : ""}">${top("avail", p, pct(p.avail))}</span> <span class="muted small">${p.gp} GP</span>`, "", "Expected share of remaining games played, and games played this season")}
+      ${row("Market", p => mktCell(p), "", "Trade-market value (100 = the market's top player) and market rank, from Yahoo's preseason and current ranks")}
+      ${row("Your build", p => `${top("fit", p, Math.round(p.fit))} <span class="muted small">#${p.fit_rank}</span><div class="small muted">${mktRead(p)}</div>`, "", "His rank on your build (rest-of-season value over the games he'll play), on the same curve as the market")}
+      ${weeks.length ? group("NBA games") + weeks.map((w, i) => row(i ? span(w.start, w.end) : "This week", p => { const g = p.weeks[i]?.games ?? 0;
+        return `<span class="${g <= 1 ? "neg" : g >= 4 ? "pos" : ""}">${top("week" + i, p, g)}</span>`; }, "", i ? "" : "NBA games left in your matchup week, after any return date")).join("") : ""}
+      ${group(`Per game: ${CMP_LINES[C.line].toLowerCase()}`)}
+      ${row("GP / MIN", p => ln(p) ? `${ln(p).gp ?? "—"} <span class="muted small">/ ${ln(p).MIN == null ? "—" : ln(p).MIN.toFixed(1)}</span>` : `<span class="muted small">No games</span>`)}
+      ${isPoints() ? row("FP/G", p => p.fp.toFixed(1)) + cats.map(c => row(lab(c), p => stat(ln(p), c), punted(c) ? "punted-col" : "")).join("")
+        : cats.map(c => `<tr class="${punted(c) ? "punted-col" : ""}"><td>${lab(c)}</td>${P.map(p => `<td class="z" style="--c:${heat(p.z[c])}"><span>${top("z." + c, p, p.z[c].toFixed(1))} <span class="muted small">${stat(ln(p), c)}</span></span></td>`).join("")}</tr>`).join("")}
+      ${P.some(act) ? `<tr><td></td>${P.map(p => `<td>${act(p)}</td>`).join("")}</tr>` : ""}
+    </tbody></table></div></div>`;
+}
+async function loadPool() {
+  S.pool = [];
+  try { S.pool = await api("/api/players", { fa: true }); if (S.view === "compare") render(); } catch (e) { toast(e.message); }
+}
+async function loadCompare() {
+  const C = S.compare; C.busy = true;
+  try {  // short or misspelt names (a deep link) come back as the players' real names
+    const d = await api("/api/compare", { players: C.names });
+    if (S.compare === C) { C.data = d; C.names = d.players.map(p => p.name); store.set("compare", C.names); }
+  }
+  catch (e) { if (S.compare === C) C.error = e.message; }
+  C.busy = false;
+  if (S.compare === C && S.view === "compare") render();
+}
+function setCompare(names) {  // a new object, so an answer for the old list lands nowhere
+  const n = [...new Set(names)].slice(0, 4);
+  store.set("compare", n); S.compare = { names: n, line: S.compare.line };
+}
+function addCompare(name, go) {
+  const C = S.compare;
+  if (C.names.includes(name)) return go ? setView("compare") : render();
+  if (C.names.length >= 4) return toast("Compare holds 4 players. Remove one first.");
+  setCompare([...C.names, name]);
+  if (go && S.compare.names.length >= 2) return setView("compare");
+  if (go) toast(`${name} is in Compare. Open another player's card and press Compare, or search on Compare.`);
+  render();
+}
+function pickCompare(q, exact) {
+  const f = fold(q), hits = f ? (S.pool || []).filter(p => fold(p.name).includes(f)) : [];
+  const p = hits.find(p => fold(p.name) === f) || (!exact && hits.length === 1 && hits[0]);
+  if (!p) return exact || !f || toast(hits.length ? `${hits.length} players match “${q}”. Keep typing.` : `No player matches “${q}”.`);
+  addCompare(p.name, false);
+  $("#cmp-player")?.focus();
+}
+
 const SUGS = ["Who should I drop and pick up?", "Find me a fair trade that helps my weakest category", "Should I punt anything? Why?", "Who are my best sell-high candidates?"];
 const EFFORT = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
 function viewGM() {
@@ -1069,7 +1174,7 @@ function render() {
   const st = S.state, age = st.pulled ? (Date.now() - new Date(st.pulled)) / 864e5 : 0;
   const stale = st.rolled || age > 1 ? `<div class="notice">Your snapshot ${st.rolled ? "is from last week's matchup" : `is ${Math.floor(age)} day${age >= 2 ? "s" : ""} old`} (pulled ${when(st.pulled)}), so the score and recent moves aren't in. Drop a new snapshot in the project folder and press Refresh.</div>` : "";
   TBL = 0;
-  v.innerHTML = demo + stale + ({ team: viewTeam, week: viewWeek, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, gm: viewGM }[S.view] || viewTeam)();
+  v.innerHTML = demo + stale + ({ team: viewTeam, week: viewWeek, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, compare: viewCompare, gm: viewGM }[S.view] || viewTeam)();
   const m = $("#msgs"); if (m) m.scrollTop = m.scrollHeight;
 }
 function setView(v) { S.view = v; S.card = {}; store.set("view", v); history.replaceState(null, "", "#" + v); render(); window.scrollTo(0, 0); }
@@ -1083,7 +1188,7 @@ document.addEventListener("click", async e => {
     S.punt = punted(c) ? S.punt.filter(x => x !== c) : [...S.punt, c];
     const re = S.trade.result;
     store.set("punt", S.punt); S.trade.result = null; S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {};
-    S.league.data = null; S.trade.roster = null; S.week = {}; S.card = {};
+    S.league.data = null; S.trade.roster = null; S.week = {}; S.card = {}; setCompare(S.compare.names);
     await loadState();
     return re && evaluate();
   }
@@ -1103,6 +1208,11 @@ document.addEventListener("click", async e => {
   if (act === "plan-load") { const x = S.strategy.data.builds[+t.dataset.i].steps[+t.dataset.j].trade; setView("trades"); return loadDeal(x); }
   if (act === "plan-show") { S.strategy.sel = +t.dataset.i; render(); return reveal("#strategy"); }
   if (act === "card") return openCard(t.dataset.name, +t.dataset.t);
+  if (act === "cmp-add") return addCompare(t.dataset.name, true);
+  if (act === "cmp-remove") { setCompare(S.compare.names.filter(x => x !== t.dataset.name)); if (S.compare.names.length < 2) history.replaceState(null, "", "#compare"); return render(); }
+  if (act === "cmp-clear") { setCompare([]); history.replaceState(null, "", "#compare"); return render(); }
+  if (act === "cmp-retry") { S.compare.error = null; return render(); }
+  if (act === "cmp-line") { S.compare.line = t.dataset.line; return render(); }
   if (act === "open-team") return openTeam(t.dataset.team);
   if (act === "trade-with") { S.trade.team = t.dataset.team; S.trade.get.clear(); S.trade.result = null; return setView("trades"); }
   if (act === "shop" || act === "offers") {  // Find a buyer (My team) / buy-low rows (Hot & cold)
@@ -1145,6 +1255,7 @@ document.addEventListener("change", async e => {
   if (t.dataset.pick) { const set = S.trade[t.dataset.pick]; t.checked ? set.add(t.value) : set.delete(t.value); S.trade.result = null; return render(); }
   if (t.id === "trade-team") { S.trade.team = t.value; S.trade.get.clear(); S.trade.result = null; return render(); }
   if (t.id === "find-player") return pickPlayer(t.value);
+  if (t.id === "cmp-player") return pickCompare(t.value);
   if (t.id === "week-opp") { S.week = {}; loadWeek(t.value); return render(); }
   if (t.id.startsWith("gm-")) { S.gmSet[t.id.slice(3)] = t.type === "checkbox" ? t.checked : t.value; store.set("gmSet", S.gmSet); return render(); }
   if (t.id === "me-team") {  // switch which team is yours: everything team-specific starts over
@@ -1152,7 +1263,7 @@ document.addEventListener("change", async e => {
     try {
       S.state = await api("/api/me", { team: t.value });
       Object.assign(S.trade, { give: new Set(), get: new Set(), team: null, roster: null, result: null });
-      S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null; S.week = {}; S.news = {}; S.strategy = {}; S.card = {};
+      S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null; S.week = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names);
       toast(`You're ${t.value} now`);
     } catch (err) { toast(err.message); }
     return render();
@@ -1170,7 +1281,7 @@ document.addEventListener("change", async e => {
     F.list = null; S.improve = { kind: null, list: null }; return render();
   }
 });
-document.addEventListener("input", e => { if (e.target.id === "find-player") pickPlayer(e.target.value, true); });
+document.addEventListener("input", e => { if (e.target.id === "find-player") pickPlayer(e.target.value, true); if (e.target.id === "cmp-player") pickCompare(e.target.value, true); });
 document.addEventListener("submit", e => {
   if (e.target.id !== "chat-form") return;
   e.preventDefault(); const i = $("#chat-in"); const text = i.value; i.value = ""; ask(text);
@@ -1181,12 +1292,13 @@ document.addEventListener("keydown", e => {
 $("#refresh").addEventListener("click", async e => {
   const b = e.currentTarget; b.classList.add("busy"); b.disabled = true;
   try {
-    S.state = await api("/api/refresh", {}); S.league.data = null; S.trade.roster = null; S.find.list = null; S.saved.evals = {}; S.players = null; S.week = {}; S.news = {}; S.strategy = {}; S.card = {};
+    S.state = await api("/api/refresh", {}); S.league.data = null; S.trade.roster = null; S.find.list = null; S.saved.evals = {}; S.players = null; S.week = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names);
     toast("League refreshed");
   } catch (err) { toast("Refresh failed: " + err.message); }
   b.classList.remove("busy"); b.disabled = false; render();
 });
 render();
+if (S.view === "compare" && link.has("players")) setCompare(link.get("players").split(",").filter(Boolean));
 loadState().then(() => {
   if (!S.state || S.view !== "trades" || !(link.has("give") || link.has("get"))) return;
   const names = k => (link.get(k) || "").split(",").filter(Boolean);

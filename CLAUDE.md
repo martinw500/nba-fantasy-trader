@@ -16,7 +16,7 @@ Python lives in `.venv` (Homebrew Python blocks global pip): use `.venv/bin/pyth
 - `python test_model.py`: self-check, synthetic data, no network. Run it after touching `model.py`.
 - `python backtest.py`: calibration check (~1 min). Run it after changing projections or odds maths. `python backtest.py replay`: rest-of-season error by expert weight (fits `PROJ_W`). `python backtest.py teammates`: next week's error with teammates' injuries (fits `SHARE` / `USAGE`, ~3 min). `python backtest.py availability`: each Monday's games-played guess vs the real share, 2024-25 and 2025-26 (fits `AVAIL_*`).
 - `python app.py --no-browser`: run the app without opening a tab. `#view` and `?punt=FT%25,TOV` deep-link a view and build.
-- `python model.py {team|trade|ideas|search|waivers|movers|roster|week|strategy|news} [--punt ...]`: prints JSON. `strategy` (the punt planner) takes ~15s.
+- `python model.py {team|trade|ideas|search|waivers|movers|roster|week|strategy|news|compare} [--punt ...]`: prints JSON (`compare --players "A, B"`, Q3). `strategy` (the punt planner) takes ~15s.
 
 ## Model rules (don't break these)
 - 9-cat advice (trade, ideas, waivers, standings) runs on the matchup model: `week` (per-game line × GAMES_WEEK × avail, missed games half-filled at waiver level) → `cat_probs` → `_score` → `outlook()`. `_score` is the share of categories won (`settings.scoring` "categories", the default and Martin's league) or `match_prob` ("one_win"). Deltas are in win-% points, `unit: "win%"`. Win-% cutoffs (`TIERS`, `VERDICT`, `MOVE`, `GUARD`, `accept()`) are in One Win terms, scaled by `League.s` (`CAT_SCALE` 0.4 in categories). z-scores (`value()`) are only for player tables and candidate selection.
