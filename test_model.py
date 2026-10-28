@@ -276,6 +276,42 @@ def test_all():
     assert {"name": "Hurt Guy", "team": "Me"} in ill.pool() and "FA" not in {p["team"] for p in lg.pool()}
     assert "Nikola Jokić" not in {p["name"] for p in lg.pool(True)}  # in the stats, but on no roster or FA list
 
+    # add/drop evaluator (Q7): any free agent for any of your players, scored on today's roster like the Waivers
+    # table (not on top of the free moves). The best suggested move scores what Waivers says; no drop on a full roster
+    # drops whoever you'd miss least (never the add); an open spot takes a plain add; a parked drop frees no spot; an
+    # injured add parks in a free IL slot and a spot the move opens stays open. Only free agents in, only yours out
+    top = fl.waivers()["moves"][0]
+    mv = fl.add_drop(top["add"], top["drop"])
+    assert mv["net"] == top["gain"] and mv["add"]["name"] == "Star FA" and [x["name"] for x in mv["drop"]] == [top["drop"]]
+    a, d = fl.find(top["add"]), fl.find(top["drop"])
+    assert abs(mv["win_after"] - 100 * fl.outlook("Me", {"Me": fl.vecs["Me"] - fl.rows[d] + fl.rows[a]})["win"]) < 0.06
+    assert mv["verdict"] == "accept" and mv["week"] is None and mv["open"] == 0 and not mv["add"]["parks"]
+    auto = lg.add_drop("Player 139")
+    c = lg._contrib("Me", lg.rosters["Me"])
+    assert [(x["name"], x["auto"]) for x in auto["drop"]] == [(lg.names([min(c, key=c.get)])[0], True)]
+    assert auto["net"] < 0 and auto["verdict"] == "decline" and set(auto["cats"]) == set(model.CATS)
+    plain = short.add_drop("Player 139")
+    assert plain["drop"] == [] and plain["open"] == 0 and plain["net"] == short.waivers()["moves"][0]["gain"] > 0
+    assert short.add_drop("Player 139", "Player 198")["open"] == 1  # a spot it opens stays open: filling it is an add
+    for bad in (("Player 151", None), ("Player 139", "Player 151"), ("Nikola Jokic", None), ("Player 139", "Player 101")):
+        try:
+            lg.add_drop(*bad)
+            raise AssertionError(f"evaluated {bad}")
+        except KeyError:
+            pass
+    sore = model.keyed(pd.DataFrame([line("Sore FA", 190)]))
+    ilf = model.League({**ill.snap, "free_agents": ill.snap["free_agents"] + [{"name": "Sore FA", "pos": "", "status": "O"}]},
+                       pd.concat([base, hurt, sore]), pd.concat([cur, hurt.assign(GP=5), sore.assign(GP=5)]))
+    freed = ilf.add_drop("Player 139", "Hurt Guy")
+    assert len(freed["drop"]) == 2 and freed["drop"][0]["name"] == "Hurt Guy" and freed["drop"][1]["auto"]
+    park = ilf.add_drop("Sore FA")
+    assert park["add"]["parks"] and park["drop"] == [] and park["open"] == 0
+    assert abs(park["win_after"] - 100 * ilf.outlook("Me", {"Me": ilf.vecs["Me"] + ilf.rows_il["sore fa"]})["win"]) < 0.06
+    both = ilf.add_drop("Sore FA", "Player 150")
+    assert both["open"] == 1 and both["net"] < park["net"]
+    pl = model.League({**lg.snap, "settings": {**lg.snap["settings"], "mode": "points"}}, base, cur).add_drop("Player 139", "Player 150")
+    assert pl["unit"] == "value" and pl["week"] is None and pl["net"] < 0
+
     # schedule: identical twins, one with 4 games left this week and one with 2; a return date wipes this week
     # and cuts rest-of-season availability to the share of games after it
     twins = model.keyed(pd.DataFrame([line(f"Twin {x}", 180) for x in "ABCDEF"]))
@@ -484,6 +520,17 @@ def test_all():
                        + [{"name": "Twin F", "nba": "AAA", "waiver": "Jan 2"}]}, pd.concat([base, twins]),
                       pd.concat([cur, twins]), today=model.date(2026, 12, 30), sched={"AAA": ny, "XXX": ny})
     assert next(s for s in nl.this_week("Them", limit=50)["streams"] if s["name"] == "Twin F")["games"] == 2
+    # ... and the add/drop evaluator scores a stream's move the same way: this week's gain, the season's, his games
+    # (a claim from the day it clears), nothing for this week without an opponent, a punt concedes the category
+    for st in sl.this_week("Them", limit=50)["streams"]:
+        r = sl.add_drop(st["name"], st["drop"], opp="Them")
+        assert abs(r["week"]["net"] - st["gain"]) < 0.06 and abs(r["net"] - st["season"]) < 0.06
+        assert r["week"]["games"]["add"] == st["games"]
+    f = sl.add_drop("Twin F", "Player 150", opp="Them")["week"]
+    assert f["claim"] == "2026-11-01" and f["games"]["add"] == 1 and sl.add_drop("Twin D", "Player 150")["week"] is None
+    pp = up.add_drop("Twin D", "Player 150", punt=["PTS"])
+    assert pp["week"]["opponent"] == "Them" and pp["cats"]["PTS"] == {"season": [0, 0], "week": [0, 0]}
+
     # banked totals add no noise: with the same final totals, a week that's over is surer than one just starting
     A, B = lg.vecs["Me"], lg.vecs["Them"]
     p_now, p_done = model.cat_probs(A, B, model.CATS), model.cat_probs(A * 1e-6, B * 1e-6, model.CATS, A, B)

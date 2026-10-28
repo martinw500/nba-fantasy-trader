@@ -22,6 +22,7 @@ CLI (prints JSON, used by Claude Code and for quick checks):
   python model.py strategy                  # punt planner: every build's waiver adds + up to 3 trades, true odds (~15s)
   python model.py news                      # ESPN news on your players and their teammates since the snapshot
   python model.py compare --players "A, B"  # 2 to 4 players side by side, with your win % with each in a roster spot
+  python model.py move --add "A" --drop "B" # any add/drop: win % change this week and for the season (today's roster)
   add --punt "FT%,TOV" to any of them
 """
 import argparse
@@ -1627,24 +1628,14 @@ class League:
             raise KeyError("This week needs a category league")
         me, m = self.me, self.matchup
         others = [t for t in self.rosters if t != me]
-        opp = opp or m.get("opponent")
+        opp = self._opponent(opp)
         if not opp:
             return {"opponent": None, "teams": others, "week_end": self.week_end}
-        if opp not in others:
-            raise KeyError(f"Unknown opponent {opp}: pick one of {', '.join(others)}")
-        so_far = {t: np.array([float(m.get("totals", {}).get(t, {}).get(s, 0)) for s in RAW]) for t in (me, opp)}
+        so_far, left, odds = self._matchup(opp, punt)
         play = lambda t: self._playing(self.rosters[t])
-        left = {t: self.week_vec(play(t)) for t in (me, opp)}
-        odds = lambda v: self._concede(cat_probs(v, left[opp], self.cats, so_far[me], so_far[opp]), punt)
         p = odds(left[me])
         win = float(match_prob(p))
-
-        def clears(k):  # a waiver claim only plays from the day it clears ("Jan 2" read on Dec 30 is next year)
-            w = self.meta.get(k, {}).get("waiver")
-            if not w:
-                return {}
-            d = datetime.strptime(f"{w} {self.today[:4]}", "%b %d %Y").date()
-            return {k: (d.replace(year=d.year + 1) if d < date.fromisoformat(self.today) - timedelta(60) else d).isoformat()}
+        clears = self._clears
 
         # streams: each healthy free agent for whichever of your 3 cheapest healthy players (season win-% cost) helps most,
         # scored on the whole lineup since an add only counts on days he cracks your top `lineup`
@@ -1678,6 +1669,94 @@ class League:
                              "them": [total(so_far[opp], c), total(so_far[opp] + left[opp], c)],
                              "odds": round(100 * float(x), 1), "call": call(c, x)} for c, x in zip(self.cats, p)},
                 "streams": streams}
+
+    def _opponent(self, opp=None):
+        """This week's opponent: opp, else the snapshot's (None when neither names one). KeyError for an unknown team."""
+        opp = opp or self.matchup.get("opponent")
+        others = [t for t in self.rosters if t != self.me]
+        if opp and opp not in others:
+            raise KeyError(f"Unknown opponent {opp}: pick one of {', '.join(others)}")
+        return opp
+
+    def _matchup(self, opp, punt=()):
+        """This week vs opp: ({team: totals so far}, {team: the rest of the week's, week_vec of its active players},
+        odds(v): your category odds with v as your rest of the week, any leading shape, punts conceded)."""
+        me, m = self.me, self.matchup
+        so_far = {t: np.array([float(m.get("totals", {}).get(t, {}).get(s, 0)) for s in RAW]) for t in (me, opp)}
+        left = {t: self.week_vec(self._playing(self.rosters[t])) for t in (me, opp)}
+        return so_far, left, lambda v: self._concede(cat_probs(v, left[opp], self.cats, so_far[me], so_far[opp]), punt)
+
+    def _clears(self, k):
+        """{k: the day his waiver claim clears} ("Jan 2" read on Dec 30 is next year), {} when he isn't on waivers:
+        a claim only plays from then (starts(), week_vec())."""
+        w = self.meta.get(k, {}).get("waiver")
+        if not w:
+            return {}
+        d = datetime.strptime(f"{w} {self.today[:4]}", "%b %d %Y").date()
+        return {k: (d.replace(year=d.year + 1) if d < date.fromisoformat(self.today) - timedelta(60) else d).isoformat()}
+
+    def add_drop(self, add, drop=None, punt=(), opp=None):
+        """Any add and any drop, scored like the trade builder (Q7). 9-cat: the change in your season win % (outlook())
+        and in this week's (this_week()'s maths vs opp, else the saved opponent: starts() from the day a claim clears,
+        players in IL slots sit). Scored on today's roster, like the Waivers table (_gains()), not on top of your free
+        moves: it answers "what does this move do", and the best free move would already have made it.
+        IL slots as in _after(): an injured add parks in a free IL slot; dropping a parked player frees no active
+        spot, so whoever you'd miss least goes too (healthy players first, like _drops(); never the add). drop None:
+        an open active spot, else that same pick. A spot the move leaves open stays open (`open`), since filling it
+        is another add. Points: value per game, the add's minus the drop's. KeyError unless add is a free agent and
+        drop is on your roster (AI tool input comes through here)."""
+        k, me = self.find(add), self.rosters[self.me]
+        if k not in self.fa:
+            who = self.owner(k)
+            raise KeyError(f"{self.names([k])[0]} " + (f"is on {who}: that takes a trade" if who else "isn't a free agent"))
+        d = self.find(drop) if drop else None
+        if d is not None and d not in me:
+            raise KeyError(f"Not on your roster: {self.names([d])[0]}")
+        hurt = self.meta.get(k, {}).get("status", "") in OUT
+        il = [x for x in self.il[self.me] if x != d]
+        il += [k] * (hurt and len(il) < self.il_n)
+        keys = [x for x in me if x != d] + [k]
+        n = len(keys) - len(il) - max(self.roster_n, len(self._playing(me)))  # active players over the limit
+        cands = [x for x in self._drops([x for x in keys if x not in il], keep=[k]) if x]
+        cands = cands or [x for x in keys if x not in il and x != k]
+        if n > 0 and self.mode == "points":
+            auto = self.value(cands, punt).nsmallest(n).index.tolist()
+        elif n > 0:
+            c = self._contrib(self.me, cands, punt)
+            auto = sorted(c, key=c.get)[:n]
+        else:
+            auto = []
+        keys = [x for x in keys if x not in auto]
+        out = {"add": {**self.player(k, punt), "parks": k in il},
+               "drop": [{**self.player(x, punt), "auto": x != d} for x in [d] * bool(d) + auto],
+               "open": max(-n, 0)}
+        if self.mode == "points":
+            net = float(self.value([k], punt).sum() - self.value([d] * bool(d) + auto, punt).sum())
+            return {**out, "unit": "value", "net": round(net, 2), "week": None,
+                    "verdict": "accept" if net > 0.3 * self.u else "decline" if net < -0.3 * self.u else "toss-up"}
+        ov = {self.me: self.vec(keys, il)}
+        b, a = self.outlook(self.me, punt=punt), self.outlook(self.me, ov, punt)
+        sb, sa = self.standings(), self.standings(ov)
+        net, pct1 = 100 * (a["win"] - b["win"]), lambda x: round(100 * float(x), 1)
+        cats = {c: {"season": [pct1(b["odds"][c]), pct1(a["odds"][c])], "week": None} for c in self.cats}
+        week, opp = None, self._opponent(opp)
+        if opp:
+            _, left, odds = self._matchup(opp, punt)
+            start, after = self._clears(k), [x for x in keys if x not in il]
+            p0, p1 = odds(left[self.me]), odds(self.week_vec(after, start))
+            for c, x0, x1 in zip(self.cats, p0, p1):
+                cats[c]["week"] = [pct1(x0), pct1(x1)]
+            week = {"opponent": opp, "net": round(100 * float(self._score(p1) - self._score(p0)), 1) + 0.0,
+                    "win": [pct1(match_prob(p0)), pct1(match_prob(p1))],
+                    "score": [round(float(p0.sum()), 1), round(float(p1.sum()), 1)],
+                    **({"claim": start[k]} if start else {})}
+            if self.sched:
+                g0, g1 = self.starts(self._playing(me)), self.starts(after, start)
+                week["games"] = {"add": g1[k], "drop": sum(g0[x] for x in [d] * bool(d) + auto),
+                                 "you": [sum(g0.values()), sum(g1.values())]}
+        return {**out, "unit": "win%", "net": round(net, 1) + 0.0, "win": pct1(b["win"]), "win_after": pct1(a["win"]),
+                "rank": sb[self.me]["rank"], "rank_after": sa[self.me]["rank"], "cats": cats, "week": week,
+                "verdict": "accept" if net > MOVE * self.s else "decline" if net < -MOVE * self.s else "toss-up"}
 
     def playoff_weeks(self):
         """The fantasy playoffs' matchup weeks as (week, start, end): settings' playoff_weeks (yahoo.py reads the
@@ -1794,7 +1873,7 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster", "week",
-                                    "strategy", "news", "compare", "schedule"])
+                                    "strategy", "news", "compare", "schedule", "move"])
     ap.add_argument("--give", default="")
     ap.add_argument("--get", default="")
     ap.add_argument("--mode", default="fair", choices=["fair", "finesse"])
@@ -1804,12 +1883,14 @@ def main():
     ap.add_argument("--tier", default="fair", choices=list(TIERS), help="search: how likely they say yes")
     ap.add_argument("--goal", default="win", choices=["win", "cats", "team"])
     ap.add_argument("--cats", default="", help='search --goal cats: e.g. "STL,AST"')
-    ap.add_argument("--vs", help="search --goal team: the team to beat. week: this week's opponent")
+    ap.add_argument("--vs", help="search --goal team: the team to beat. week, move: this week's opponent")
     ap.add_argument("--size", type=int, default=3, help="search: max players per side")
     ap.add_argument("--healthy", action="store_true", help="search: skip injured players you'd get")
     ap.add_argument("--shape", choices=["consolidate", "depth"])
     ap.add_argument("--max-overpay", type=float, help="search: most you'd overpay on the market, in %%")
     ap.add_argument("--players", default="", help='compare: 2 to 4 players, e.g. "A, B"')
+    ap.add_argument("--add", default="", help="move: the free agent to add")
+    ap.add_argument("--drop", default="", help="move: your player to drop (none: an open spot, else who you'd miss least)")
     a = ap.parse_args()
     split = lambda s: [x.strip() for x in s.split(",") if x.strip()]
     lg, punt = load(), split(a.punt)
@@ -1825,6 +1906,7 @@ def main():
            "news": lg.roster_news,
            "compare": lambda: lg.compare(split(a.players), punt),
            "schedule": lambda: lg.planner(punt),
+           "move": lambda: lg.add_drop(a.add, a.drop or None, punt, a.vs),
            "roster": lambda: lg.team_roster(a.team or lg.me, punt)}[a.cmd]()
     print(json.dumps(out, indent=1, ensure_ascii=False))
 
