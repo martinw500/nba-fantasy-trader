@@ -29,6 +29,8 @@ Since summer 2026, Yahoo only gives Fantasy API access to applications it approv
 2. Run `.venv/bin/python yahoo.py import mchc-fantasy-snapshot-2026-10-26.txt`. Your team comes from the file's `My team:` line; name it after the file to pick another (`... import file.txt "fatty zhou"`). It lists any player it couldn't match to NBA stats (usually rookies who haven't played yet).
 3. Restart `python app.py`. For a new snapshot, drop the file in the repo folder and press **Refresh**: it imports the newest `*snapshot*.txt`. The sidebar shows when the snapshot was pulled, and every view warns once it's over a day old or its matchup week is over.
 
+   Under that, the sidebar lists how old each downloaded source is: **Stats** and **Box scores** (refreshed every 12 hours), **Schedule** and **Projections** (daily), **Injuries** and **News** (every 3 hours). Hover one for the exact time. An entry turns amber once it's past its refresh time (press **Refresh**), shows **old copy** when the last download failed and the app is using what it had, or **none** when it has never downloaded. A failed or missing source (other than News, which never changes a number) also puts a notice at the top of every view, saying what the numbers leave out. **Refresh** always fetches injuries again; if that fails, the old copy stays. `python model.py sources` prints the same list.
+
 Pick your team from the dropdown under the league name in the top bar. Snapshot files (`*snapshot*.txt`) are committed, so `git pull` brings them to your other computers.
 
 When the file lists free agents, those are used, with roster % and "claim by" dates in Waivers. Otherwise free agents are the best players nobody rosters.

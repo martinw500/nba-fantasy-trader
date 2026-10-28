@@ -78,6 +78,8 @@ svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-widt
 .nav:hover { background: var(--line); color: var(--text); }
 .nav[aria-current="page"] { background: var(--accent-soft); color: var(--accent-ink); }
 .side-foot { margin-top: auto; padding: 10px; color: var(--faint); font-size: 12px; }
+.fresh { display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; margin-top: 6px; }
+.fresh .warn { color: var(--warn-ink); }
 
 .main { min-width: 0; display: flex; flex-direction: column; }
 .top { position: sticky; top: 0; z-index: 5; background: color-mix(in oklch, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); padding: 10px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -410,6 +412,15 @@ const freeList = (ms, more = 0) => and([...ms.map(m => `${esc(m.add)} ${m.drop ?
   ...(more > 0 ? [`${more} more`] : [])]);
 const ord = n => n + (n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th");
 const when = iso => new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const howOld = iso => { const m = (Date.now() - new Date(iso)) / 6e4;  // "5 min", "13h", "3d"
+  return m < 1 ? "now" : m < 60 ? Math.floor(m) + " min" : m < 2880 ? Math.floor(m / 60) + "h" : Math.floor(m / 1440) + "d"; };
+const ago = iso => howOld(iso) === "now" ? "just now" : howOld(iso) + " ago";
+// a cache's state now (model.freshness(): ok / stale / failed / missing); "stale" also once the app has sat past its window
+const freshness = x => x.status === "ok" && (Date.now() - new Date(x.fetched)) / 36e5 > x.hours ? "stale" : x.status;
+const freshTitle = x => ({ missing: `${x.label}: couldn't be fetched, so the model runs without ${x.lost}.`,
+  failed: `${x.label}: the last refresh failed${x.error ? ` (${x.error})` : ""}, so this is the copy fetched ${when(x.fetched)}.`,
+  stale: `${x.label}: fetched ${when(x.fetched)}, past its ${x.hours}-hour refresh. Press Refresh to update it.`,
+  ok: `${x.label}: fetched ${when(x.fetched)}. Refreshes every ${x.hours} hours.` })[freshness(x)];
 const oddsColor = v => v > 0.6 ? "var(--pos)" : v < 0.35 ? "var(--neg)" : "var(--faint)";
 const tone = v => v > 0.05 ? "pos" : v < -0.05 ? "neg" : "";
 function heat(v) {
@@ -1353,7 +1364,9 @@ function renderShell() {
   if (!st) return;
   $("#league").innerHTML = `<b>${esc(st.league)}</b><span>${st.mode === "points" ? "Points" : st.cats.length + "-cat"} · ${st.teams.length} teams${st.demo ? " · demo data" : ""} ·
     <select id="me-team" class="me" aria-label="Your team" title="Which team is yours">${st.teams.map(t => opt(t, t, st.me)).join("")}</select></span>`;
-  $("#fetched").textContent = st.pulled ? "Snapshot pulled " + when(st.pulled) : st.fetched ? "Rosters as of " + st.fetched : "";
+  $("#fetched").innerHTML = esc(st.pulled ? "Snapshot pulled " + when(st.pulled) : st.fetched ? "Rosters as of " + st.fetched : "") +
+    (st.sources?.length ? `<div class="fresh">${st.sources.map(x => { const f = freshness(x);
+      return `<span title="${esc(freshTitle(x))}">${esc(x.label)}</span><span class="${f === "ok" ? "" : "warn"}" title="${esc(freshTitle(x))}">${f === "missing" ? "none" : f === "failed" ? "old copy, " + howOld(x.fetched) : ago(x.fetched)}</span>`; }).join("")}</div>` : "");
   $("#punts").innerHTML = st.mode === "points" ? "" : `<span>Punt</span>${st.cats.map(c => `<button class="chip" data-punt="${c}" aria-pressed="${punted(c)}" title="${punted(c) ? "Stop punting" : "Punt"} ${lab(c)}">${lab(c)}</button>`).join("")}`;
 }
 function render() {
@@ -1364,9 +1377,14 @@ function render() {
   const demo = S.state.demo && S.view === "team" ? `<div class="notice">This is a demo league drafted from real stats. Connect your Yahoo league with <code>python yahoo.py</code> (see README) to see your real team.</div>` : "";
   const st = S.state, age = st.pulled ? (Date.now() - new Date(st.pulled)) / 864e5 : 0;
   const stale = st.rolled || age > 1 ? `<div class="notice">Your snapshot ${st.rolled ? "is from last week's matchup" : `is ${Math.floor(age)} day${age >= 2 ? "s" : ""} old`} (pulled ${when(st.pulled)}), so the score and recent moves aren't in. Drop a new snapshot in the project folder and press Refresh.</div>` : "";
+  // a cache that failed to refresh or never loaded (news aside: it never moves a number), on every view like the snapshot's
+  const bad = (st.sources || []).filter(x => x.key !== "news" && ["failed", "missing"].includes(x.status));
+  const old = bad.filter(x => x.status === "failed"), none = bad.filter(x => x.status === "missing");
+  const lower = x => x.label.toLowerCase();
+  const offline = bad.length ? `<div class="notice">${old.length ? `Couldn't refresh ${and(old.map(x => `${esc(lower(x))} (using the copy from ${when(x.fetched)})`))}. ` : ""}${none.length ? `No ${and(none.map(x => esc(lower(x))))}, so the numbers leave out ${none.map(x => esc(x.lost)).join("; ")}. ` : ""}Press Refresh to try again.</div>` : "";
   TBL = 0;
   const card = S.card.t === -1 ? `<div class="panel card-panel" role="region" aria-label="Player card">${playerCard()}</div>` : "";
-  v.innerHTML = card + demo + stale + ({ team: viewTeam, week: viewWeek, schedule: viewSchedule, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, compare: viewCompare, gm: viewGM }[S.view] || viewTeam)();
+  v.innerHTML = card + demo + stale + offline + ({ team: viewTeam, week: viewWeek, schedule: viewSchedule, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, compare: viewCompare, gm: viewGM }[S.view] || viewTeam)();
   const m = $("#msgs"); if (m) m.scrollTop = m.scrollHeight;
 }
 function setView(v) { S.view = v; S.card = {}; store.set("view", v); history.replaceState(null, "", "#" + v); render(); window.scrollTo(0, 0); }
