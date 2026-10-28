@@ -1005,6 +1005,12 @@ class League:
     def names(self, keys):
         return [self.p.at[k, "PLAYER_NAME"] for k in keys]
 
+    def pool(self, fa=False):
+        """Every rostered player as {name, team}, plus the snapshot's free agents (team "FA") with `fa`, by name: the
+        app's player searches (Trades, Compare, the top bar). Each name opens his card through find()."""
+        teams = {**self.rosters, **({"FA": self.fa} if fa else {})}
+        return sorted(({"name": n, "team": t} for t, ks in teams.items() for n in self.names(ks)), key=lambda p: p["name"])
+
     def _check(self, give, get):
         """Keys for a trade's players. Every give must be yours and every get from one other team (KeyError)."""
         give, get = [self.find(n) for n in give], [self.find(n) for n in get]

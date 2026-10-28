@@ -267,6 +267,15 @@ def test_all():
     h = ill.compare(["Hurt Guy", "Player 150"])["players"][0]["slot"]
     assert h["add"] and not h["cut"]
 
+    # player search (Q6, Trades / Compare / top bar): rostered players (IL-parked too), plus free agents with fa; every
+    # name it lists opens that player's card, owned by the team it lists
+    for g, fa in ((lg, False), (lg, True), (ill, True)):
+        pl = g.pool(fa)
+        assert len(pl) == sum(map(len, g.rosters.values())) + fa * len(g.fa) and pl == sorted(pl, key=lambda p: p["name"])
+        assert all((c := g.card(p["name"]))["name"] == p["name"] and c["team"] == p["team"] for p in pl)
+    assert {"name": "Hurt Guy", "team": "Me"} in ill.pool() and "FA" not in {p["team"] for p in lg.pool()}
+    assert "Nikola Jokić" not in {p["name"] for p in lg.pool(True)}  # in the stats, but on no roster or FA list
+
     # schedule: identical twins, one with 4 games left this week and one with 2; a return date wipes this week
     # and cuts rest-of-season availability to the share of games after it
     twins = model.keyed(pd.DataFrame([line(f"Twin {x}", 180) for x in "ABCDEF"]))

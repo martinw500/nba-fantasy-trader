@@ -120,8 +120,7 @@ def api(path, q, body):
     if path == "/api/news":  # My team's News panel
         return lg.roster_news()
     if path == "/api/players":  # rostered players, plus free agents (team "FA") with {"fa": true}
-        teams = {**lg.rosters, **({"FA": lg.fa} if body.get("fa") else {})}
-        return sorted(({"name": n, "team": t} for t, ks in teams.items() for n in lg.names(ks)), key=lambda p: p["name"])
+        return lg.pool(bool(body.get("fa")))
     if path == "/api/me":  # which team is yours
         if body.get("team") not in lg.rosters:
             raise KeyError(f"Unknown team: {body.get('team')}")
