@@ -548,7 +548,7 @@ def test_all():
     # ... a drop plays until the day before: swapping Twin A (AAA: Mon, Wed, Fri, Sun) for Twin E (BBB: Mon, Sun) is
     # best on Sunday, keeping Twin A's first three games; on Monday it costs him all four
     sun, mon = sl.add_drop("Twin E", "Twin A", opp="Them"), sl.add_drop("Twin E", "Twin A", opp="Them", day="2026-10-26")
-    assert sun["week"]["day"] == "2026-11-01" and sun["week"]["games"] == {"add": 1, "drop": 1, "you": [40, 40]}
+    assert sun["week"]["day"] == "2026-11-01" and sun["week"]["games"] == {"add": 1, "drop": 1, "kept": 3, "you": [40, 40]}
     assert mon["week"]["games"]["drop"] == 4 and mon["week"]["net"] < sun["week"]["net"] and sun["net"] == mon["net"]
     assert sl.starts(["twin a", "twin e"], {"twin e": "2026-11-01"}, {"twin a": "2026-10-31"}) == {"twin a": 3, "twin e": 1}
     for bad in ("2026-11-02", "Friday"):  # after this matchup week, or not a date
@@ -560,7 +560,7 @@ def test_all():
     # ... with an open lineup spot most days, a stream for a player who plays Mon-Sat is best on Sunday
     sl.lineup = 15
     e = next(s for s in sl.this_week("Them")["streams"] if s["name"] == "Twin E")
-    assert e["day"] == "2026-11-01" and e["games"] == 1
+    assert e["day"] == "2026-11-01" and e["games"] == 1 and e["kept"] == 3
     assert sl.add_drop("Twin E", e["drop"], opp="Them", day="2026-10-26")["week"]["net"] < e["gain"]
     sl.lineup = 10
     # 4 adds a week: used = the higher of the snapshot's count (only while it was pulled this week) and the log's adds

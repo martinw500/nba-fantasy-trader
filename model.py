@@ -1772,14 +1772,15 @@ class League:
                     break
                 if a not in seen:
                     seen.add(a)
-                    streams.append({**self.player(a, punt), **({"games": self.starts(play(me) + [a], st, un)[a]} if self.sched else {}),
+                    c = self.starts(play(me) + [a], st, un)  # kept: the drop's starts before the add
+                    streams.append({**self.player(a, punt), **({"games": c[a], "kept": c[d]} if self.sched else {}),
                                     "gain": round(g, 1), "drop": name(d), "day": s, "season": season([d], [a])})
             moves, st, un = self._plan(play(me), cands, drops, odds, s0, limit if cap is None else cap["left"])
             if moves:
                 g = self.starts(play(me) + [x["add"] for x in moves], st, un)
                 kept = [x["add"] for x in moves if x["add"] not in un]
                 plan = {"moves": [{**x, "add": name(x["add"]), "drop": name(x["drop"]), "gain": round(x["gain"], 1),
-                                   **({"games": g[x["add"]]} if self.sched else {})} for x in moves],
+                                   **({"games": g[x["add"]], "kept": g[x["drop"]]} if self.sched else {})} for x in moves],
                         "gain": round(sum(x["gain"] for x in moves), 1), "keep": [name(k) for k in kept],
                         "season": season([d for d in un if d in drops], kept)}
         call = lambda c, x: "punt" if c in punt else "safe" if x >= 1 - WEAK else "lost" if x <= WEAK else "chase"
@@ -1890,10 +1891,11 @@ class League:
             week = {"opponent": opp, "net": round(100 * float(self._score(p1) - self._score(p0)), 1) + 0.0,
                     "win": [pct1(match_prob(p0)), pct1(match_prob(p1))],
                     "score": [round(float(p0.sum()), 1), round(float(p1.sum()), 1)],
-                    **({"claim": claim[k]} if claim else {}), **({"day": when} if when else {})}
+                    **({"claim": claim[k]} if claim else {}), **({"day": when} if when else {}),
+                    "today": max(self.today, self.matchup.get("from", ""))}
             if self.sched:
                 g0, g1 = self.starts(act), self.starts(after, start, until)
-                week["games"] = {"add": g1[k], "drop": sum(g0[x] - g1[x] for x in gone),
+                week["games"] = {"add": g1[k], "drop": sum(g0[x] - g1[x] for x in gone), "kept": sum(g1[x] for x in gone),
                                  "you": [sum(g0.values()), sum(g1.values())]}
         return {**out, "unit": "win%", "net": round(net, 1) + 0.0, "win": pct1(b["win"]), "win_after": pct1(a["win"]),
                 "rank": sb[self.me]["rank"], "rank_after": sa[self.me]["rank"], "cats": cats, "week": week,

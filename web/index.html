@@ -693,9 +693,11 @@ function viewWeek() {
     + (yg ? `<div><dt title="Yahoo's count, from the lineups as they're set now. Lower than ours when bench players could fill in on light days">Yahoo games left</dt><dd>${yg.you.left} <span class="muted small">vs ${yg.them.left}</span></dd></div>` : "");
   const advice = [by("chase").length && `Chase ${by("chase").join(", ")}.`, by("lost").length && `Don't chase ${by("lost").join(", ")}: you're unlikely to catch up.`,
     by("safe").length && `You're ahead in ${by("safe").join(", ")}.`].filter(Boolean).join(" ");
-  const claim = w.streams.some(p => p.waiver) ? [{ h: "Add", v: p => p.waiver ? `<span class="tag" title="On waivers: he only counts from the day the claim clears">claim by ${esc(p.waiver)}</span>` : `<span class="muted">now</span>` }] : [];
+  const when = d => d === w.today ? `<span class="muted">now</span>` : esc(dayName(d));
+  const addOn = { h: `<span title="The best day to make the add: your drop plays his games until then">Add on</span>`,
+    v: p => when(p.day) + (p.waiver ? `<span class="tag" title="On waivers: he only counts from the day the claim clears">claim by ${esc(p.waiver)}</span>` : "") };
   const streamCols = [{ h: `<span title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}">This week</span>`, v: p => `<span class="val ${tone(p.gain)}">${delta(p.gain, "win%")}</span>` },
-    { h: "Drop", v: p => esc(p.drop) }, { h: `<span title="Change in your season-long ${WIN().of} if you keep him">Season</span>`, v: p => `<span class="${tone(p.season)}">${delta(p.season, "win%")}</span>` }, ...claim];
+    { h: "Drop", v: p => esc(p.drop) }, { h: `<span title="Change in your season-long ${WIN().of} if you keep him">Season</span>`, v: p => `<span class="${tone(p.season)}">${delta(p.season, "win%")}</span>` }, addOn];
   return head(`Week ends ${end}${w.live ? "" : " · no live score yet"}${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}`) + `
     <div class="panel"><div class="panel-h"><div class="verdict"><span class="pill ${verdict[0]}" style="text-transform:none">${verdict[1]}</span>
       <dl class="side-by">${oneWin() ? winOdds + score : score + winOdds}${games}</dl></div></div>
@@ -706,8 +708,26 @@ function viewWeek() {
         <td><span class="tag ${d.call === "safe" ? "safe" : d.call === "lost" ? "out" : d.call}" title="${CALL_TIP[d.call]}">${CALL[d.call]}</span></td></tr>`).join("")}</tbody></table></div>
       <div class="panel-b small muted" style="border-top:1px solid var(--line)">${advice} ${yg ? `Games played so far: ${yg.you.played} vs ${yg.them.played}.` : ""} Projected = ${w.live ? "the score so far plus " : ""}each player's games left × his per-game line × his chance of playing. Players in IL slots sit.
         ${w.live ? "" : "No live score yet, so this assumes nothing has been played, which is right on Monday. A new snapshot adds the real score."}</div></div>
-    <div class="panel"><div class="panel-h"><div><h2>Streaming adds</h2><p>Free agents who most raise your odds this week, each swapped for whichever of your three cheapest healthy players helps most. Season shows what keeping him does long-term.</p></div></div>
-      ${playerTable(w.streams, { extra: streamCols, empty: "<b>No stream helps this week</b>Nobody on waivers raises your odds by 0.1% or more over your weakest players." })}</div>`;
+    <div class="panel"><div class="panel-h"><div><h2>Streaming adds</h2><p>Free agents who most raise your odds this week, each swapped for whichever of your three cheapest healthy players helps most, on his best day: your drop plays until then. Season shows what keeping him does long-term.</p></div></div>
+      ${streamPlan(w)}
+      ${w.adds && !w.adds.left ? `<div class="empty"><b>No adds left this week</b>You've used all ${w.adds.max}. They reset ${esc(dayName(w.adds.resets))}. Waivers' moves still count for the season.</div>`
+        : playerTable(w.streams, { extra: streamCols, empty: "<b>No stream helps this week</b>Nobody on waivers raises your odds by 0.1% or more over your weakest players." })}</div>`;
+}
+// adds left this week (Q11) and the best way to spend them: one line for the last add, else the moves in order
+function streamPlan(w) {
+  const A = w.adds, P = w.plan, m = P?.moves || [];
+  const on = d => d === w.today ? "today" : "on " + esc(dayName(d));
+  const tip = A && `Yahoo's count in the snapshot${A.listed != null ? ` (${A.listed})` : ""} or the adds and waiver claims in its transaction log since ${mdy(A.week_start)} (${A.counted}), whichever is higher. Moves made after the snapshot aren't counted.`;
+  const left = A ? `<b title="${esc(tip)}">${A.left ? `${A.left} of ${A.max} adds left` : "No adds left"}</b> this week (${A.used} used). ` : "";
+  const keep = P && P.keep.length ? ` You end the week with ${and(P.keep.map(esc))}: <span class="${tone(P.season)}">${delta(P.season, "win%")}</span> for the season.` : "";
+  if (!m.length) return A?.left ? `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}</div>` : "";
+  if (A && A.left === 1) { const x = m[0];
+    return `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}Your last one is best spent ${on(x.day)}: add <b>${esc(x.add)}</b> for ${esc(x.drop)} (<span class="pos">${delta(x.gain, "win%")}</span>${x.games != null ? `, ${plural(x.games, "start")}` : ""}).
+      ${x.day > w.today ? `Hold it until then: ${x.kept ? `${esc(x.drop)} starts ${plural(x.kept, "more game")} first` : "waiting costs nothing"}, and the add is still yours if someone gets hurt.` : ""}${keep}</div>`; }
+  return `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}${A ? `The best way to spend ${A.left > 1 ? "them" : "it"}` : "The best streams in a row (no weekly add limit)"}, each on top of the one before. A later one can replace an earlier streamer once his games are used.</div>
+    <div class="tw" style="border-bottom:1px solid var(--line)"><table><thead><tr><th>Day</th><th>Add</th><th>Drop</th><th class="n" title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, on top of the moves above">This week</th>${m[0].games != null ? `<th class="n" title="Games he starts for you this week">Starts</th>` : ""}</tr></thead><tbody>
+    ${m.map(x => `<tr><td>${x.day === w.today ? "Today" : esc(dayName(x.day))}</td><td class="pname">${esc(x.add)}</td><td>${esc(x.drop)}</td><td class="n val pos">${delta(x.gain, "win%")}</td>${x.games != null ? `<td class="n">${x.games}</td>` : ""}</tr>`).join("")}</tbody></table></div>
+    <div class="panel-b small muted" style="border-bottom:1px solid var(--line)">Together <span class="pos">${delta(P.gain, "win%")}</span> this week.${keep}</div>`;
 }
 async function loadWeek(opponent) {
   const W = S.week; W.loading = true;
@@ -733,7 +753,7 @@ function viewSchedule() {
     + teamsPanel(d);
 }
 function calendarPanel(d) {
-  const T = S.plan, L = d.lineup, all = d.weeks.flatMap(w => w.days);
+  const T = S.plan, L = d.lineup, all = d.weeks.flatMap(w => w.days), A = d.adds;
   const po = new Set(d.playoffs.map(w => w.week));
   if (!all.some(x => x.date === T.day)) T.day = (all.find(x => x.nba) || all[0])?.date;
   const cell = x => { if (!x) return `<td class="day"></td>`;
@@ -746,7 +766,8 @@ function calendarPanel(d) {
     for (const x of w.days) { if (!lines.length || wday(x.date) === 0) lines.push(Array(7).fill(null)); lines.at(-1)[wday(x.date)] = x; }
     if (!lines.length) lines.push(Array(7).fill(null));
     const rs = lines.length > 1 ? ` rowspan="${lines.length}"` : "";
-    const lbl = `<td class="lbl"${rs}><div class="pname">${weekName(w, i)}</div><div class="small muted">${w.week ? `Week ${w.week}` : ""}${po.has(w.week) ? `${w.week ? " · " : ""}playoffs` : ""}${!w.days.length ? "No days left" : ""}</div></td>`;
+    const adds = A && w.days.length ? `<div class="small ${i || A.left ? "muted" : "neg"}" title="Adds you can make in this matchup week (${A.max} a week)">${i ? A.max : A.left ? `${A.left} of ${A.max}` : "No"} adds left</div>` : "";
+    const lbl = `<td class="lbl"${rs}><div class="pname">${weekName(w, i)}</div><div class="small muted">${w.week ? `Week ${w.week}` : ""}${po.has(w.week) ? `${w.week ? " · " : ""}playoffs` : ""}${!w.days.length ? "No days left" : ""}</div>${adds}</td>`;
     const sum = `<td class="n"${rs}>${w.starts}</td><td class="n ${w.sit ? "neg" : "muted"}"${rs}>${w.sit}</td><td class="n ${w.open ? "pos" : "muted"}"${rs}>${w.open}</td>`;
     return lines.map((cells, j) => `<tr>${j ? "" : lbl}${cells.map(cell).join("")}${j ? "" : sum}</tr>`).join("");
   }).join("");
@@ -754,7 +775,7 @@ function calendarPanel(d) {
   const detail = !x ? "" : !x.nba ? `<b>${dayName(x.date)}</b>: no NBA games.`
     : `<b>${dayName(x.date)}</b>: ${x.players.length + x.sit.length} of your players have a game (${x.nba} NBA teams play). ${x.players.length ? `Starting: ${and(x.players.map(esc))}.` : ""}
       ${x.sit.length ? ` <span class="neg">Sitting: ${and(x.sit.map(esc))}</span>, your lowest-valued players with a game. A stream adds nothing today.` : ""}
-      ${x.open ? ` <span class="pos">${plural(x.open, "starting spot")} open</span>: a free agent who plays today would start.` : ""}`;
+      ${x.open ? ` <span class="pos">${plural(x.open, "starting spot")} open</span>: a free agent who plays today would start${A && !A.left && d.weeks[0].days.includes(x) ? `, but you have no adds left this week` : ""}.` : ""}`;
   return `<div class="panel"><div class="panel-h"><div><h2>Games per day</h2><p>How many of your active players have a game each day. Only ${L} start: red days have more (the rest sit), green days have open spots a streamer would fill. Pick a day to see who starts.</p></div></div>
     <div class="tw"><table class="cal"><thead><tr><th>Week</th>${WD.map(w => `<th class="d">${w}</th>`).join("")}
       <th class="n" title="Games your players start (best ${L} with a game each day)">Starts</th><th class="n" title="Games lost because ${L} better players have a game that day">Sit</th><th class="n" title="Empty starting spots on days the NBA plays: room to stream">Open</th></tr></thead>
@@ -1106,7 +1127,8 @@ function viewWaivers() {
     ${w.moves.map(m => `<tr><td class="pname">${esc(m.add)}</td><td>${m.drop ? esc(m.drop) : `<span class="muted">Open spot</span>`}</td><td class="n pos val">${delta(m.gain, m.unit)}</td><td class="n">${tryBtn(m.add, m.drop)}</td></tr>`).join("")}</tbody></table></div>`
     : `<div class="empty"><b>No clear upgrades</b>Nobody on waivers beats your weakest healthy player by enough to bother.</div>`;
   const tryCol = { h: "", v: p => tryBtn(p.name) }, dropCol = { h: "", v: p => tryBtn(undefined, p.name) };
-  return `<div class="head"><div><h1>Waivers</h1><p class="sub">${odds ? `Free agents ranked by how much they'd raise your ${WIN().of}, swapped for your best drop.` : "Free agents ranked on your build."} Injured players on your roster are never suggested as drops.</p></div></div>
+  const A = S.state.adds, addsLeft = !A ? "" : A.left ? ` ${A.left} of ${A.max} adds left this week.` : ` You've used all ${A.max} adds this week: these moves wait until ${esc(dayName(A.resets))}.`;
+  return `<div class="head"><div><h1>Waivers</h1><p class="sub">${odds ? `Free agents ranked by how much they'd raise your ${WIN().of}, swapped for your best drop.` : "Free agents ranked on your build."} Injured players on your roster are never suggested as drops.${addsLeft}</p></div></div>
     ${movePanel()}
     <div class="grid2"><div class="panel"><div class="panel-h"><div><h2>Suggested moves</h2><p>${odds ? `Add/drop pairs that clearly raise your ${WIN().of}.` : "Add/drop pairs worth at least +0.3."}${w.free?.length ? ` Trades are scored as if you'd made these first: ${freeList(w.free)}.` : ""}</p></div></div>${moves}</div>
       <div class="panel"><div class="panel-h"><div><h2>Drop candidates</h2><p>${odds ? "The healthy players you'd miss least." : "Your three weakest healthy players."}</p></div></div>${playerTable(w.drop_candidates, { extra: [dropCol] })}</div></div>
@@ -1136,7 +1158,7 @@ function movePanel() {
   return `<div class="panel" id="move"><div class="panel-h"><div><h2>Try a move</h2><p>${desc}</p></div></div>${form}${r ? moveResult(r) : ""}</div>`;
 }
 function moveResult(r) {
-  const add = r.add, picked = r.drop.find(x => !x.auto), auto = r.drop.filter(x => x.auto), wk = r.week;
+  const add = r.add, picked = r.drop.find(x => !x.auto), auto = r.drop.filter(x => x.auto), wk = r.week, gone = r.drop.filter(x => !x.parked);
   const notes = [
     auto.length && (picked ? (picked.parked ? `Dropping ${esc(picked.name)} frees no active spot, so ${and(auto.map(x => esc(x.name)))} goes too (the player you'd miss least).`
       : `No room for him: ${and(auto.map(x => esc(x.name)))} goes too (the player you'd miss least).`)
@@ -1145,6 +1167,9 @@ function moveResult(r) {
     add.parks && `He's injured, so he goes into a free IL slot and counts from his return.`,
     r.open && `This leaves ${plural(r.open, "active spot")} open. Filling ${r.open > 1 ? "them is more adds" : "it is another add"}: try that move too.`,
     wk?.claim && `He's on waivers: he counts from ${mdy(wk.claim)}, when the claim clears.`,
+    wk?.day && wk.day > (wk.claim || wk.today) && `This week it's best made on ${esc(dayName(wk.day))}${wk.games?.kept ? `: ${and(gone.map(x => esc(x.name)))} ${gone.length > 1 ? "start" : "starts"} ${plural(wk.games.kept, "more game")} first` : ", his first game"}.`,
+    r.capped && `You've used all ${r.adds.max} adds this week, so the move waits until ${esc(dayName(r.adds.resets))}: the season number still counts, this week's doesn't.`,
+    r.adds && !r.capped && (r.adds.left === 1 ? `It's your last add this week.` : `It uses 1 of your ${r.adds.left} adds left this week.`),
     wk && wk.net >= 0.1 && r.net < 0 && `It helps this week but costs you over the season: a stream. Drop him again once his games are used.`,
     wk && wk.net <= -0.1 && r.net > 0 && `It costs you this week, but pays off over the season.`].filter(Boolean);
   const best = S.state.waivers.moves[0];
@@ -1160,7 +1185,8 @@ function moveResult(r) {
       <th class="n" title="${wk ? `Chance you win it this week vs ${esc(wk.opponent)}, from the score so far and the games left` : "Pick this week's opponent on This week"}">This week</th><th></th></tr></thead><tbody>
     ${Object.entries(r.cats).map(([c, d]) => `<tr class="${punted(c) ? "punted-col" : ""}"><td class="pname">${lab(c)}</td>${odds(d.season)}${odds(d.week)}</tr>`).join("")}</tbody></table></div>`;
   const week = wk ? `<div><dt title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, vs ${esc(wk.opponent)}">This week</dt><dd><span class="${tone(wk.net)}">${delta(wk.net, "win%")}</span> <span class="muted small">score ${wk.score[0].toFixed(1)} → ${wk.score[1].toFixed(1)}</span></dd></div>`
-    + (g ? `<div><dt title="Games he starts the rest of this week, against the games your drops would have started">Games this week</dt><dd>${g.add} <span class="muted small">for ${g.drop}</span></dd></div>` : "")
+    + (g ? `<div><dt title="Games he starts the rest of this week, against the starts your drops lose">Games this week</dt><dd>${g.add} <span class="muted small">for ${g.drop}</span></dd></div>` : "")
+    : r.capped ? `<div><dt>This week</dt><dd><span class="muted small">No adds left</span></dd></div>`
     : `<div><dt>This week</dt><dd><span class="muted small">No opponent saved: <button class="btn ghost" data-go="week">pick one</button></span></dd></div>`;
   return `<div class="panel-b" style="border-bottom:1px solid var(--line)"><div class="verdict"><span class="pill ${r.verdict}" style="text-transform:none">${MV_VERDICT[r.verdict]}</span>
       <dl class="side-by"><div><dt title="${cap(WIN().def)}">Your season ${WIN().of}</dt><dd><span class="${tone(r.net)}">${delta(r.net, "win%")}</span> <span class="muted small">${r.win}% → ${r.win_after}%</span></dd></div>
