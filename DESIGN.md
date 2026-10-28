@@ -215,6 +215,9 @@ A table row that picks what another panel shows (Strategy's Every build) gets an
 ### Compare table
 Rows are numbers, columns are deals (Saved trades) or players (Compare), the row label in muted 12px. On Compare, bold marks who's ahead on each number, a muted grey sub-heading row starts each group (NBA games, Per game) and category rows are z-score cells with the chosen per-game line beside them. A punted category dims its whole row (`tr.punted-col`).
 
+### Schedule calendar
+A row per calendar week, a column per weekday, each cell a button with the number of your players who have a game and a muted note under it (`2 sit`, `3 open`, `full`). The fill follows that count minus the starting spots on the z-cell scale: red for players who'd sit, green for open spots. A day with no NBA games shows a muted dash. The picked day gets a 2px accent ring (selection) and its starters and sitters show under the table.
+
 ### Category strip
 Equal columns per category: label, rank `n / 12`, signed total, and a 4px bar. The bar is green in the top 40%, red in the bottom 35%, grey between.
 
