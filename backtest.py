@@ -1,8 +1,9 @@
 """Backtest the 9-cat matchup model on a real NBA season, no Yahoo needed:  python backtest.py [2025-26]
+python backtest.py replay [2025-26]: rest-of-season error by expert-projection weight instead (fits PROJ_W).
 
 Drafts 20 simulated 12-team leagues from preseason projections. Each week the model predicts every matchup from what
 it would have known that Monday (last season blended with games so far, availability from games played), then the
-prediction is scored against the real box scores that week. All games count (no daily lineup cap), rosters never change,
+prediction is scored against the real box scores that week. Lines blend in ESPN's preseason projection (prior()). All games count (no daily lineup cap), rosters never change,
 so predictions leave out League.week's FILL term (missed games covered at waiver level): nobody fills in here.
 Prints calibration (predicted vs actual win rates), log loss and Brier score for categories and for whole matchups.
 """
@@ -15,7 +16,8 @@ import pandas as pd
 
 import model
 
-SEASON = sys.argv[1] if len(sys.argv) > 1 else "2025-26"
+ARGS = [a for a in sys.argv[1:] if a != "replay"]
+SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
 
@@ -28,23 +30,34 @@ def logs(season):
     return g
 
 
+def per_game(games):
+    """Each player's per-game line over these box scores, GP = games."""
+    return games.groupby("key").agg(PLAYER_NAME=("PLAYER_NAME", "first"), GP=("GAME_ID", "count"),
+                                    **{c: (c, "mean") for c in ["MIN"] + model.RAW})
+
+
+def experts(g, base):
+    """ESPN's preseason projection for the season, as model.experts() lines."""
+    return model.experts({}, model.espn(SEASON), base, base.index.union(g.key.unique()))
+
+
 def season_setup():
     g, base = logs(SEASON), model.baseline(model.fetch(PREV), model.fetch(PREV2))
+    pre = model.prior(base, experts(g, base))
     weeks = range(int(g.week.max()) + 1)
     keys = sorted(set(base.index) | set(g.key))
     actual = {w: g[g.week == w].groupby("key")[model.RAW].sum().reindex(keys).fillna(0).to_numpy() for w in weeks}
     # team games per week, and each player's latest team before each week
     team_games = g.groupby(["TEAM_ABBREVIATION", "week"]).GAME_ID.nunique()
     first_team = g.sort_values("GAME_DATE").groupby("key").TEAM_ABBREVIATION.first()
-    return g, base, keys, weeks, actual, team_games, first_team
+    return g, base, pre, keys, weeks, actual, team_games, first_team
 
 
-def projections(g, base, keys, w):
-    """What the model knew on the Monday of week w: per-game ROS line and availability (as League does)."""
-    seen = g[g.week < w]
-    cur = seen.groupby("key").agg(PLAYER_NAME=("PLAYER_NAME", "first"), GP=("GAME_ID", "count"),
-                                  **{c: (c, "mean") for c in ["MIN"] + model.RAW})
-    line = model.ros(base, cur).reindex(keys)
+def projections(g, base, pre, keys, w):
+    """What the model knew on the Monday of week w: per-game ROS line (from the prior) and availability (from the
+    baseline's games, as League does)."""
+    cur = per_game(g[g.week < w])
+    line = model.ros(pre, cur).reindex(keys)
     line[model.RAW] = line[model.RAW].fillna(0)
     played = base.GP.reindex(keys).fillna(0) + cur.GP.reindex(keys).fillna(0)
     possible = base.GP.max() + (cur.GP.max() if len(cur) else 0)
@@ -82,9 +95,9 @@ def outcome(A, B):
 
 def build(games="fixed"):
     """Every matchup of every week: expected totals for both sides (the model's view) and the real result."""
-    g, base, keys, weeks, actual, team_games, first_team = season_setup()
+    g, base, pre, keys, weeks, actual, team_games, first_team = season_setup()
     idx = {k: i for i, k in enumerate(keys)}
-    line0, _ = projections(g, base, keys, 0)
+    line0, _ = projections(g, base, pre, keys, 0)
     rosters = [[idx[k] for k in t] for s in range(LEAGUES) for t in draft(line0, s)]
     R = np.zeros((len(rosters), len(keys)))
     for i, t in enumerate(rosters):
@@ -94,7 +107,7 @@ def build(games="fixed"):
     I, J = np.array(pairs).T
     E, Y = [], []
     for w in weeks:
-        line, avail = projections(g, base, keys, w)
+        line, avail = projections(g, base, pre, keys, w)
         if games == "fixed":
             n = model.GAMES_WEEK
         else:  # the real schedule: games the player's team played that week
@@ -135,7 +148,26 @@ def report(A, B, Y, label):
     print("matchup calibration:", calibration(match, won))
 
 
+def replay(weights=(0, 0.25, 0.5, 0.6, 0.75, 1)):
+    """Each Monday's rest-of-season line (ros() on prior() at each expert weight; 0 = the baseline alone) vs what
+    players did after: mean absolute miss per stat over that stat's average, so stats count equally, for players with
+    10+ games left. Fitted PROJ_W on 2025-26."""
+    g, base = logs(SEASON), model.baseline(model.fetch(PREV), model.fetch(PREV2))
+    proj = experts(g, base)
+    print(f"\n== {SEASON}: rest-of-season error by expert weight ==")
+    for x in weights:
+        pre, err = model.prior(base, proj, x), []
+        for w in range(int(g.week.max()) - 3):
+            left = per_game(g[g.week >= w]).query("GP >= 10")
+            line = model.ros(pre, per_game(g[g.week < w])).reindex(left.index).fillna(0)
+            err.append(float(((line[model.RAW] - left[model.RAW]).abs() / left[model.RAW].mean()).mean(axis=1).mean()))
+        print(f"  weight {x:<5} week 0 {err[0]:.4f}   weeks 1-6 {np.mean(err[1:7]):.4f}   season {np.mean(err):.4f}")
+
+
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
-    for games in ("fixed", "schedule"):
-        report(*build(games), f"{SEASON}, games per week: {games}")
+    if "replay" in sys.argv:
+        replay()
+    else:
+        for games in ("fixed", "schedule"):
+            report(*build(games), f"{SEASON}, games per week: {games}")

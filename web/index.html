@@ -417,8 +417,10 @@ function playerTable(players, { extra = [], empty = "No players.", dim = [] } = 
 }
 
 // ---------- player card: click a name in any player table ----------
-const LINES = { ros: ["Rest of season", "The model's projection: the last two seasons blended with this one"], season: ["This season"],
-  last14: ["Last 14 days"], last7: ["Last 7 days"] };
+const LINES = { ros: ["Rest of season", "The model's projection: expert projections and the last two seasons, blended with this one"],
+  yahoo: ["Yahoo projection", "Yahoo's rest-of-season projection from the snapshot, part of ours. Yahoo shows no minutes"],
+  espn: ["ESPN projection", "ESPN's season projection, part of ours (Yahoo's snapshot doesn't list him)"],
+  season: ["This season"], last14: ["Last 14 days"], last7: ["Last 7 days"] };
 const span = (a, b) => mdy(a) + "–" + (a.slice(5, 7) === b.slice(5, 7) ? +b.slice(8) : mdy(b));
 function playerCard() {
   const C = S.card, d = C.data, me = S.state.me, cats = S.state.cats;
@@ -427,7 +429,7 @@ function playerCard() {
   const own = d.team === me ? "your team" : theirs ? esc(d.team) : d.waiver ? `free agent, on waivers until ${esc(d.waiver)}` : "free agent";
   const act = d.team === me ? `<button class="btn" data-act="shop" data-name="${esc(d.name)}">Find buyers</button>`
     : theirs ? `<button class="btn" data-act="offers" data-name="${esc(d.name)}" data-team="${esc(d.team)}">Find offers</button>` : "";
-  const lines = Object.entries(d.lines).map(([k, l]) => `<tr><td${LINES[k][1] ? ` title="${LINES[k][1]}"` : ""}>${LINES[k][0]}</td><td class="n muted">${l.gp ?? ""}</td><td class="n muted">${l.MIN.toFixed(1)}</td>
+  const lines = Object.entries(d.lines).map(([k, l]) => `<tr><td${LINES[k][1] ? ` title="${LINES[k][1]}"` : ""}>${LINES[k][0]}</td><td class="n muted">${l.gp ?? ""}</td><td class="n muted">${l.MIN == null ? "—" : l.MIN.toFixed(1)}</td>
     ${cats.map(c => `<td class="n ${punted(c) ? "punted-col" : ""}">${l[c] == null ? "—" : l[c].toFixed(1)}</td>`).join("")}</tr>`).join("");
   const games = d.weeks.map((w, i) => `<div><dt${i ? "" : ` title="NBA games left in your matchup week"`}>${i ? span(w.start, w.end) : "This week"}</dt>
     <dd class="${w.games <= 1 ? "neg" : w.games >= 4 ? "pos" : ""}">${w.games}</dd></div>`).join("");

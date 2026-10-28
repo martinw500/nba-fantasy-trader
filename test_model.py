@@ -470,6 +470,29 @@ Sharks has an open SF slot.""")
     assert [(p["name"], p["by"]) for p in dr] == [("Player 103", "Them"), ("Player 102", "Me")]
     assert set(lg.profile()["odds"]) == set(model.CATS)
 
+    # expert projections (N4): Yahoo's (the snapshot's) where it has him, else ESPN's, blended into the pre-season
+    # line at PROJ_W. Yahoo's minutes are ESPN's scaled by output, a spelling variant lands on the player it means,
+    # and a rookie with no games yet gets a row: his projection blended with the fringe line. Nobody else moves.
+    stat = lambda i, x=1.0, cols=model.RAW: {c: line("", i)[c] * x for c in cols}
+    full = ["MIN"] + model.RAW
+    ex = model.League({**lg.snap, "projections": {"Player 150": stat(150, 2), "Zed Unknown": stat(150)}}, base, cur,
+                      proj={"Player 150": stat(150, cols=full), "Player 152": stat(152, 1.5, full),
+                            "Nikola Jokich": stat(199, 0.5, full), "New Rookie": stat(190, cols=full)})
+    pj = ex.proj
+    assert pj.at["player 150", "src"] == "Yahoo" and pj.at["player 152", "src"] == "ESPN"
+    assert abs(pj.at["player 150", "MIN"] - 2 * line("", 150)["MIN"]) < 1e-9  # twice the output: twice ESPN's minutes
+    assert "nikola jokic" in pj.index and "zed unknown" not in pj.index  # Yahoo-only, no minutes to go on: left out
+    pre = model.prior(base, pj)
+    assert abs(pre.at["player 152", "PTS"] - (1 - model.PROJ_W + 1.5 * model.PROJ_W) * base.at["player 152", "PTS"]) < 1e-9
+    fringe = base.nlargest(200, "MIN").tail(60).PTS.mean()
+    assert abs(pre.at["new rookie", "PTS"] - ((1 - model.PROJ_W) * fringe + model.PROJ_W * line("", 190)["PTS"])) < 1e-9
+    assert ex.find("New Rookie") == "new rookie" and ex.find("Zed Unknown", strict=False) is None
+    assert ex.p.at["player 150", "PTS"] > lg.p.at["player 150", "PTS"] and ex.p.at["player 152", "PTS"] > lg.p.at["player 152", "PTS"]
+    assert np.allclose(ex.p.loc["player 160", model.RAW].astype(float), lg.p.loc["player 160", model.RAW].astype(float))
+    assert ex.player("player 150")["proj"] == "Yahoo" and "proj" not in lg.player("player 150")
+    yc = ex.card("Player 150")["lines"]["yahoo"]
+    assert yc["MIN"] is None and yc["PTS"] == round(2 * line("", 150)["PTS"], 1) and "espn" in ex.card("Player 152")["lines"]
+
 
 if __name__ == "__main__":
     test_all()

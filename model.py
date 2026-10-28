@@ -1,7 +1,8 @@
 """Fantasy basketball engine: player values, team outlooks, trades, waivers, sell-high/buy-low.
 
-Values are per game, rest of season (ROS): last season (or your projections) shrunk toward this season
-as games pile up. 9-cat uses z-scores vs the rostered pool; points uses the league's scoring weights.
+Values are per game, rest of season (ROS): expert projections (Yahoo's, ESPN's) blended with the last two seasons,
+shrunk toward this season as games pile up. 9-cat uses z-scores vs the rostered pool; points uses the league's
+scoring weights.
 
 9-cat decisions (trades, waivers, standings) use a matchup model on top of that: each team's expected weekly
 totals -> odds of winning each category vs every other team -> what the week is worth in the standings: the share
@@ -49,6 +50,7 @@ POINTS = {"PTS": 1, "REB": 1.2, "AST": 1.5, "STL": 3, "BLK": 3, "TOV": -1}  # Ya
 SHRINK = 20  # production per minute: games of baseline minutes that count as much as this season's minutes played
 MIN_SHRINK = 6  # minutes per game: games of baseline that count as much as this season's (a new role shows at once)
 OLDER_W, REGRESS = 0.5, 25  # baseline: a game two seasons ago counts half; 25 games of a fringe line pull small samples in
+PROJ_W = 0.6  # expert projections' weight in the pre-season line (prior()); fitted by python backtest.py replay
 HYPE = 10    # same, for how other managers see players (hot starts count more: 3 games = 23%, 10 games = half)
 OUT = {"O", "INJ", "IL", "IL+", "NA", "SUSP"}  # Yahoo statuses that mean "not playing now"
 
@@ -56,8 +58,8 @@ OUT = {"O", "INJ", "IL", "IL+", "NA", "SUSP"}  # Yahoo statuses that mean "not p
 # simulated leagues, predictions from what was known each Monday); re-run it after changing how lines are projected.
 GAMES_WEEK = 3.4                                   # NBA games per team per week
 DISPERSION = {"FG3M": 1.75, "PTS": 3.0, "REB": 2.5, "AST": 3.0, "STL": 1.0, "BLK": 1.5, "TOV": 1.25}  # variance / mean
-SCHED_CV = 0.15                                    # week-to-week swing beyond box-score noise (schedule, rest, minutes,
-                                                   # and projection error)
+SCHED_CV = 0.17                                    # week-to-week swing beyond box-score noise (schedule, rest, minutes,
+                                                   # and projection error); 0.15 before expert projections (N4)
 PCT_NOISE = 1.75                                   # FG%/FT% variance vs coin-flip shooting at each player's rate
 WEAK = 0.35                                        # a "weak spot" / punt hint: winning a category under 35% of
                                                    # weeks (about the bottom 10% of team-categories once odds are calibrated)
@@ -106,6 +108,17 @@ def norm(name):
     name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
     name = re.sub(r"[^a-z0-9 ]", "", name)
     return " ".join(re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", name).split())
+
+
+def match(name, keys):
+    """The stats key a name means (League.find): the same name once accents and Jr/III are dropped, a unique last name
+    ("Jokic", "Gilgeous-Alexander"), or a close spelling. None when nothing fits."""
+    k = norm(name)
+    if k in keys:
+        return k
+    if len(last := [x for x in keys if x.endswith(" " + k)]) == 1:
+        return last[0]
+    return next(iter(difflib.get_close_matches(k, keys, n=1, cutoff=0.8)), None)
 
 
 def fetch(season, max_age_hours=None):
@@ -165,6 +178,33 @@ def injuries():
     return _cached(DATA / "injuries.json", 3, get)
 
 
+ESPN_STAT = {"MIN": "40", "FGM": "13", "FGA": "14", "FTM": "15", "FTA": "16", "FG3M": "17", "PTS": "0", "REB": "6",
+             "AST": "3", "STL": "2", "BLK": "1", "TOV": "11"}  # ESPN's stat ids (checked Oct 27: PTS = 2 FGM + 3PM + FTM)
+
+
+def espn(season=CUR):
+    """{player name: per-game projection} from ESPN's public fantasy API (its season projection), cached a day, each
+    day's copy kept as data/projections_<date>.json for a later fit. A past season gives its preseason projection,
+    fetched once: 2025-26's misses that season as much as baseline() does, so it wasn't updated with hindsight.
+    ponytail: unofficial endpoint like injuries(); if ESPN changes it, this goes quiet and Yahoo's projections still work."""
+    yr = int(season[:4]) + 1
+    def get():
+        only = {"players": {"limit": 2000, "sortPercOwned": {"sortPriority": 1, "sortAsc": False},  # a sort is required
+                            "filterStatsForSourceIds": {"value": [1]},  # 1 = projections
+                            "filterStatsForSplitTypeIds": {"value": [0]}, "filterStatsForExternalIds": {"value": [yr]}}}
+        req = urllib.request.Request(f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/{yr}/segments/0"
+                                     "/leaguedefaults/3?view=kona_player_info", headers={"X-Fantasy-Filter": json.dumps(only)})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            players = json.load(r)["players"]
+        out = {p["player"]["fullName"]: {c: round(a[i], 2) for c, i in ESPN_STAT.items() if i in a}
+               for p in players for s in p["player"].get("stats", ())
+               if s.get("statSourceId") == 1 and s.get("seasonId") == yr and (a := s.get("averageStats"))}
+        if season == CUR:
+            (DATA / f"projections_{date.today()}.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+        return out
+    return _cached(DATA / f"projections_{season}.json", 24 if season == CUR else np.inf, get)
+
+
 def gamelogs(season=CUR, max_age_hours=None):
     """Every player's regular-season box scores from stats.nba.com, keyed like the stats, cached in data/ and refetched
     once older than max_age_hours. Offline: the old copy, or None."""
@@ -205,11 +245,41 @@ def baseline(last, older):
                        GP=w1 + w2)
 
 
+def experts(yahoo, espn, base, keys=()):
+    """One expert per-game line per player, with its source: Yahoo's (the snapshot's, updated in-season) where it has
+    him, else ESPN's. Names are matched to `keys` (the stats' players) like League.find, so a spelling variant lands on
+    the player it means; the rest are rookies yet to play. Yahoo shows no minutes, so his are ESPN's (else the
+    baseline's) scaled by how much more or less Yahoo has him scoring, rebounding and assisting: a role change moves
+    minutes, not rates."""
+    def frame(d):
+        df = pd.DataFrame([{"PLAYER_NAME": n, **x} for n, x in d.items()], columns=["PLAYER_NAME", "MIN"] + RAW)
+        df["key"] = [match(n, keys) or norm(n) for n in df.PLAYER_NAME]
+        return df.drop_duplicates("key").set_index("key").astype({c: float for c in ["MIN"] + RAW})
+    y, e = frame(yahoo), frame(espn)
+    vol = lambda d: d[["PTS", "REB", "AST"]].sum(axis=1)
+    ref = e.reindex(y.index).combine_first(base.reindex(y.index))
+    y["MIN"] = ref.MIN * vol(y) / vol(ref).clip(lower=1)
+    return pd.concat([y.dropna(subset=["MIN"]).assign(src="Yahoo"),  # a rookie only Yahoo projects: no minutes to go on
+                      e[~e.index.isin(y.index)].assign(src="ESPN")])
+
+
+def prior(base, proj, w=PROJ_W):
+    """Pre-season line: baseline() blended with the experts' line (experts(), weighing w). A rookie's baseline is the
+    fringe-roster line ros() starts unprojected rookies from. ros() then leans on this season as games pile up."""
+    cols = ["MIN"] + RAW
+    fringe = base.nlargest(200, "MIN").tail(60)[cols].mean()
+    new = proj.loc[proj.index.difference(base.index), ["PLAYER_NAME"]].assign(GP=0.0, **fringe.to_dict())
+    out = pd.concat([base, new]) if len(new) else base.copy()
+    out.loc[proj.index, cols] = (1 - w) * out.loc[proj.index, cols] + w * proj[cols]
+    return out
+
+
 def ros(base, cur, k=SHRINK, k_min=MIN_SHRINK):
     """Rest-of-season per-game line = projected minutes x production per minute. Minutes lean on this season fast,
     GP / (GP + k_min), since a new role or team shows up at once and sticks. Production per minute leans on it slowly:
     this season's minutes played / (those + k games of baseline minutes), so a player stuck at 8 minutes a night barely
-    moves his rates. Rookies (no baseline) start from a fringe-roster line, so 3 hot games don't make them stars.
+    moves his rates. Rookies no expert projects (prior()) start from a fringe-roster line, so 3 hot games don't make
+    them stars.
     Replayed on 2025-26 (each Monday's rest-of-season line vs what players did after, stats scaled equally): 8% less
     error than one GP / (GP + 20) blend in weeks 1-6, 9% less for players whose minutes moved 6+, even late in the
     season. Faster minutes for players on a new team gained nothing."""
@@ -294,7 +364,7 @@ def match_prob(p):
 class League:
     """A league snapshot (see yahoo.py) joined with NBA stats."""
 
-    def __init__(self, snap, base=None, cur=None, sched=None, inj=None, today=None, logs=None):
+    def __init__(self, snap, base=None, cur=None, sched=None, inj=None, today=None, logs=None, proj=None):
         s = snap["settings"]
         self.snap, self.teams_n, self.roster_n = snap, s.get("teams", 12), s.get("roster", 13)
         self.lineup = s.get("starters", 10)  # players whose games count each day
@@ -311,11 +381,14 @@ class League:
         cur = fetch(CUR, max_age_hours=12) if cur is None else cur
         self.cur, self.logs = cur, logs  # this season's per-game stats and box scores (gamelogs()), for card()
         pool = self.teams_n * self.roster_n
-        line = ros(base, cur)
+        # expert projections: the snapshot's (Yahoo), and ESPN's (proj, from load()) for players Yahoo doesn't list
+        self.proj = experts(snap.get("projections", {}), proj or {}, base, base.index.union(cur.index))
+        pre = prior(base, self.proj)
+        line = ros(pre, cur)
         self.p = line[["PLAYER_NAME", "MIN", "GP_CUR"] + RAW].copy()
         self.z = zscores(line, pool)[self.cats]                      # ROS value
         # "cur" = perceived value: reputation plus a heavily weighted hot/cold start (roughly what Yahoo ranks show)
-        seen = ros(base, cur, HYPE)
+        seen = ros(pre, cur, HYPE)
         self.zcur = zscores(seen, pool)[self.cats]
         self.fp = sum(line[c] * w for c, w in self.points.items() if c in line)
         self.fp_cur = sum(seen[c] * w for c, w in self.points.items() if c in seen)
@@ -401,16 +474,9 @@ class League:
         return rate, rate * share
 
     def find(self, name, strict=True):
-        k = norm(name)
-        if k in self.p.index:
+        if (k := match(name, self.p.index)) or not strict:
             return k
-        if len(last := [x for x in self.p.index if x.endswith(" " + k)]) == 1:  # "Jokic", "Gilgeous-Alexander"
-            return last[0]
-        close = difflib.get_close_matches(k, self.p.index, n=1, cutoff=0.8)
-        if close:
-            return close[0]
-        if strict:
-            raise KeyError(f"Player not found: {name}")
+        raise KeyError(f"Player not found: {name}")
 
     def owner(self, k):
         return next((t for t, ks in self.rosters.items() if k in ks), "FA" if k in self.fa else None)
@@ -505,6 +571,7 @@ class League:
                 **({} if self.market.at[k, "yahoo"] else {"mkt_model": True}),  # no Yahoo rank: the model's own
                 **({"games": int(self.games_week[k])} if self.sched else {}),
                 **({"injury": self.inj[k]["note"], "return": self.inj[k]["return"]} if k in self.inj else {}),
+                **({"proj": self.proj.at[k, "src"]} if k in self.proj.index else {}),  # whose projection his line blends in
                 **{f: m[f] for f in ("owned", "waiver") if f in m},  # Yahoo roster % / on waivers until
                 "z": {c: round(float(self.z.at[k, c]), 2) for c in self.cats}}
 
@@ -518,12 +585,18 @@ class League:
         return out
 
     def card(self, name, punt=()):
-        """One player in full (the app's player card): player() plus per-game lines (rest of season; this season, the
-        last 14 and last 7 days from the box scores, or this season's stats without them; a window is left out when it
-        holds the same games as the one before), his NBA games left this matchup week and in the next 3, and his rank
-        on your build (effective(), valued on the MARKET curve like strategy()'s buy list) to set against his market rank."""
+        """One player in full (the app's player card): player() plus per-game lines (rest of season; the Yahoo or ESPN
+        projection blended into it; this season, the last 14 and last 7 days from the box scores, or this season's stats
+        without them; a window is left out when it holds the same games as the one before), his NBA games left this
+        matchup week and in the next 3, and his rank on your build (effective(), valued on the MARKET curve like
+        strategy()'s buy list) to set against his market rank."""
         k, cols = self.find(name), ["MIN"] + RAW
         lines = {"ros": (self.p.loc[k, cols], None)}
+        if k in self.proj.index:  # the expert line blended into his
+            x, src = self.proj.loc[k, cols].astype(float), self.proj.at[k, "src"]
+            if src == "Yahoo":
+                x["MIN"] = np.nan  # Yahoo shows none; experts() estimates them
+            lines[src.lower()] = (x, None)
         if self.logs is None:
             if k in self.cur.index:
                 lines["season"] = (self.cur.loc[k, cols], self.cur.at[k, "GP"])
@@ -537,8 +610,9 @@ class League:
         fit = self.effective(punt).rank(ascending=False, method="first")[k]
         weeks = [(self.today, self.week_end)] + self.weeks(3) if self.sched else []
         return {**self.player(k, punt), "nba": self.nba.get(k, ""),
-                "lines": {w: {"gp": gp and int(gp), "MIN": round(float(s.MIN), 1), "FG%": pct(s, "FGM", "FGA"),
-                              "FT%": pct(s, "FTM", "FTA"), **{c: round(float(s[c]), 1) for c in COUNTING}}
+                "lines": {w: {"gp": gp and int(gp), "MIN": None if pd.isna(s.MIN) else round(float(s.MIN), 1),
+                              "FG%": pct(s, "FGM", "FGA"), "FT%": pct(s, "FTM", "FTA"),
+                              **{c: round(float(s[c]), 1) for c in COUNTING}}
                           for w, (s, gp) in lines.items()},
                 "weeks": [{"start": s, "end": e, "games": len(self.game_days(k, e, s))} for s, e in weeks],
                 "fit_rank": int(fit), "fit": round(100 * MARKET ** (fit - 1), 1)}
@@ -847,10 +921,11 @@ class League:
         if goal == "team" and (goal_team not in self.rosters or goal_team == self.me):
             raise KeyError(f"Goal 'team' needs another team: {', '.join(t for t in self.rosters if t != self.me)}")
         give, get = self._check(give, get)
+        team = team or (self.owner(get[0]) if get else None)  # a pinned get fixes the team (and lifts _rank's cap)
         if free:
             lg, out = self.after_free(punt, keep=give), []
-            each = their_free and not team and not get  # one search per partner, each on top of its own free moves
-            for t in [x for x in self.rosters if x != self.me] if each else [team or (self.owner(get[0]) if get else None)]:
+            each = their_free and not team  # one search per partner, each on top of its own free moves
+            for t in [x for x in self.rosters if x != self.me] if each else [team]:
                 lt = lg.after_free(keep=get, team=t) if their_free and t else lg
                 out += lt.search(give, get, [*lock, *(a for ms in lt.free.values() for a, _, _ in ms)], t, size, tier,
                                  goal, goal_cats, goal_team, healthy_only, shape, punt, limit, depth, free=False,
@@ -1288,7 +1363,7 @@ def load(path=DATA / "league.json"):
         import yahoo
         yahoo.demo()
     return League(json.loads(Path(path).read_text(encoding="utf-8")), sched=schedule(), inj=injuries(),
-                  logs=gamelogs(CUR, 12))
+                  logs=gamelogs(CUR, 12), proj=espn())
 
 
 def main():
