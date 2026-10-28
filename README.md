@@ -197,14 +197,14 @@ A trade, add or drop is judged by how much it changes your win %, with both rost
 **Points leagues** use the league's scoring weights and per-game values (no matchup model).
 
 **Honest limits:**
-- The weekly-randomness settings are fitted to real 2025-26 box scores (`python backtest.py`: 20 simulated leagues, each week predicted from what was known that Monday). Category odds come true at the rate they say, within a few points (what a categories league runs on); whole-matchup odds within about 3 points. Still, read 55% vs 58% as "about the same".
+- The weekly-randomness settings are fitted to real 2025-26 box scores (`python backtest.py`: 20 simulated leagues, each week predicted from what was known that Monday, with injured players sitting until a rough guess at their return). Category odds come true at the rate they say, within a few points (what a categories league runs on); whole-matchup odds within about 3 points. Still, read 55% vs 58% as "about the same".
 - The market curve (`MARKET` in `model.py`) and the tier cutoffs are starting guesses. There's no data yet on which offers real managers accept.
 - Not modelled yet:
   - positions and roster slots (daily lineup limits)
   - the real schedule in trades and season odds: they use an average 3.4-game week (This week uses the real one)
   - two teammates out at once: each one's minutes are handed out as if the other played
   - keeper or dynasty value
-- An expert projection may already price in a long injury, so a teammate's lift can count twice for the expert part of his line. The matchup backtest doesn't sit injured players yet, so the randomness settings were fitted without knowing who's out.
+- An expert projection may already price in a long injury, so a teammate's lift can count twice for the expert part of his line. The randomness settings assume ESPN's return dates are roughly right (nobody has measured how far off they run yet). If ESPN's injury feed is down, the app only has Yahoo's injury tags and its odds run a little bold.
 
 The settings live at the top of `model.py`. Re-run `python backtest.py` after changing how players are projected; it prints predicted vs actual win rates.
 

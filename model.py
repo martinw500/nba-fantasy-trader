@@ -58,12 +58,13 @@ HYPE = 10    # same, for how other managers see players (hot starts count more: 
 OUT = {"O", "INJ", "IL", "IL+", "NA", "SUSP"}  # Yahoo statuses that mean "not playing now"
 
 # Matchup model. DISPERSION, SCHED_CV and PCT_NOISE are fitted to real weeks of 2025-26 box scores (backtest.py: 20
-# simulated leagues, predictions from what was known each Monday); re-run it after changing how lines are projected.
+# simulated leagues, predictions from what was known each Monday, injured regulars sitting until a rough return date as
+# with ESPN's); re-run it after changing how lines are projected.
 GAMES_WEEK = 3.4                                   # NBA games per team per week
 DISPERSION = {"FG3M": 1.75, "PTS": 3.0, "REB": 2.5, "AST": 3.0, "STL": 1.0, "BLK": 1.5, "TOV": 1.25}  # variance / mean
-SCHED_CV = 0.17                                    # week-to-week swing beyond box-score noise (schedule, rest, minutes,
-                                                   # and projection error); 0.15 before expert projections (N4)
-PCT_NOISE = 1.75                                   # FG%/FT% variance vs coin-flip shooting at each player's rate
+SCHED_CV = 0.12                                    # week-to-week swing beyond box-score noise (schedule, rest, minutes,
+                                                   # and projection error); 0.17 while the backtest didn't know who's out
+PCT_NOISE = 1.5                                    # FG%/FT% variance vs coin-flip shooting at each player's rate (was 1.75)
 WEAK = 0.35                                        # a "weak spot" / punt hint: winning a category under 35% of
                                                    # weeks (about the bottom 10% of team-categories once odds are calibrated)
 FILL = 0.5                                         # share of a sat-out player's games your bench/streamers cover
@@ -174,16 +175,19 @@ def schedule(season=CUR):
 
 
 def injuries():
-    """{player name: {status, note, return}} from ESPN's public injury feed, cached for 3 hours.
+    """{player name: {status, note, return}} from ESPN's public injury feed, cached for 3 hours, each day's last copy
+    kept as data/injuries_<date>.json: the return dates it gave, to measure backtest.py's RETURN_NOISE against later.
     ponytail: unofficial endpoint (personal use); if ESPN changes it, this goes quiet and Yahoo's status tags still work."""
     def get():
         url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries"
         with urllib.request.urlopen(url, timeout=30) as r:
             feed = json.load(r)
         status = {"Out": "O", "Day-To-Day": "DTD", "Suspension": "SUSP"}
-        return {i["athlete"]["displayName"]: {"status": status.get(i.get("status"), ""), "note": i.get("shortComment", ""),
-                                              "return": i.get("details", {}).get("returnDate", "")}
-                for team in feed.get("injuries", []) for i in team.get("injuries", [])}
+        out = {i["athlete"]["displayName"]: {"status": status.get(i.get("status"), ""), "note": i.get("shortComment", ""),
+                                             "return": i.get("details", {}).get("returnDate", "")}
+               for team in feed.get("injuries", []) for i in team.get("injuries", [])}
+        (DATA / f"injuries_{date.today()}.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+        return out
     return _cached(DATA / "injuries.json", 3, get)
 
 
@@ -814,16 +818,18 @@ class League:
         return dict(zip(self.week.index, self.week.to_numpy()))
 
     def _contrib(self, team, keys, punt=()):
-        """Each player's worth to `team` in win %: what it loses without him (its own players) or gains with him (anyone
-        else). ponytail: measured on the current roster, not the post-trade one; exact would mean a pass per combo."""
-        keys, base, own = list(keys), self.vecs[team], set(self.rosters[team])
+        """Each player's worth to `team` in win %, for ranking drops: what its current roster loses without his line,
+        for its own players and anyone else alike. (Gains with an outsider, losses without an own player, sat on opposite
+        sides of the odds curve: a team behind kept a worse incoming scrub over its own better player.)
+        ponytail: measured on the current roster, not the post-trade one; exact would mean a pass per combo."""
+        keys, base = list(keys), self.vecs[team]
         if not keys:
             return {}
-        V = np.stack([base - self.rows[k] if k in own else base + self.rows[k] for k in keys])
+        V = np.stack([base - self.rows[k] for k in keys])
         _, O = self._others(team)
         w = self._score(self._concede(cat_probs(V[:, None], O[None], self.cats), punt)).mean(-1)
         w0 = self.outlook(team, punt=punt)["win"]
-        return {k: float(w0 - x if k in own else x - w0) for k, x in zip(keys, w)}
+        return {k: float(w0 - x) for k, x in zip(keys, w)}
 
     def _score(self, p):
         """What a week is worth in the standings, from category odds p (..., cats): the expected share of categories

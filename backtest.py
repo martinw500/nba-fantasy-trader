@@ -3,7 +3,8 @@ python backtest.py replay [2025-26]: rest-of-season error by expert-projection w
 python backtest.py teammates [2025-26]: next week's error with and without teammates' injuries (fits SHARE, USAGE).
 
 Drafts 20 simulated 12-team leagues from preseason projections. Each week the model predicts every matchup from what
-it would have known that Monday (last season blended with games so far, availability from games played), then the
+it would have known that Monday (last season blended with games so far, availability from games played, regulars who
+sat their team's last game out until a rough guess at their return, as the app does with ESPN's dates), then the
 prediction is scored against the real box scores that week. Lines blend in ESPN's preseason projection (prior()). All games count (no daily lineup cap), rosters never change,
 so predictions leave out League.week's FILL term (missed games covered at waiver level): nobody fills in here.
 Prints calibration (predicted vs actual win rates), log loss and Brier score for categories and for whole matchups.
@@ -21,6 +22,8 @@ ARGS = [a for a in sys.argv[1:] if a not in ("replay", "teammates")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
+RETURN_NOISE = 1.0  # ESPN's return dates vs the real ones: days out from Monday x e^N(0, this). A guess, nothing
+                    # measures ESPN's misses yet (data/injuries_<date>.json starts that); 0 to 1.5 fit SCHED_CV 0.11-0.12
 
 
 def logs(season):
@@ -94,8 +97,27 @@ def outcome(A, B):
     return np.stack(out, -1)
 
 
+def sat(g, line, team, w):
+    """Regulars who sat their team's last game before week w, as ESPN would list them: {key: the day he played again}
+    (Timestamp.max: never)."""
+    past, T = g[g.week < w], "TEAM_ABBREVIATION"
+    last, played = past.groupby(T).GAME_DATE.max(), set(zip(past.key, past.GAME_DATE))
+    back = g[g.week >= w].groupby("key").GAME_DATE.min()
+    return {k: back.get(k, pd.Timestamp.max) for k in line.index[line.MIN >= model.REGULAR]
+            if team.get(k) in last and (k, last[team[k]]) not in played}
+
+
+def guess(out, monday, rng):
+    """ESPN's return dates for these real ones (sat()): days out from Monday off by a factor e^N(0, RETURN_NOISE)."""
+    return {k: r if r == pd.Timestamp.max else
+            monday + pd.Timedelta(days=round((r - monday).days * np.exp(RETURN_NOISE * rng.standard_normal())))
+            for k, r in out.items()}
+
+
 def build(games="fixed"):
-    """Every matchup of every week: expected totals for both sides (the model's view) and the real result."""
+    """Every matchup of every week: expected totals for both sides (the model's view) and the real result. Regulars
+    out that Monday (sat()) sit until a noisy return (guess()), as League does with ESPN's dates: this week's games from
+    then on (schedule, like This week), or the share of his team's remaining games after it (fixed, like League.avail)."""
     g, base, pre, keys, weeks, actual, team_games, first_team = season_setup()
     idx = {k: i for i, k in enumerate(keys)}
     line0, _ = projections(g, base, pre, keys, 0)
@@ -106,16 +128,24 @@ def build(games="fixed"):
     pairs = [(l * TEAMS + a, l * TEAMS + b) for l in range(LEAGUES)
              for a, b in itertools.combinations(range(TEAMS), 2)]
     I, J = np.array(pairs).T
+    week1 = g.GAME_DATE.min() - pd.Timedelta(days=g.GAME_DATE.min().weekday())
+    days, rng = g.groupby("TEAM_ABBREVIATION").GAME_DATE.unique().map(np.sort), np.random.default_rng(0)
     E, Y = [], []
     for w in weeks:
         line, avail = projections(g, base, pre, keys, w)
+        last = g[g.week < w].sort_values("GAME_DATE").groupby("key").TEAM_ABBREVIATION.last()
+        team = pd.Series(keys, index=keys).map(last).fillna(pd.Series(keys, index=keys).map(first_team))
         if games == "fixed":
-            n = model.GAMES_WEEK
+            n = np.full(len(keys), model.GAMES_WEEK)
         else:  # the real schedule: games the player's team played that week
-            last = g[g.week < w].sort_values("GAME_DATE").groupby("key").TEAM_ABBREVIATION.last()
-            team = pd.Series(keys, index=keys).map(last).fillna(pd.Series(keys, index=keys).map(first_team))
-            n = np.array([team_games.get((t, w), 0) for t in team])[:, None]
-        exp = R @ (n * avail[:, None] * line[model.RAW].to_numpy())
+            n = np.array([team_games.get((t, w), 0) for t in team], float)
+        monday = week1 + pd.Timedelta(weeks=w)
+        for k, back in guess(sat(g, line, team, w), monday, rng).items():
+            left = days[team[k]][days[team[k]] >= monday]
+            if games != "fixed":
+                left = left[left < monday + pd.Timedelta(weeks=1)]
+            n[idx[k]] *= (left >= back).mean() if len(left) else 0
+        exp = R @ ((n * avail)[:, None] * line[model.RAW].to_numpy())
         act = R @ actual[w]
         if act.sum() == 0:
             continue
@@ -172,15 +202,12 @@ def mondays():
     g, base = logs(SEASON), model.baseline(model.fetch(PREV), model.fetch(PREV2))
     pre, T = model.prior(base, experts(g, base)), "TEAM_ABBREVIATION"
     first = g.sort_values("GAME_DATE").groupby("key")[T].first()
-    back = lambda w: g[g.week >= w].groupby("key").GAME_DATE.min()
     for w in range(1, int(g.week.max()) + 1):
         past, nxt = g[g.week < w], g[g.week == w]
         cur = per_game(past)
         line = model.ros(pre, cur)
         team = past.sort_values("GAME_DATE").groupby("key")[T].last().combine_first(first)
-        regs = line.index[line.MIN >= model.REGULAR]
-        last, played, ret = past.groupby(T).GAME_DATE.max(), set(zip(past.key, past.GAME_DATE)), back(w)
-        out = {k: ret.get(k, pd.Timestamp.max) for k in regs if team.get(k) in last and (k, last[team[k]]) not in played}
+        regs, out = line.index[line.MIN >= model.REGULAR], sat(g, line, team, w)
         yield {"pre": pre, "past": past, "cur": cur, "line": line, "team": team, "regs": regs, "out": out, "nxt": nxt}
 
 
