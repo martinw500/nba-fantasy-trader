@@ -55,6 +55,10 @@ MIN_SHRINK = 6  # minutes per game: games of baseline that count as much as this
 OLDER_W, REGRESS = 0.5, 25  # baseline: a game two seasons ago counts half; 25 games of a fringe line pull small samples in
 PROJ_W = 0.6  # expert projections' weight in the pre-season line (prior()); fitted by python backtest.py replay
 HYPE = 10    # same, for how other managers see players (hot starts count more: 3 games = 23%, 10 games = half)
+FORM_DAYS, FORM_GP = 14, 3  # recent form: value over the last 14 days, for players with 3+ games in them
+# form this far (x League.u) from rest-of-season value: a trend arrow and Hot & cold. About one standard deviation of
+# a 14-day window's gap among 2025-26 regulars mid-season (2.9-3.2 on Dec 15 and Feb 15): a third of them get one
+TREND = 3.0
 OUT = {"O", "INJ", "IL", "IL+", "NA", "SUSP"}  # Yahoo statuses that mean "not playing now"
 
 # Matchup model. DISPERSION, SCHED_CV and PCT_NOISE are fitted to real weeks of 2025-26 box scores (backtest.py: 20
@@ -432,9 +436,10 @@ def had(logs, team, lift):
     return lift.loc[n.index].mul(n, axis=0).groupby(level=0).sum().div(logs.key.value_counts(), axis=0).dropna()
 
 
-def zscores(df, pool_size):
-    """z per category vs the top `pool_size` players by minutes. FG%/FT% are volume-weighted, TOV inverted."""
-    pool = df.nlargest(pool_size, "MIN")
+def zscores(df, pool_size, ref=None):
+    """z per category vs the top `pool_size` players by minutes (of `ref`, default df itself). FG%/FT% are
+    volume-weighted, TOV inverted."""
+    pool = (df if ref is None else ref).nlargest(pool_size, "MIN")
     z = pd.DataFrame(index=df.index)
     for pct, m, a in [("FG%", "FGM", "FGA"), ("FT%", "FTM", "FTA")]:
         rate = pool[m].sum() / pool[a].sum()
@@ -570,6 +575,16 @@ class League:
         self.zcur = zscores(seen, pool)[self.cats]
         self.fp = sum(line[c] * w for c, w in self.points.items() if c in line)
         self.fp_cur = sum(seen[c] * w for c, w in self.points.items() if c in seen)
+        # recent form: per-game lines over the last FORM_DAYS (this season's without box scores), scored against the
+        # rest-of-season pool so form - value is a real gap
+        if logs is not None:
+            g = logs[logs.GAME_DATE >= pd.Timestamp(self.today) - pd.Timedelta(days=FORM_DAYS)]
+            form = g.groupby("key")[["MIN"] + RAW].mean().assign(GP=g.groupby("key").size())
+        else:
+            form = cur[["MIN", "GP"] + RAW]
+        form = form[form.GP >= FORM_GP]
+        self.form_gp, self.zform = form.GP, zscores(form, pool, line)[self.cats]
+        self.fp_form = sum(form[c] * w for c, w in self.points.items() if c in form)
         self.p_week = self.p.copy()  # this week's per-game lines: the lifts for this week's games instead
         wk = self._boost(self.week_end).sub(ahead, fill_value=0)
         self.p_week.loc[wk.index, wk.columns] += wk
@@ -662,9 +677,9 @@ class League:
     def value(self, keys=None, punt=(), frame="ros"):
         """One number per player: z-sum over non-punted cats (9cat) or fantasy points per game."""
         if self.mode == "points":
-            v = {"ros": self.fp, "cur": self.fp_cur}.get(frame, self.fp)
-        else:
-            v = (self.zcur if frame == "cur" else self.z)[self.active(punt)].sum(axis=1)
+            v = {"ros": self.fp, "cur": self.fp_cur, "form": self.fp_form}.get(frame, self.fp)
+        else:  # form: only players with FORM_GP+ games in the window
+            v = {"cur": self.zcur, "form": self.zform}.get(frame, self.z)[self.active(punt)].sum(axis=1)
         return v if keys is None else v.reindex(keys).fillna(0)
 
     def replacement(self, punt=(), frame="ros"):
@@ -740,6 +755,7 @@ class League:
         return {"name": self.p.at[k, "PLAYER_NAME"], "team": self.owner(k), "pos": m.get("pos", ""),
                 "status": m.get("status", ""), "value": round(float(self.value([k], punt).iloc[0]), 2),
                 "value_now": round(float(self.value([k], punt, "cur").iloc[0]), 2),
+                **self._form(k, punt),
                 "fp": round(float(self.fp[k]), 1), "gp": int(self.p.at[k, "GP_CUR"]),
                 "avail": round(float(self.avail[k]), 2),
                 "mkt": round(float(self.market.at[k, "value"]), 1), "mkt_rank": int(self.market.at[k, "rank"]),
@@ -750,6 +766,15 @@ class League:
                 **({"proj": self.proj.at[k, "src"]} if k in self.proj.index else {}),  # whose projection his line blends in
                 **{f: m[f] for f in ("owned", "waiver") if f in m},  # Yahoo roster % / on waivers until
                 "z": {c: round(float(self.z.at[k, c]), 2) for c in self.cats}}
+
+    def _form(self, k, punt=()):
+        """His value over the last FORM_DAYS (form, form_gp games) and trend: up / down when it's TREND off his
+        rest-of-season value. Nothing with under FORM_GP games in the window."""
+        if k not in self.form_gp.index:
+            return {}
+        f, v = (float(self.value([k], punt, fr).iloc[0]) for fr in ("form", "ros"))
+        return {"form": round(f, 2), "form_gp": int(self.form_gp[k]),
+                **({"trend": "up" if f > v else "down"} if abs(f - v) >= TREND * self.u else {})}
 
     @functools.cached_property
     def lifted(self):
@@ -775,7 +800,7 @@ class League:
 
     def card(self, name, punt=()):
         """One player in full (the app's player card): player() plus per-game lines (rest of season; the Yahoo or ESPN
-        projection blended into it; this season, the last 14 and last 7 days from the box scores, or this season's stats
+        projection blended into it; this season, the last 30, 14 and 7 days from the box scores, or this season's stats
         without them; a window is left out when it holds the same games as the one before), his NBA games left this
         matchup week and in the next 3, and his rank on your build (effective(), valued on the MARKET curve like
         strategy()'s buy list) to set against his market rank."""
@@ -791,7 +816,7 @@ class League:
                 lines["season"] = (self.cur.loc[k, cols], self.cur.at[k, "GP"])
         else:
             g, n = self.logs[self.logs.key == k], 0
-            for w, days in (("season", None), ("last14", 14), ("last7", 7)):
+            for w, days in (("season", None), ("last30", 30), ("last14", 14), ("last7", 7)):
                 x = g if days is None else g[g.GAME_DATE >= pd.Timestamp(self.today) - pd.Timedelta(days=days)]
                 if len(x) and len(x) != n:
                     lines[w], n = (x[cols].mean(), len(x)), len(x)
@@ -1604,17 +1629,19 @@ class League:
                 "streams": streams}
 
     def movers(self, punt=(), limit=10):
-        """Sell high: your players beating their ROS value right now. Buy low: good ROS players slumping on other teams."""
-        gap = self.value(punt=punt, frame="cur") - self.value(punt=punt)
-        played = self.p.GP_CUR >= 3
-        mine = [k for k in self.rosters[self.me] if played.get(k, False)]
-        others = [k for t, ks in self.rosters.items() if t != self.me for k in ks if played.get(k, False)]
+        """Sell high: your players beating their rest-of-season value over the last FORM_DAYS (this season without box
+        scores). Buy low: good rest-of-season players on other teams below it. gap = form - value, past TREND."""
+        form = self.value(punt=punt, frame="form")
+        gap = form - self.value(form.index, punt)
+        mine = [k for k in self.rosters[self.me] if k in gap.index]
+        others = [k for t, ks in self.rosters.items() if t != self.me for k in ks if k in gap.index]
         good = self.value(others, punt) > (1.5 if self.mode != "points" else 30)
-        sell = gap.reindex(mine).nlargest(limit)
-        buy = gap.reindex([k for k in others if good[k]]).nsmallest(limit)
+        sell = gap[mine].nlargest(limit)
+        buy = gap[[k for k in others if good[k]]].nsmallest(limit)
         fmt = lambda s: [{**self.player(k, punt), "gap": round(float(v), 2)} for k, v in s.items()]
-        return {"sell_high": fmt(sell[sell > 0.5 * self.u]), "buy_low": fmt(buy[buy < -0.5 * self.u]),
-                "note": f"Based on {int(self.p.GP_CUR.max())} games so far — small samples swing hard early."}
+        window = f"the last {FORM_DAYS} days" if self.logs is not None else "this season"
+        return {"sell_high": fmt(sell[sell >= TREND * self.u]), "buy_low": fmt(buy[buy <= -TREND * self.u]),
+                "window": window, "note": f"Only players with {FORM_GP}+ games in it. Small samples swing hard."}
 
     def dropped(self, punt=(), limit=10):
         """Players dropped in the snapshot's transactions (newest first) that nobody has picked up since."""

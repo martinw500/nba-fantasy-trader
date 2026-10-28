@@ -201,6 +201,8 @@ select, .input { border: 1px solid var(--line-strong); background: var(--panel);
 .sort:hover { color: var(--text); }
 .sort svg { width: 12px; height: 12px; }
 .sort svg.up { transform: rotate(180deg); }
+svg.trend { width: 13px; height: 13px; stroke-width: 2.2; vertical-align: -2px; margin-right: 3px; }
+svg.trend.down { transform: rotate(180deg); }
 td.names { white-space: normal; min-width: 130px; }
 td.why { white-space: normal; min-width: 240px; }
 .deals { max-height: 456px; overflow: auto; border-radius: 0 0 var(--radius) var(--radius); }  /* ~10 deals; headers stay sticky */
@@ -285,6 +287,7 @@ td.why { white-space: normal; min-width: 240px; }
   <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12l16-7-6 15-2.5-6.5z"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/></symbol>
   <symbol id="i-caret" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 19V5M6.5 10.5L12 5l5.5 5.5"/></symbol>
 </svg>
 <div class="app">
   <nav class="side" aria-label="Sections">
@@ -395,6 +398,11 @@ const gpNote = p => p.gp < 3 ? ` title="Only ${p.gp} games this season"` : "";
 const liftMin = p => (p.lift || []).reduce((s, l) => s + l.MIN, 0);
 const liftWhen = l => `${esc(l.by)} is out (back ${mdy(l.return)}, ${l.games} game${l.games === 1 ? "" : "s"})`;
 const liftTag = p => liftMin(p) >= 1 ? `<span class="tag" title="${p.lift.map(l => `+${l.MIN.toFixed(1)} min a game while ${liftWhen(l)}`).join("; ")}. Counted in his lines for those games">+${liftMin(p).toFixed(1)} min</span>` : "";
+// recent form: his value over the last 14 days (this season without box scores). The model arrows it when it's far
+// (about one 14-day standard deviation) from his rest-of-season value
+const formWin = () => S.state.movers?.window || "the last 14 days";
+const formNote = p => p.form == null ? "" : `${cap(formWin().replace(/^the /, ""))}: ${Number(p.form).toFixed(isPoints() ? 1 : 2)} over ${p.form_gp} games (${sign(p.form - p.value)} on his rest-of-season value)`;
+const trendTag = p => p.trend ? `<svg class="i trend ${p.trend} ${p.trend === "up" ? "pos" : "neg"}" role="img" aria-label="Running ${p.trend === "up" ? "hot" : "cold"}"><use href="#i-arrow"/></svg>` : "";
 // trade market (Yahoo ranks): a player's value + rank (* = Yahoo hasn't ranked him, the model's rank), a deal's gap
 const mktCell = p => `${Math.round(p.mkt)} <span class="muted small"${p.mkt_model ? ` title="Yahoo hasn't ranked him: the model's own rank"` : ""}>#${p.mkt_rank}${p.mkt_model ? "*" : ""}</span>`;
 const mktTone = d => Math.abs(d) < 5 ? "" : tone(d);
@@ -409,7 +417,7 @@ function playerTable(players, { extra = [], empty = "No players.", dim = [] } = 
   const wk = players.some(p => p.games !== undefined), cols = 6 + extra.length + wk + (isPoints() ? 1 : cats.length);
   const head = `<tr><th>Player</th>${extra.map(x => `<th class="${x.cls ? "" : "n"}">${x.h}</th>`).join("")}${wk ? `<th class="n" title="Games left this week (Monday to Sunday), after any return date">Wk</th>` : ""}<th class="n">GP</th>
     <th class="n" title="Expected share of remaining games played (games-played history + Yahoo injury status)">Plays</th>
-    <th class="n" title="Rest-of-season value on your build">Value</th><th class="n" title="How this season looks so far (what Yahoo ranks show)">Now</th>
+    <th class="n" title="Rest-of-season value on your build. An arrow: he's run well above or below it over ${formWin()}">Value</th><th class="n" title="How this season looks so far (what Yahoo ranks show)">Now</th>
     <th class="n" title="Trade-market value (100 = the market's top player) and market rank: Yahoo's preseason rank blended with this season's, weighted by games played">Mkt</th>
     ${isPoints() ? `<th class="n">FP/G</th>` : cats.map(c => `<th class="n z ${punted(c) ? "punted-col" : ""}" style="text-align:center">${lab(c)}</th>`).join("")}</tr>`;
   const rows = players.map(p => { const open = S.card.t === t && S.card.name === p.name; return `<tr${open ? ` class="sel"` : ""}>
@@ -418,7 +426,7 @@ function playerTable(players, { extra = [], empty = "No players.", dim = [] } = 
     ${wk ? `<td class="n ${p.games >= 4 ? "pos" : p.games <= 1 ? "neg" : ""}">${p.games ?? ""}</td>` : ""}
     <td class="n muted"${gpNote(p)}>${p.gp}</td>
     <td class="n ${p.avail < 0.6 ? "neg" : "muted"}">${pct(p.avail)}</td>
-    <td class="n val">${Number(p.value).toFixed(isPoints() ? 1 : 2)}</td>
+    <td class="n val"${p.form == null ? "" : ` title="${formNote(p)}"`}>${trendTag(p)}${Number(p.value).toFixed(isPoints() ? 1 : 2)}</td>
     <td class="n ${tone(p.value_now - p.value)}">${Number(p.value_now).toFixed(isPoints() ? 1 : 2)}</td>
     <td class="n">${p.mkt == null ? "" : mktCell(p)}</td>
     ${isPoints() ? `<td class="n">${p.fp.toFixed(1)}</td>` : cats.map(c => `<td class="z ${punted(c) ? "punted-col" : ""}" style="--c:${heat(p.z[c])}"><span>${p.z[c].toFixed(1)}</span></td>`).join("")}
@@ -430,7 +438,7 @@ function playerTable(players, { extra = [], empty = "No players.", dim = [] } = 
 const LINES = { ros: ["Rest of season", "The model's projection: expert projections and the last two seasons, blended with this one"],
   yahoo: ["Yahoo projection", "Yahoo's rest-of-season projection from the snapshot, part of ours. Yahoo shows no minutes"],
   espn: ["ESPN projection", "ESPN's season projection, part of ours (Yahoo's snapshot doesn't list him)"],
-  season: ["This season"], last14: ["Last 14 days"], last7: ["Last 7 days"] };
+  season: ["This season"], last30: ["Last 30 days"], last14: ["Last 14 days"], last7: ["Last 7 days"] };
 const span = (a, b) => mdy(a) + "–" + (a.slice(5, 7) === b.slice(5, 7) ? +b.slice(8) : mdy(b));
 // ESPN's fantasy news (Rotowire's blurbs): context only, it never moves a number
 const newsItem = (x, who = "", story = true) => `<li><div class="small"><span class="muted">${when(x.date)}</span>${who}${x.new ? `<span class="tag safe" title="Since your snapshot">new</span>` : ""}</div>
@@ -497,7 +505,7 @@ function viewTeam() {
   const todo = (moves.length || sells.length) ? `<div class="panel"><div class="panel-h"><div><h2>Worth doing now</h2><p>Top waiver upgrades and sell-high candidates on your build.</p></div></div>
     <div class="tw"><table class="wrap"><tbody>
       ${moves.map(m => `<tr><td>Add <b>${esc(m.add)}</b>${m.drop ? `, drop ${esc(m.drop)}` : " into your open spot"}</td><td class="n pos val" title="${m.unit === "win%" ? "Change in your " + WIN().of : "Value gain"}">${delta(m.gain, m.unit)}</td><td class="n"><button class="btn ghost" data-go="waivers">Waivers</button></td></tr>`).join("")}
-      ${sells.map(p => `<tr><td>Sell high on <b>${esc(p.name)}</b>: playing ${sign(p.gap)} above real value</td><td class="n muted">${p.gp} GP</td><td class="n"><button class="btn ghost" data-act="shop" data-name="${esc(p.name)}">Find a buyer</button></td></tr>`).join("")}
+      ${sells.map(p => `<tr><td>Sell high on <b>${esc(p.name)}</b>: ${sign(p.gap)} above his real value over ${formWin()}</td><td class="n muted">${p.form_gp} GP</td><td class="n"><button class="btn ghost" data-act="shop" data-name="${esc(p.name)}">Find a buyer</button></td></tr>`).join("")}
     </tbody></table></div></div>` : "";
   const outlook = prof ? `Projected ${ord(prof.rank)} of ${n} · wins ${pct(prof.win)} of ${oneWin() ? "weekly matchups" : "categories"} · ` : "";
   return `<div class="head"><div><h1>${esc(st.me)}</h1><p class="sub">${outlook}${st.roster.length} players${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}</p></div></div>
@@ -971,10 +979,10 @@ function viewMovers() {
   const m = S.state.movers, gap = { h: "Gap", v: p => `<span class="${tone(p.gap)} val">${sign(p.gap)}</span>` };
   const owner = { h: "Team", v: p => esc(p.team) };
   const offers = { h: "", v: p => `<button class="btn ghost" data-act="offers" data-name="${esc(p.name)}" data-team="${esc(p.team)}">${isPoints() ? "Trade for him" : "Find offers"}</button>` };
-  return `<div class="head"><div><h1>Hot &amp; cold</h1><p class="sub">Gap = how this season looks minus rest-of-season value. ${esc(m.note || "")}</p></div></div>
-    <div class="panel"><div class="panel-h"><div><h2>Sell high</h2><p>Your players beating their real value. Other managers see the hot start.</p></div></div>
-      ${playerTable(m.sell_high, { extra: [gap], empty: "<b>Nobody's running hot</b>None of your players are far above their real value yet." })}</div>
-    <div class="panel"><div class="panel-h"><div><h2>Buy low</h2><p>Good players on other teams starting cold.</p></div></div>
+  return `<div class="head"><div><h1>Hot &amp; cold</h1><p class="sub">Gap = value on your build over ${esc(m.window)} minus rest-of-season value. ${esc(m.note || "")}</p></div></div>
+    <div class="panel"><div class="panel-h"><div><h2>Sell high</h2><p>Your players running well above their real value. Other managers see the hot run.</p></div></div>
+      ${playerTable(m.sell_high, { extra: [gap], empty: "<b>Nobody's running hot</b>None of your players are far above their real value lately." })}</div>
+    <div class="panel"><div class="panel-h"><div><h2>Buy low</h2><p>Good players on other teams running cold.</p></div></div>
       ${playerTable(m.buy_low, { extra: [owner, gap, offers], empty: "<b>No slumping studs</b>Check back after a few more games." })}</div>`;
 }
 

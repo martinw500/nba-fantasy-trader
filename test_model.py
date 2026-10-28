@@ -56,7 +56,8 @@ def test_all():
 
     # hot start shows up as sell-high for the owner; perceived value is above ROS value
     sells = [p["name"] for p in lg.movers()["sell_high"]]
-    assert "Player 150" in sells and all(p["gap"] > 0.5 for p in lg.movers()["sell_high"])
+    assert "Player 150" in sells and all(p["gap"] >= model.TREND for p in lg.movers()["sell_high"])
+    assert lg.player("player 150")["trend"] == "up" and lg.movers()["window"] == "this season"  # no box scores here
 
     # matchup math: symmetric, identical teams are a coin flip, better players raise your odds
     A, B = lg.vecs["Me"], lg.vecs["Them"]
@@ -361,6 +362,11 @@ def test_all():
     wl = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
                       sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week}, logs=bx.assign(key=bx.PLAYER_NAME.map(model.norm)))
     assert wl.p.at["twin a", "MIN"] < no.p.at["twin a", "MIN"] and wl.p.at["twin d", "MIN"] == no.p.at["twin d", "MIN"]
+    # recent form: the last FORM_DAYS of box scores, for players with FORM_GP+ games in them (Twin C played 2)
+    assert wl.player("twin a")["form_gp"] == 4 and "form" not in wl.player("twin c")
+    late = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 11, 5),
+                        logs=bx.assign(key=bx.PLAYER_NAME.map(model.norm)))
+    assert "form" not in late.player("twin a") and late.movers()["window"] == "the last 14 days"  # 2 games since Oct 22
 
     # this week: no opponent until one is known; streams score more games higher, a waiver claim plays from the day
     # it clears; banked totals decide a category, a punt concedes it, last week's matchup is ignored
