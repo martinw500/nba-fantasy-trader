@@ -127,6 +127,21 @@ class GM:
                 return f"Error: {e}"
 
         @beta_tool
+        def compare_players(players: list[str]) -> str:
+            """2 to 4 players side by side for "who do I keep / start / trade for": each one's value, form, per-game
+            lines, games in this matchup week and the next three, availability, market and build rank, and "slot":
+            the user's season win % with him in one of their roster spots (their compared players all leave; "cut":
+            he wouldn't make the roster). "best" names who's ahead on each number.
+
+            Args:
+                players: 2 to 4 player names
+            """
+            try:
+                return dump(lg.compare(players, gm.punt))
+            except KeyError as e:
+                return f"Error: {e}"
+
+        @beta_tool
         def roster(team: str) -> str:
             """A team's roster with values and per-category z-scores.
 
@@ -137,7 +152,7 @@ class GM:
                 return f"Error: unknown team. Teams: {list(lg.rosters)}"
             return dump(lg.team_roster(team, gm.punt))
 
-        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, this_week, roster]
+        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, this_week, compare_players, roster]
 
     def ask(self, text, punt=()):
         self.punt = list(punt)

@@ -113,10 +113,13 @@ def api(path, q, body):
         return lg.strategy()
     if path == "/api/player":  # the player card
         return lg.card(body["name"], punt)
+    if path == "/api/compare":  # 2 to 4 players side by side
+        return lg.compare(body.get("players", []), punt)
     if path == "/api/news":  # My team's News panel
         return lg.roster_news()
-    if path == "/api/players":
-        return sorted(({"name": n, "team": t} for t, ks in lg.rosters.items() for n in lg.names(ks)), key=lambda p: p["name"])
+    if path == "/api/players":  # rostered players, plus free agents (team "FA") with {"fa": true}
+        teams = {**lg.rosters, **({"FA": lg.fa} if body.get("fa") else {})}
+        return sorted(({"name": n, "team": t} for t, ks in teams.items() for n in lg.names(ks)), key=lambda p: p["name"])
     if path == "/api/me":  # which team is yours
         if body.get("team") not in lg.rosters:
             raise KeyError(f"Unknown team: {body.get('team')}")
@@ -196,7 +199,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/news",
+API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/compare", "/api/news",
        "/api/players", "/api/me", "/api/week", "/api/refresh", "/api/chat", "/api/chats"}
 
 if __name__ == "__main__":
