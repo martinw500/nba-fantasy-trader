@@ -137,6 +137,9 @@ th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); p
 th.n, td.n { text-align: right; }
 td { padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 tr:last-child td { border-bottom: 0; }
+table.race th:first-child { width: 100%; }  /* the numbers sit together on the right */
+@media (min-width: 761px) { table.race th.n, table.race td.n { padding-left: 22px; } }
+tr.cut td { border-bottom-color: var(--faint); }  /* the playoff line */
 table.wrap td:first-child { white-space: normal; }
 tbody tr { transition: background .12s; }
 tbody tr:hover { background: var(--panel-2); }
@@ -260,7 +263,7 @@ td.why { white-space: normal; min-width: 240px; }
 @media (max-width: 760px) {
   .app { grid-template-columns: minmax(0, 1fr); }
   .side { position: static; height: auto; flex-direction: row; overflow-x: auto; padding: 8px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .brand, .side-foot { display: none; }
+  .brand, .side-foot, table.race .proj { display: none; }
   .nav span { white-space: nowrap; }
   .top, .content { padding-left: 16px; padding-right: 16px; }
   .punts { margin-left: 0; width: 100%; }
@@ -373,6 +376,7 @@ const cap = s => s[0].toUpperCase() + s.slice(1);
 const sign = v => (v > 0 ? "+" : "") + Number(v).toFixed(2);
 const sign1 = v => (v > 0 ? "+" : "") + Number(v).toFixed(1);
 const pct = v => Math.round(v * 100) + "%";
+const chance = v => v > 0 && v < 0.005 ? "<1%" : v < 1 && v > 0.995 ? ">99%" : pct(v);  // never round a long shot to 0% or a lock to 100%
 const delta = (v, unit) => unit === "win%" ? sign1(v) + "%" : sign(v);  // win% deltas are percentage points
 const and = xs => xs.length > 1 ? xs.slice(0, -1).join(", ") + " and " + xs.at(-1) : xs.join("");
 // waiver moves that need no trade (trades are scored on top of them): "Vučević for Achiuwa (+1.2%)"
@@ -507,7 +511,8 @@ function viewTeam() {
       ${moves.map(m => `<tr><td>Add <b>${esc(m.add)}</b>${m.drop ? `, drop ${esc(m.drop)}` : " into your open spot"}</td><td class="n pos val" title="${m.unit === "win%" ? "Change in your " + WIN().of : "Value gain"}">${delta(m.gain, m.unit)}</td><td class="n"><button class="btn ghost" data-go="waivers">Waivers</button></td></tr>`).join("")}
       ${sells.map(p => `<tr><td>Sell high on <b>${esc(p.name)}</b>: ${sign(p.gap)} above his real value over ${formWin()}</td><td class="n muted">${p.form_gp} GP</td><td class="n"><button class="btn ghost" data-act="shop" data-name="${esc(p.name)}">Find a buyer</button></td></tr>`).join("")}
     </tbody></table></div></div>` : "";
-  const outlook = prof ? `Projected ${ord(prof.rank)} of ${n} · wins ${pct(prof.win)} of ${oneWin() ? "weekly matchups" : "categories"} · ` : "";
+  const po = prof?.playoffs?.teams[st.me];
+  const outlook = prof ? `Projected ${ord(prof.rank)} of ${n} · wins ${pct(prof.win)} of ${oneWin() ? "weekly matchups" : "categories"} · ${po ? `${chance(po.playoffs)} to make the playoffs · ` : ""}` : "";
   return `<div class="head"><div><h1>${esc(st.me)}</h1><p class="sub">${outlook}${st.roster.length} players${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}</p></div></div>
     ${strip}${todo}
     <div class="panel"><div class="panel-h"><div><h2>Roster</h2><p>Category cells are z-scores vs a typical rostered player. Green helps you, red hurts.</p></div></div>${playerTable(st.roster)}</div>
@@ -675,13 +680,19 @@ function viewLeague() {
     ${order.map(t => `<tr${t === st.me ? ` style="background:var(--accent-soft)"` : ""}><td><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button>${t === st.me ? ` <span class="tag">you</span>` : ""}</td>
       ${st.cats.map(c => { const p = prof.cat_odds[t][c]; return `<td class="z ${punted(c) ? "punted-col" : ""}" style="--c:${heat((p - 0.5) * 6)}" title="${esc(t)}: ${pct(p)} to win ${lab(c)}, ${ord(prof.ranks[t][c])} in the league"><span>${pct(p)} <small class="muted">${prof.ranks[t][c]}</small></span></td>`; }).join("")}</tr>`).join("")}
     </tbody></table></div></div>` : "";
+  const po = prof?.playoffs, race = po ? Object.entries(po.teams).sort((a, b) => b[1].playoffs - a[1].playoffs || b[1].proj[0] - a[1].proj[0]) : [];
+  const raceTable = po ? `<div class="panel"><div class="panel-h"><div><h2>Playoff race</h2><p>Top ${po.seats} of ${race.length} make it. Each team's record plus the ${po.weeks_left} week${po.weeks_left === 1 ? "" : "s"} left, simulated with room for every roster to beat or miss its projection.</p></div></div>
+    <div class="tw"><table class="race"><thead><tr><th>Team</th><th class="n" title="Categories won, lost and tied so far: the standings">Record</th><th class="n proj" title="Expected final record after the regular season">Projected</th><th class="n" title="Chance to finish in the top ${po.seats}">Playoffs</th><th class="n" title="Chance to win the title: reseeded each round, the higher seed wins a tie">Title</th></tr></thead><tbody>
+    ${race.map(([t, r], i) => `<tr${t === st.me ? ` style="background:var(--accent-soft)"` : ""}${i === po.seats - 1 && i < race.length - 1 ? ` class="cut"` : ""}><td><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button>${t === st.me ? ` <span class="tag">you</span>` : ""}</td>
+      <td class="n muted">${r.w}–${r.l}–${r.t}</td><td class="n proj">${Math.round(r.proj[0])}–${Math.round(r.proj[0] + r.proj[1]) - Math.round(r.proj[0])}</td><td class="n val">${chance(r.playoffs)}</td><td class="n">${chance(r.title)}</td></tr>`).join("")}
+    </tbody></table></div></div>` : "";
   return `<div class="head"><div><h1>League</h1><p class="sub">${prof ? `Projected standings from every team's ${WIN().of} against the rest of the league. Weak spots are categories a team wins under 35% of weeks.` :"Every roster, valued on your build."}</p></div></div>
     <div class="grid2" style="grid-template-columns: minmax(300px, 420px) 1fr">
       <div class="panel" style="align-self:start">${list}</div>
       <div class="panel"><div class="panel-h"><div><h2>${esc(team)}</h2><p>${d && d.team === team && d.build.length ? `Weak in ${d.build.map(lab).join(", ")}` : "&nbsp;"}</p></div>
         ${team === st.me ? "" : `<button class="btn" data-act="trade-with" data-team="${esc(team)}"><svg class="i"><use href="#i-trade"/></svg>Trade with them</button>`}</div>${roster}</div>
     </div>
-    ${catTable}`;
+    ${raceTable}${catTable}`;
 }
 async function openTeam(team, go = true) {
   S.league.team = team; S.league.loading = team;

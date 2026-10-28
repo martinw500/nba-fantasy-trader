@@ -224,10 +224,12 @@ def parse_text(text):
     rules = out["rules"]
     slots = re.search(r"\((\d+) starters\) \+ (\d+) BN(?: \+ (\d+) IL)?", rules.get("Roster slots", ""))  # roster: active
     adds = re.match(r"\d+", rules.get("Max adds/week", ""))
+    seats = re.match(r"(\d+) teams", rules.get("Playoffs", ""))
     scoring = next((k for k, w in (("categories", "categor"), ("one_win", "one win")) if w in rules.get("Scoring type", "").lower()), None)
     out["settings"] = {**({"roster": int(slots[1]) + int(slots[2]), "starters": int(slots[1]),
                            **({"il": int(slots[3])} if slots[3] else {})} if slots else {}),
-                       **({"scoring": scoring} if scoring else {}), **({"max_adds": int(adds[0])} if adds else {})}
+                       **({"scoring": scoring} if scoring else {}), **({"max_adds": int(adds[0])} if adds else {}),
+                       **({"playoff_teams": int(seats[1])} if seats else {})}
     out["free_agents"] = list(fa.values())
     return out
 

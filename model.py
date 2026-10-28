@@ -86,6 +86,16 @@ AVAIL_PAST, AVAIL_K, AVAIL_T = 0.2, 50, 0.7
 REGULAR, SHARE, ROOM, ROLE, USAGE = 25, 0.37, 36, 0.5, 0.25
 USAGE_STATS = ["FGM", "FGA", "FTM", "FTA", "PTS", "AST", "TOV"]  # rebounds, steals, blocks and threes barely move
 
+# Playoff odds (season_sim()): how far a team's real weeks land from its projected odds, as logit shifts on every
+# category's odds. SEASON_SD: one per team for the whole season (players beating or missing their projection, injuries);
+# WEEK_SD: one per matchup (a big week moves most categories together). Without them the rest of a season's category
+# wins would spread about 2x too narrowly (2.6x from week 0, 1.8x from week 10). Fitted on 2025-26 (python backtest.py
+# playoffs): WEEK_SD matches a week's spread, SEASON_SD the rest of the season's from each Monday (0.37-0.39 in weeks
+# 0-1, 0.31-0.36 after), and both give the best playoff log loss (0.351, naive 0.441). A team's strength also drifts
+# (its edge in weeks 0-4 carries 0.57 into weeks 5-9, 0.32 into the playoff weeks), but a weekly drift term gained
+# nothing. Its rosters never change, so real leagues swing a bit more.
+SEASON_SD, WEEK_SD, SIMS = 0.35, 0.6, 4000
+
 # Trade market: what managers pay for a player, from his market rank (League.market): 100 x MARKET^(rank - 1).
 # Steep, so a star is worth more than the sum of spare parts: rank 1 = 100, 25 = 48, 50 = 22, 100 = 5, 150 = 1.
 # ponytail: starting guess; tune with the trade log (N6).
@@ -459,11 +469,13 @@ def phi(x):
     return 0.5 * (1 + np.sign(x) * y)
 
 
-def cat_probs(A, B, cats, A0=None, B0=None):
+def cat_probs(A, B, cats, A0=None, B0=None, ties=False):
     """P(team A beats team B) in each category. A, B: (..., len(RAW)) weekly totals -> (..., len(cats)).
-    A0, B0: totals already banked this week. They move the final totals but add no variance."""
+    A0, B0: totals already banked this week. They move the final totals but add no variance.
+    ties: also return P(tie) per category, the odds the counting stat's difference lands on 0 (a win is p - tie / 2).
+    Percentages never tie. Matches 2025-26 (backtest.py): STL 3.9% predicted vs 3.4% real, BLK 4.1% vs 4.3%."""
     TA, TB = (A, B) if A0 is None else (A + A0, B + B0)
-    out = []
+    out, tie = [], []
     for c in cats:
         if c in ("FG%", "FT%"):
             m, a = RAW.index(c[:2] + "M"), RAW.index(c[:2] + "A")
@@ -471,13 +483,16 @@ def cat_probs(A, B, cats, A0=None, B0=None):
             pa, pb = TA[..., m] / na, TB[..., m] / nb
             var = PCT_NOISE * (pa * (1 - pa) * A[..., a] / na ** 2 + pb * (1 - pb) * B[..., a] / nb ** 2)
             diff = pa - pb
+            tie.append(np.zeros_like(diff))
         else:
             i, d = RAW.index(c), DISPERSION.get(c, 1.0)
             ta, tb = A[..., i], B[..., i]
             var = d * (ta + tb) + (SCHED_CV * ta) ** 2 + (SCHED_CV * tb) ** 2
             diff = TB[..., i] - TA[..., i] if c == "TOV" else TA[..., i] - TB[..., i]
+            sd = np.sqrt(var + 1e-12)
+            tie.append(phi((diff + 0.5) / sd) - phi((diff - 0.5) / sd))
         out.append(phi(diff / np.sqrt(var + 1e-12)))  # no games left: a banked lead is a sure win
-    return np.stack(out, -1)
+    return (np.stack(out, -1), np.stack(tie, -1)) if ties else np.stack(out, -1)
 
 
 def total(v, c):
@@ -498,6 +513,51 @@ def match_prob(p):
         dist = dist * (1 - pk) + np.concatenate([np.zeros_like(pk), dist[..., :-1]], -1) * pk
     wins = np.arange(n + 1)
     return (dist * (wins > n / 2)).sum(-1) + 0.5 * (dist * (wins == n / 2)).sum(-1)
+
+
+def season_sim(wins, weeks, bracket, seats, sims=SIMS, seed=0, sd=None):
+    """Playoff and title odds by simulating the rest of a categories season. wins: (n,) category wins so far (a tie
+    counts half). weeks: [(I, J, p, tie)] for each regular-season week left: both teams of each pairing and their
+    category odds and tie odds (pairings, cats), cat_probs(ties=True). bracket: [(p, tie)] for each playoff round,
+    (n, n, cats) for every pairing. The top `seats` make it, reseeded each round (best seed plays the worst left, byes
+    to the top seeds), and a playoff week goes to whoever wins more categories, the higher seed on a tie.
+    sd: (SEASON_SD, WEEK_SD) to try others. -> (P(playoffs), P(title), expected final wins) per team.
+    ponytail: equal wins are seeded at random; Yahoo's tiebreak isn't in the snapshot."""
+    rng, n = np.random.default_rng(seed), len(wins)
+    season_sd, week_sd = sd or (SEASON_SD, WEEK_SD)
+    u = rng.normal(0, season_sd, (sims, n))
+    logit = lambda p: np.log(p / (1 - p))
+
+    def play(I, J, p, tie):  # I, J: (sims, pairings) -> categories won by I (ties half) in each pairing
+        shift = np.take_along_axis(u, I, 1) - np.take_along_axis(u, J, 1) + rng.normal(0, week_sd, I.shape)
+        z = logit(np.clip(p, 1e-6, 1 - 1e-6)) + shift[..., None]
+        q = 1 / (1 + np.exp(-z))
+        t = np.minimum(tie, 2 * np.minimum(q, 1 - q))
+        r = rng.random(q.shape)
+        return ((r < q - t / 2) + 0.5 * ((r >= q - t / 2) & (r < q + t / 2))).sum(-1)
+
+    total = np.broadcast_to(np.asarray(wins, float), (sims, n)).copy()
+    for I, J, p, tie in weeks:
+        w = play(np.broadcast_to(I, (sims, len(I))), np.broadcast_to(J, (sims, len(J))), p, tie)
+        np.add.at(total, (np.arange(sims)[:, None], I), w)
+        np.add.at(total, (np.arange(sims)[:, None], J), p.shape[-1] - w)
+    order = np.argsort(-(total + rng.random(total.shape) * 1e-3), 1)  # best first
+    seed_of = np.argsort(order, 1)
+    alive, rows = order[:, :seats], np.arange(sims)[:, None]
+    rounds = int(np.ceil(np.log2(seats))) if seats > 1 else 0
+    for r in range(rounds):
+        bye = 2 ** rounds - seats if r == 0 else 0
+        hi, lo = alive[:, bye:], alive[:, bye:][:, ::-1]
+        k = hi.shape[1] // 2
+        hi, lo = hi[:, :k], lo[:, :k]
+        p, tie = bracket[min(r, len(bracket) - 1)]
+        w = play(hi, lo, p[hi, lo], tie[hi, lo])
+        alive = np.concatenate([alive[:, :bye], np.where(w >= p.shape[-1] / 2, hi, lo)], 1)
+        alive = np.take_along_axis(alive, np.argsort(seed_of[rows, alive], 1), 1)  # reseed
+    made = np.zeros((sims, n), bool)
+    made[rows, order[:, :seats]] = True
+    champ = np.bincount(alive[:, 0], minlength=n) / sims if seats else np.zeros(n)
+    return made.mean(0), champ, total.mean(0)
 
 
 class League:
@@ -936,6 +996,47 @@ class League:
         order = sorted(wins, key=lambda t: -wins[t])
         return {t: {"win": round(wins[t], 3), "rank": i + 1} for i, t in enumerate(order)}
 
+    @functools.cached_property
+    def playoffs(self):
+        """Each team's odds to make the playoffs and win the title (season_sim()), from its record so far (the
+        snapshot's category W-L-T) and the season schedule's weeks left. The live week counts its totals so far plus
+        the rest of it (week_vec, as This week does), later weeks are average weeks (vecs) scaled by their days (weeks
+        7 and 17 run 14). Real odds: nobody concedes a punt. {seats, weeks_left, teams: {team: w, l, t, proj
+        (expected final W-L), playoffs, title}}, or None without a schedule or outside a categories league.
+        ponytail: a stale snapshot's week plays as a fresh one, and every week is an average one (an NBA schedule
+        count would sharpen the all-star break and the playoff weeks). One Win records count matchups, not categories:
+        None there until a One Win league needs it."""
+        weeks = [w for w in self.snap.get("schedule", ()) if w.get("matchups")]
+        if self.mode == "points" or self.scoring == "one_win" or not weeks:
+            return None
+        teams, n = list(self.rosters), len(self.cats)
+        ix, rec = {t: i for i, t in enumerate(teams)}, self.snap.get("records", {})
+        r = lambda t, k: rec.get(t, {}).get(k, 0)
+        done = round(max(r(t, "w") + r(t, "l") + r(t, "t") for t in teams) / n)
+        days = lambda w: ((date.fromisoformat(w["end"]) - date.fromisoformat(w["start"])).days + 1) / 7
+        V = np.stack([self.vecs[t] for t in teams])
+        live = {t: x["totals"][t] for x in self.snap.get("matchups", ()) for t in x.get("totals", {})}
+        left = []
+        for w in weeks[done:]:
+            pr = [(ix[a], ix[b]) for a, b in w["matchups"] if a in ix and b in ix]
+            I, J = np.array(pr, int).reshape(-1, 2).T
+            if not self.rolled and w["start"] == self.matchup.get("week_start") and all(t in live for t in teams):
+                so_far = np.array([[float(live[t].get(c, 0)) for c in RAW] for t in teams])
+                rest = np.stack([self.week_vec(self._playing(self.rosters[t])) for t in teams])
+                left.append((I, J, *cat_probs(rest[I], rest[J], self.cats, so_far[I], so_far[J], ties=True)))
+            else:
+                left.append((I, J, *cat_probs(days(w) * V[I], days(w) * V[J], self.cats, ties=True)))
+        post = [w for w in self.snap["schedule"] if not w.get("matchups") and w["start"] > weeks[-1]["end"]]
+        bracket = [cat_probs(days(w) * V[:, None], days(w) * V[None], self.cats, ties=True) for w in post]
+        seats = min(self.snap["settings"].get("playoff_teams", 6), len(teams))  # 6: Yahoo's default for 12 teams
+        made, champ, final = season_sim([r(t, "w") + r(t, "t") / 2 for t in teams], left,
+                                         bracket or [cat_probs(V[:, None], V[None], self.cats, ties=True)], seats)
+        return {"seats": seats, "weeks_left": len(left),
+                "teams": {t: {"w": r(t, "w"), "l": r(t, "l"), "t": r(t, "t"),
+                              "proj": [round(float(final[i]), 1), round(n * len(weeks) - float(final[i]), 1)],
+                              "playoffs": round(float(made[i]), 3), "title": round(float(champ[i]), 3)}
+                          for t, i in ix.items()}}
+
     def _after(self, team, out, inn, punt=()):
         """Roster after a trade, keeping its number of active players: injured players coming in take its free IL slots
         (longest out first), extra active players mean dropping whoever costs the least win % (an injured one coming in
@@ -1353,7 +1454,7 @@ class League:
         return {"totals": tot.round(2).to_dict("index"), "ranks": ranks.to_dict("index"), "vs": vs,
                 "cat_odds": odds.round(3).to_dict("index"), "scoring": self.scoring,
                 "odds": {c: round(p, 3) for c, p in o["odds"].items()}, "win": round(o["win"], 3),
-                "rank": st[self.me]["rank"], "standings": st,
+                "rank": st[self.me]["rank"], "standings": st, "playoffs": self.playoffs,
                 "punt_suggestions": self.build(self.me), "builds": {t: self.build(t) for t in self.rosters},
                 "strengths": sorted(o["odds"], key=lambda c: -o["odds"][c])[:3], "cheap": self.cheapest()}
 
@@ -1553,7 +1654,7 @@ class League:
     def _copy(self, rosters, fa, il=None):
         """A copy of the league with these rosters, free agents and IL slots (after_free, after_trade)."""
         lg = copy.copy(self)
-        for c in ("vecs", "outlooks", "totals"):  # cached on today's rosters
+        for c in ("vecs", "outlooks", "totals", "playoffs"):  # cached on today's rosters
             lg.__dict__.pop(c, None)
         lg.rosters, lg.fa, lg.il = {**self.rosters, **rosters}, fa, {**self.il, **(il or {})}
         return lg

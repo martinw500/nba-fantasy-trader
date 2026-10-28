@@ -96,7 +96,7 @@ Then see [ROADMAP.md](ROADMAP.md) for what's next.
 **Waivers** tab. Every free agent is tried against every healthy player on your roster. **Suggested moves** shows the add/drop pairs that raise your win % the most. Injured players are never suggested as drops. The top 3 moves also show on **My team** under "Worth doing now". **Recently dropped** lists the players let go in the snapshot's transactions that nobody has picked up since, newest first.
 
 ### "Where do I stand?"
-**My team** shows your projected finish and your win %: the share of categories you'd win in a typical week (see "The 9-cat matchup model" for One Win leagues). It also shows your odds in each category and your head-to-head odds against every team. **League** shows projected standings for everyone.
+**My team** shows your projected finish and your win %: the share of categories you'd win in a typical week (see "The 9-cat matchup model" for One Win leagues). It also shows your odds in each category and your head-to-head odds against every team, plus your chance to make the playoffs. **League** shows projected standings for everyone and the **Playoff race**: each team's record so far, its expected final record, and its chance to make the playoffs (top 8 of 12) and win the title (three one-week rounds, reseeded each round, the higher seed winning a tied week). The odds come from playing the rest of the season out thousands of times: the snapshot's records, this week's score so far plus the rest of the week, then every week on the schedule (weeks 7 and 17 count double). Each simulated season also lets every team run above or below its projection for the whole season and in single weeks, by as much as real teams did in 2025-26 (`python backtest.py playoffs`). Without that, teams' final category totals would spread about half as wide as they really do (2.6x too narrow from opening week, about 2x mid-season), and teams a naive simulation gave 80–90% made the playoffs only 72% of the time.
 
 ### "What's the news?"
 The **News** panel on My team lists ESPN's fantasy news (Rotowire's blurbs) on your players and their NBA teammates who play 10+ minutes. It covers the time since your snapshot, or at least the last two days, and tags items that came out after the snapshot as **new**. Your players come first. Teammates show five items, with the rest behind a toggle. A player's card shows his three latest items. News never changes a number by itself: the model reacts through return dates, minutes and expert projections, and the AI GM can search the web for the rest. ESPN's player list (ids and the time of each player's latest news) refreshes every 3 hours, and a player's news is fetched again only when that list shows something newer (`data/news.json`). `python model.py news` prints the same list.
@@ -201,10 +201,13 @@ A trade, add or drop is judged by how much it changes your win %, with both rost
 - The market curve (`MARKET` in `model.py`) and the tier cutoffs are starting guesses. There's no data yet on which offers real managers accept.
 - Not modelled yet:
   - positions and roster slots (daily lineup limits)
-  - the real schedule in trades and season odds: they use an average 3.4-game week (This week uses the real one)
+  - the real schedule in trades and season odds: they use an average 3.4-game week (This week uses the real one). That includes the playoff odds' all-star break and playoff weeks
+  - Yahoo's tiebreaker for equal records: the playoff odds break ties at random
   - two teammates out at once: each one's minutes are handed out as if the other played
   - keeper or dynasty value
 - An expert projection may already price in a long injury, so a teammate's lift can count twice for the expert part of his line. The randomness settings assume ESPN's return dates are roughly right (nobody has measured how far off they run yet). If ESPN's injury feed is down, the app only has Yahoo's injury tags and its odds run a little bold.
+
+- Playoff odds: replaying 2025-26 in 60 simulated leagues from every Monday, they come true within about 3 points (teams given 80–90% made it 87% of the time). Those leagues never trade or pick anyone up, so a real season swings a bit more. Title odds can't be checked as closely, since each league crowns only one champion.
 
 The settings live at the top of `model.py`. Re-run `python backtest.py` after changing how players are projected; it prints predicted vs actual win rates.
 
@@ -240,7 +243,7 @@ Open the folder in Claude Code. These skills and plugins are set up for this pro
 | `app.py` | Local web server + JSON API (`python app.py`, add `--no-browser` to skip opening a tab) |
 | `web/index.html` | The whole UI: one file, no build step |
 | `model.py` | Engine: values, trades, finder, waivers, hot/cold, punts. Also a CLI (`python model.py --help`) |
-| `backtest.py` | Checks the matchup odds against a real NBA season and prints predicted vs actual win rates |
+| `backtest.py` | Checks the matchup odds (and with `playoffs`, the playoff odds) against a real NBA season and prints predicted vs actual win rates |
 | `yahoo.py` | Pulls your league from Yahoo (`python yahoo.py`) or builds the demo (`python yahoo.py demo`) |
 | `ai.py` | AI GM over the API (when `ANTHROPIC_API_KEY` is set): Claude with tools that call `model.py`. Without a key, `app.py` runs `claude -p` instead |
 | `test_model.py` | Self-check, no network: `python test_model.py` |

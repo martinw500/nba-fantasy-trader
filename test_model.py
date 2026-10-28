@@ -413,6 +413,64 @@ def test_all():
     p_now, p_done = model.cat_probs(A, B, model.CATS), model.cat_probs(A * 1e-6, B * 1e-6, model.CATS, A, B)
     assert all(abs(d - 0.5) >= abs(n - 0.5) - 1e-9 for n, d in zip(p_now, p_done))
     assert np.isfinite(model.cat_probs(A * 0, B, model.CATS)).all()  # Sunday night, no games left, nothing banked
+    # ties: counting stats can land level (more often the fewer there are), percentages never; level and nothing
+    # left to play is a sure tie, so a win is p - tie / 2
+    _, tie = model.cat_probs(A, A, model.CATS, ties=True)
+    c = model.CATS.index
+    assert tie[c("FG%")] == 0 and tie[c("STL")] > tie[c("PTS")] > 0
+    _, tie = model.cat_probs(A * 0, A * 0, model.CATS, A, A, ties=True)
+    assert np.allclose(tie[2:], 1)
+
+    # playoff odds (season_sim): no noise, sure categories. Team 0 sweeps everyone, team 3 loses to everyone, and
+    # 1 vs 2 is a 4.5-4.5 tie (8 coin flips that always split, one tied category): the higher seed goes through
+    p = np.full((4, 4, 9), 0.5)
+    p[0, 1:], p[1:, 0], p[:3, 3], p[3, :3] = 1, 0, 1, 0
+    tie = np.zeros((4, 4, 9))
+    p[1, 2] = p[2, 1] = [1, 0] * 4 + [0.5]
+    tie[1, 2, 8] = tie[2, 1, 8] = 1
+    made, champ, final = model.season_sim([30, 20, 10, 0], [], [(p, tie)], 4, 50, sd=(0, 0))
+    assert (made == 1).all() and champ[0] == 1 and list(final) == [30, 20, 10, 0]
+    made, champ, _ = model.season_sim([0, 30, 20, 10], [], [(p, tie)], 4, 50, sd=(0, 0))  # team 0 is the 4th seed
+    assert champ[0] == 1
+    made, champ, _ = model.season_sim([0, 30, 20, 10], [], [(p, tie)], 2, 50, sd=(0, 0))  # top 2 only: 1 vs 2, tied
+    assert list(made) == [0, 1, 1, 0] and champ[1] == 1
+    # a week left: 0 sweeps 3, 1 and 2 split 4.5-4.5 (a tie counts half), so 3 drops out of the top 3
+    I, J = np.array([0, 1]), np.array([3, 2])
+    made, _, final = model.season_sim([25, 30, 20, 10], [(I, J, p[I, J], tie[I, J])], [(p, tie)], 3, 50, sd=(0, 0))
+    assert list(final) == [34, 34.5, 24.5, 10] and list(made) == [1, 1, 1, 0]
+    # 3 seats: the top seed sits out round 1. Rock-paper-scissors (0 beats 1, 1 beats 2, 2 beats 0), so each bye
+    # gives a different champion: 0's bye, 1 beats 2, then 0 beats 1
+    q = np.full((3, 3, 9), 0.5)
+    q[0, 1], q[1, 0], q[1, 2], q[2, 1], q[2, 0], q[0, 2] = 1, 0, 1, 0, 1, 0
+    assert model.season_sim([30, 20, 10], [], [(q, np.zeros_like(q))], 3, 50, sd=(0, 0))[1][0] == 1
+    # with noise the favourite still wins most often, the odds add up, and the same seed gives the same answer
+    made, champ, _ = model.season_sim([30, 20, 10, 0], [], [(np.where(p == 1, 0.8, np.where(p == 0, 0.2, p)), tie)], 2)
+    assert abs(made.sum() - 2) < 1e-9 and abs(champ.sum() - 1) < 1e-9 and champ.argmax() == 0
+    assert (model.season_sim([30, 20, 10, 0], [], [(p * 0.9, tie)], 2)[1] == model.season_sim([30, 20, 10, 0], [], [(p * 0.9, tie)], 2)[1]).all()
+
+    # League.playoffs: records so far + the schedule's weeks left. None without a schedule. Level records, 4 weeks
+    # left and 1 seat: the stronger roster (Them, against Me's 13 from players 100-148) is favoured, and 1 seat makes
+    # the title the same odds. 27-0 with 1 week left can't be caught (9 categories a week)
+    assert lg.playoffs is None
+    day = lambda n: (model.date(2026, 11, 2) + model.timedelta(n)).isoformat()
+    wk = lambda i, m=True: {"week": i, "start": day(7 * i), "end": day(7 * i + 6), "matchups": [["Me", "Them"]] if m else []}
+    sn = {**lg.snap, "schedule": [wk(i) for i in range(4)] + [wk(4, False)],
+          "settings": {**lg.snap["settings"], "playoff_teams": 1},
+          "teams": {**lg.snap["teams"], "Me": [{"name": f"Player {i}"} for i in range(100, 150, 4)]}}
+    po = model.League(sn, base, cur, today=model.date(2026, 11, 1)).playoffs
+    assert po["seats"] == 1 and po["weeks_left"] == 4
+    assert model.League({**sn, "settings": {**sn["settings"], "scoring": "one_win"}}, base, cur).playoffs is None
+    po = po["teams"]
+    assert po["Them"]["playoffs"] > 0.8 and abs(po["Me"]["playoffs"] + po["Them"]["playoffs"] - 1) < 1e-9
+    assert po["Me"]["playoffs"] == po["Me"]["title"] and sum(po["Me"]["proj"]) == 36
+    po = model.League({**sn, "records": {"Me": {"w": 27, "l": 0, "t": 0}, "Them": {"w": 0, "l": 27, "t": 0}}}, base, cur,
+                      today=model.date(2026, 11, 1)).playoffs["teams"]
+    assert po["Me"]["playoffs"] == 1 and po["Me"]["w"] == 27 and 27 < po["Me"]["proj"][0] < 31.5
+    # the live week: its totals so far count (Me 900 PTS up by Tuesday), only once its dates match the snapshot's
+    live = {"matchup": {"opponent": "Them", "week_start": "2026-11-02", "week_end": "2026-11-08"},
+            "matchups": [{"teams": ["Me", "Them"], "totals": {"Me": {"PTS": 900}, "Them": {"PTS": 100}}}]}
+    tue = lambda extra: model.League({**sn, **extra}, base, cur, today=model.date(2026, 11, 3)).playoffs["teams"]["Me"]["proj"][0]
+    assert tue(live) > tue({}) + 0.3
 
     # league text import: a trimmed Instinct snapshot (settings, rosters with ranks and "Empty slot" rows, injured
     # list skipped, free agents across three lists, matchups, transactions, projections, adds, schedule), sections it
@@ -428,6 +486,7 @@ LEAGUE SETTINGS
 Scoring type:     Head-to-Head Categories, 9 cats (FG%, FT%, 3PTM, PTS, REB, AST, ST, BLK, TO)
 Roster slots:     PG, SG, G, SF, PF, F, C, C, Util, Util (10 starters) + 3 BN + 3 IL = 16
 Max adds/week:    4 (no season limit on adds or trades)
+Playoffs:         8 teams, Weeks 21, 22 and 23 (Mon Mar 22 - Sun Apr 11, 2027). Reseeding: yes. Tiebreaker: higher seed wins
 =====
 PART 1 - ALL 12 TEAM ROSTERS
 =====
@@ -492,7 +551,8 @@ Sharks has an open SF slot.""")
     assert list(got["teams"]) == ["fatty zhou", "Big Tuo Plumbing Inc.", "Sharks"]
     assert got["pulled"] == "2026-10-26T23:37:00-07:00" and got["from"] == "2026-10-27"  # Oct 26's games are banked
     assert got["week"] == {"week": 2, "start": "2026-10-26", "end": "2026-11-01"}
-    assert got["settings"] == {"roster": 13, "starters": 10, "il": 3, "scoring": "categories", "max_adds": 4}
+    assert got["settings"] == {"roster": 13, "starters": 10, "il": 3, "scoring": "categories", "max_adds": 4,
+                               "playoff_teams": 8}
     fz = got["teams"]["fatty zhou"]
     assert fz[0] == {"name": "Nikola Jokić", "nba": "DEN", "pos": "C", "status": "", "slot": "C",
                      "rank": {"pre": 1, "cur": 8}, "owned": 100}

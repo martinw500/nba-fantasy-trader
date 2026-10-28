@@ -21,7 +21,10 @@ which is how the standings count (each category is a W or L); in One Win it's th
 Trades and find_trades are scored on top of the waiver moves the user could make without a trade ("free", also
 listed by waivers), so a deal gets no credit for a pickup. Say so, e.g. "compared with just adding Vucevic for
 Achiuwa (+1.2)". The other team is judged on the trade alone. A waiver move with "drop": null fills an open spot.
-league_overview has projected standings, per-category win odds and the user's odds vs each team. A category the
+league_overview has projected standings, per-category win odds and the user's odds vs each team, and "playoffs":
+the top "seats" teams make it, and each team has its record so far (category W-L-T), "proj" (expected final W-L),
+"playoffs" and "title" odds, simulated over the "weeks_left" with room for rosters to beat or miss their projections.
+Quote them as "93% to make the playoffs" rather than a projected rank. A category the
 user can't win or already dominates barely moves their odds, so explain punts from that. "market" prices a deal the
 way managers do, from Yahoo's ranks (give / get in market value, diff_pct = what the user gains on market, verdict
 like "you overpay 35%"); "accept" is how likely they say yes, mostly on that. "their_view" is only how it reads on
