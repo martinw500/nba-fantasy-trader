@@ -52,7 +52,9 @@ When the file lists free agents, those are used, with roster % and "claim by" da
 
 ### Turn on the AI GM (optional)
 
-Add `ANTHROPIC_API_KEY=sk-ant-...` to `.env` (key from https://console.anthropic.com) and restart. Everything except the chat works without it.
+Nothing to set up if Claude Code is installed and logged in: the chat runs `claude -p` on your own login, no API key. Answers take 10–30 seconds. Its sessions show up in Claude Code's `/resume` list for this folder.
+
+With `ANTHROPIC_API_KEY=sk-ant-...` in `.env` (key from https://console.anthropic.com, billed separately), it uses `ai.py` and the API instead. Everything except the chat works without either.
 
 ## Moving to a new computer
 
@@ -224,7 +226,7 @@ Open the folder in Claude Code. These skills and plugins are set up for this pro
 | `model.py` | Engine: values, trades, finder, waivers, hot/cold, punts. Also a CLI (`python model.py --help`) |
 | `backtest.py` | Checks the matchup odds against a real NBA season and prints predicted vs actual win rates |
 | `yahoo.py` | Pulls your league from Yahoo (`python yahoo.py`) or builds the demo (`python yahoo.py demo`) |
-| `ai.py` | AI GM: Claude with tools that call `model.py` |
+| `ai.py` | AI GM over the API (when `ANTHROPIC_API_KEY` is set): Claude with tools that call `model.py`. Without a key, `app.py` runs `claude -p` instead |
 | `test_model.py` | Self-check, no network: `python test_model.py` |
 | `ROADMAP.md` | What's untested and what to build next |
 | `PRODUCT.md`, `DESIGN.md` | Product and design decisions (used by impeccable) |

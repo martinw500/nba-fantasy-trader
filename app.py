@@ -2,6 +2,8 @@
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import traceback
 import webbrowser
@@ -25,6 +27,33 @@ def remember(**choices):
     """Save choices into the snapshot file, so they survive restarts and refreshes."""
     snap = {**json.loads(yahoo.OUT.read_text(encoding="utf-8")), **choices}
     yahoo.OUT.write_text(json.dumps(snap, indent=1, ensure_ascii=False), encoding="utf-8")
+
+
+GM_PROMPT = """You are the AI GM in the user's fantasy basketball app. Follow the playbook below, with these changes:
+the app keeps data/league.json current, so skip step 1; the only command you can run is `.venv/bin/python model.py ...`;
+there's no humanizer skill here, so write pitches short and casual yourself; and the chat shows replies as plain text,
+so no markdown (no tables, headers, bold or backticks). Keep answers short.
+"""
+
+
+def claude_chat(message, punt, session=None):
+    """Answer through Claude Code headless (`claude -p`) on the user's own login, so no API key is needed.
+    --safe-mode keeps Martin's CLAUDE.md, memory, plugins and hooks out; the GM playbook is SKILL.md."""
+    skill = (ROOT / ".claude" / "skills" / "gm" / "SKILL.md").read_text(encoding="utf-8").split("---", 2)[2]
+    flag = f'add --punt "{",".join(punt)}" to every model.py command' if punt else "no --punt"
+    cmd = [shutil.which("claude"), "-p", "--output-format", "json", "--safe-mode", "--model", "claude-opus-5-5",
+           "--effort", "medium", "--system-prompt", GM_PROMPT + skill, "--tools", "Bash",
+           "--allowedTools", "Bash(.venv/bin/python model.py:*)", "--permission-mode", "dontAsk"]
+    if session:
+        cmd += ["--resume", session]
+    # the message goes in on stdin, so one starting with "-" can't be read as a flag
+    r = subprocess.run(cmd, input=f"(User's team: {lg.me}. Punting: {', '.join(punt) or 'nothing'}, so {flag}.)\n\n{message}",
+                       cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=300)
+    try:
+        out = json.loads(r.stdout)
+    except json.JSONDecodeError:
+        raise RuntimeError(f"claude -p failed: {(r.stderr or r.stdout).strip()[-300:]}") from None
+    return {"reply": out.get("result") or "No answer came back.", "session": out.get("session_id")}
 
 
 def api(path, q, body):
@@ -79,7 +108,9 @@ def api(path, q, body):
         return lg.state(punt)
     if path == "/api/chat":
         if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
-            return {"reply": "Add ANTHROPIC_API_KEY=... to .env and restart to chat with the AI GM."}
+            if not shutil.which("claude"):
+                return {"reply": "Install Claude Code and log in (or add ANTHROPIC_API_KEY=... to .env) to chat with the AI GM."}
+            return {"reply": ""} if body.get("reset") else claude_chat(body["message"], punt, body.get("session"))
         if gm is None:
             import ai
             gm = ai.GM(lg)

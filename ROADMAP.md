@@ -19,7 +19,7 @@ To pick this up in Claude Code: *"Read ROADMAP.md and do P3"*. Work through **Do
 **Built but never run for real:**
 - [ ] **Yahoo pull** (`python yahoo.py`). Written against yfpy 17's documented fields, but never run against a real league. Expect small fixes on the first run (see "First real Yahoo pull" below). **Blocked (Oct 26):** since summer 2026, Yahoo grants Fantasy API access only to applications it approves (sports.yahoo.com/developer/access), with no published timeline, and old apps reportedly get 403s. Workaround in use: Instinct's text snapshots. `data/league.json` holds the Oct 27 import (`python yahoo.py import mchc-fantasy-snapshot-2026-10-27.txt`, pulled 12:55 PM MST before any Oct 27 game: 167 players, 214 free agents, AJ Dybantsa left out with no NBA games yet). That file adds Yahoo's games played and games left per team to Part 6, shown on This week next to ours (35 vs 32 ours, 32 vs 27 Yahoo's: Yahoo counts the lineups as set now). Its header ("No Oct 27 games had started ... earlier games were final") made the parser skip today's games; fixed Oct 27.
 - [x] **Oct 26 snapshot imported** (P1, Oct 27): `mchc-fantasy-snapshot-2026-10-26.txt`, re-pulled Oct 26, 11:37 PM MST, after every game was final. League settings, Pre/Cur/Ros ranks, this week's matchups, 30 transactions, Yahoo projections, adds used, waiver priority and the season schedule are all in `data/league.json`.
-- [ ] **AI GM chat** (`ai.py`). Needs an `ANTHROPIC_API_KEY`. The tool definitions build correctly, but no real conversation has run. `/gm` in Claude Code is the no-key alternative.
+- [x] **AI GM chat** (N2, Oct 27): runs through `claude -p` on Martin's login, no key; tested in a real browser on the real league. `ai.py` (the API path, used when `ANTHROPIC_API_KEY` is set) still hasn't had a real conversation.
 
 **Known gaps in the model:** listed under "Model accuracy" below.
 
@@ -30,7 +30,7 @@ To pick this up in Claude Code: *"Read ROADMAP.md and do P3"*. Work through **Do
 1. **Sanity-check the Oct 26 import** (done in P1, see item 3). Instinct answered the asks below (Oct 26, 11:37 PM file).
 2. **Apply for Yahoo API access** (sports.yahoo.com/developer/access, personal single-league use), since approval has no timeline. Then follow README → "Connect your Yahoo league".
 3. **Sanity-check your real team** after P1. Does the projected finish look plausible? Do the punt suggestions match your gut? Do the waiver adds make sense? Write down anything that looks wrong. That's the best calibration data available.
-4. Optional: add `ANTHROPIC_API_KEY` to `.env` for the in-app chat.
+4. ~~Optional: add `ANTHROPIC_API_KEY` to `.env` for the in-app chat.~~ Not needed since N2: the chat runs on your Claude Code login.
 
 (Moving to the new computer is done: the repo runs on the Mac from `.venv`.)
 
@@ -426,7 +426,13 @@ One task per session: *"Read ROADMAP.md and do Next up N0"*. Run `python test_mo
 **UI:** the Strategy panel shows each build's plan as steps (adds, trade 1, trade 2, trade 3, with win % after each step), its star fit and its buy list, with Load on each trade. Honour punt dimming. Still check N1's panel in a real browser, desktop and 390px (the Edge profile was locked on Oct 27).
 **Done when:** a test league where one trade can't get past the first-move cost but two or three trades do (the brick idea, with the bricks on other rosters instead of on waivers), so a multi-trade punt clearly wins. Record the real-league result here, even if it's still "stay balanced". The panel matches a `python model.py strategy` run.
 
-### N2. AI GM chat through Claude Code (no API key) `high`
+### N2. AI GM chat through Claude Code (no API key) ✅ done Oct 27 (branch `trade-lab`)
+**Built:** with no `ANTHROPIC_API_KEY`, `/api/chat` runs `claude -p --output-format json --safe-mode --model claude-opus-5-5 --effort medium --tools Bash --allowedTools "Bash(.venv/bin/python model.py:*)" --permission-mode dontAsk`, the gm SKILL.md (plus a short preamble: skip the import step, plain text, no markdown) as `--system-prompt`, and the message on stdin prefixed with your team and punt. The browser keeps the session id next to the chat in localStorage and sends `--resume` with it, so a follow-up survives an app restart. New conversation clears it. With a key set, `ai.py` runs as before.
+- `--bare` was the obvious flag but forces API-key auth. `--safe-mode` keeps the login and drops CLAUDE.md, memory, plugins, hooks (ponytail) and MCP. A probe confirmed none of it reaches the GM's context. Read-only shell commands (`ls`, `head`) are still auto-allowed; anything that writes is denied.
+- Checked in a real browser (Oct 27, real league): "who should I drop and pick up?" → Achiuwa for Vučević, +1.2 (from `model.py waivers`), 8–17s per answer. The follow-up "what was the player I'd drop?" answered Achiuwa, and after New conversation the same question got "nothing yet".
+- Each chat is a Claude Code session in this folder, so they show up in `/resume`.
+
+**Original plan:**
 **Why:** `ai.py` needs a paid API key (billed separately from a Claude subscription). `claude -p` runs Claude Code headless with your own login.
 **Change:** `/api/chat` shells out to `claude -p "<message>" --output-format json --resume <session_id>`, with `--allowedTools "Bash(.venv/bin/python model.py:*)"`, `--append-system-prompt` from `.claude/skills/gm/SKILL.md`, and the current punt in the prompt. Save the session id per chat. Keep `ai.py` as the fallback when `ANTHROPIC_API_KEY` is set. Show a "thinking" state, since answers take 10–30s.
 **Watch out:**

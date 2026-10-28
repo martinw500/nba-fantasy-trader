@@ -7,7 +7,7 @@ Local Yahoo NBA fantasy GM app. Python 3.13 + pandas backend, one-file vanilla H
 - `yahoo.py`: league snapshot → `data/league.json`. Yahoo API (read-only, yfpy; access now needs Yahoo's approval), `python yahoo.py import <snapshot>.txt ["Team"]` (Instinct-style league snapshot or a hand-typed list, `parse_text`; unknown sections are skipped; Refresh imports the newest `*snapshot*.txt`; the top-bar dropdown switches your team via `/api/me`), or `python yahoo.py demo` (fake league from real stats).
 - `model.py` also fetches the NBA schedule (`nba_api`, cached a day) and ESPN's injury feed (cached 3h) in `load()`. `League` built directly (tests) gets neither, so it stays offline.
 - `app.py`: stdlib `ThreadingHTTPServer` on 127.0.0.1:8765, routes in `api()`.
-- `ai.py`: Claude GM via `client.beta.messages.tool_runner`, tools wrap `League` methods, model `claude-opus-5-5`.
+- `ai.py`: Claude GM via `client.beta.messages.tool_runner`, tools wrap `League` methods, model `claude-opus-5-5`. Only used when `ANTHROPIC_API_KEY` is set; otherwise `/api/chat` runs `claude -p --safe-mode` (`app.py` `claude_chat`) with the gm SKILL.md as system prompt and only `model.py` allowed. Edit SKILL.md and both `/gm` and the in-app chat follow.
 - `backtest.py`: replays a real NBA season (game logs cached in `data/gamelogs_*.csv`) in 20 simulated leagues and prints predicted vs actual win rates. It's the evidence behind the matchup knobs.
 - `web/index.html`: the whole UI. State in `S`, views are `view*()` functions returning HTML strings, event delegation via `data-act` / `data-view` / `data-punt`.
 

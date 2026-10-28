@@ -306,7 +306,7 @@ const S = {
   improve: { kind: null, list: null, busy: false, sort: null },
   saved: { list: store.get("saved", []), evals: {}, loading: false },
   players: null,
-  chat: store.get("chat", []), chatBusy: false,
+  chat: store.get("chat", []), chatBusy: false, chatSession: store.get("chatSession", null),
 };
 const OUT = new Set(["O", "INJ", "IL", "IL+", "NA", "SUSP"]);
 
@@ -867,7 +867,7 @@ function viewMovers() {
 
 const SUGS = ["Who should I drop and pick up?", "Find me a fair trade that helps my weakest category", "Should I punt anything? Why?", "Who are my best sell-high candidates?"];
 function viewGM() {
-  const msgs = S.chat.length ? S.chat.map(m => `<div class="msg ${m.role}">${esc(m.text)}</div>`).join("") + (S.chatBusy ? `<div class="msg ai thinking">Thinking it through…</div>` : "")
+  const msgs = S.chat.length ? S.chat.map(m => `<div class="msg ${m.role}">${esc(m.text)}</div>`).join("") + (S.chatBusy ? `<div class="msg ai thinking">Running the numbers. Answers take 10–30 seconds…</div>` : "")
     : `<div class="empty" style="margin:auto"><b>Ask your GM anything</b>It runs the same numbers as the rest of the app (trades, waivers, punts, hot &amp; cold) and explains them. ${S.punt.length ? `It knows you're punting ${S.punt.map(lab).join(", ")}.` : ""}</div>`;
   return `<div class="head"><div><h1>AI GM</h1><p class="sub">Every number it quotes comes from the model, not guesswork.</p></div>
       ${S.chat.length ? `<button class="btn ghost" data-act="reset-chat">New conversation</button>` : ""}</div>
@@ -879,7 +879,8 @@ function viewGM() {
 async function ask(text) {
   if (!text.trim() || S.chatBusy) return;
   S.chat.push({ role: "user", text }); S.chatBusy = true; render();
-  try { const r = await api("/api/chat", { message: text }); S.chat.push({ role: "ai", text: r.reply }); }
+  try { const r = await api("/api/chat", { message: text, session: S.chatSession }); S.chat.push({ role: "ai", text: r.reply });
+    if (r.session) store.set("chatSession", S.chatSession = r.session); }
   catch (e) { S.chat.push({ role: "ai", text: "Error: " + e.message }); }
   S.chatBusy = false; store.set("chat", S.chat.slice(-40)); render();
 }
@@ -962,7 +963,7 @@ document.addEventListener("click", async e => {
     setView("gm");
     return ask(`Evaluate this trade and write a short casual pitch I can send to ${r.other_team}: I give ${r.give.map(p => p.name).join(", ")}, I get ${r.get.map(p => p.name).join(", ")}.`);
   }
-  if (act === "reset-chat") { S.chat = []; store.set("chat", []); try { await api("/api/chat", { reset: true }); } catch {} return render(); }
+  if (act === "reset-chat") { S.chat = []; S.chatSession = null; store.set("chat", []); store.set("chatSession", null); try { await api("/api/chat", { reset: true }); } catch {} return render(); }
 });
 document.addEventListener("change", async e => {
   const t = e.target;
