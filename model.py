@@ -305,11 +305,17 @@ class League:
                 m = self.meta.setdefault(k, {})
                 m["status"] = m.get("status") or i["status"]  # the league's own tag wins
         self.rate, self.avail = self._availability(base, cur)
-        # this week's opponent and totals so far (Yahoo pull, or picked in the app); last week's one doesn't count.
-        # ponytail: without a Yahoo pull, weeks are assumed to run Monday-Sunday
+        # this week's opponent and totals so far (Yahoo pull, snapshot, or picked in the app). Once that week is over,
+        # the season schedule names the next opponent and its dates (weeks 7 and 17 run 14 days), with no score yet.
+        # ponytail: without either, weeks are assumed to run Monday-Sunday
         m = snap.get("matchup") or {}
-        self.matchup = m if (m.get("week_end") or "") >= self.today else {}
-        self.week_end = self.matchup.get("week_end") or sunday
+        self.rolled = bool(m) and (m.get("week_end") or "") < self.today
+        if not m or self.rolled:
+            wk = next((w for w in snap.get("schedule", ()) if w["start"] <= self.today <= w["end"]), None)
+            opp = next((t for pr in wk["matchups"] if self.me in pr for t in pr if t != self.me), None) if wk else None
+            m = {"week_start": wk["start"], "week_end": wk["end"], **({"opponent": opp} if opp else {})} if wk else {}
+        self.matchup = m
+        self.week_end = m.get("week_end") or sunday
         self.games_week = pd.Series({k: len(self.game_days(k, self.week_end)) for k in self.p.index}, dtype=float)
         # expected weekly contribution: games played at his line, missed games partly covered at waiver level
         fill = self.p.loc[self._waiver_level(self.value()), RAW].mean()
@@ -1188,12 +1194,24 @@ class League:
         return {"sell_high": fmt(sell[sell > 0.5 * self.u]), "buy_low": fmt(buy[buy < -0.5 * self.u]),
                 "note": f"Based on {int(self.p.GP_CUR.max())} games so far — small samples swing hard early."}
 
+    def dropped(self, punt=(), limit=10):
+        """Players dropped in the snapshot's transactions (newest first) that nobody has picked up since."""
+        out, seen = [], set()
+        for t in self.snap.get("transactions", ()):
+            name = t.get("dropped") or (t["player"] if t["type"] == "drop" else None)
+            k = self.find(name, strict=False) if name else None
+            if k and k not in seen and not any(k in ks for ks in self.rosters.values()):
+                seen.add(k)
+                out.append({**self.player(k, punt), "by": t["team"], "when": t["when"]})
+        return out[:limit]
+
     def state(self, punt=()):
         return {"league": self.snap.get("name", "League"), "mode": self.mode, "scoring": self.scoring, "cats": self.cats,
                 "me": self.me, "teams": list(self.rosters), "fetched": self.snap.get("fetched", ""), "demo": self.snap.get("demo", False),
+                "pulled": self.snap.get("pulled", ""), "rolled": self.rolled,  # snapshot time; its week is over
                 "roster": sorted((self.player(k, punt) for k in self.rosters[self.me]), key=lambda p: -p["value"]),
                 "profile": self.profile() if self.mode != "points" else None,
-                "waivers": self.waivers(punt), "movers": self.movers(punt)}
+                "waivers": {**self.waivers(punt), "dropped": self.dropped(punt)}, "movers": self.movers(punt)}
 
     def team_roster(self, team, punt=()):
         return sorted((self.player(k, punt) for k in self.rosters[team]), key=lambda p: -p["value"])

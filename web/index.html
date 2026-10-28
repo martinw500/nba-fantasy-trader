@@ -349,6 +349,7 @@ const and = xs => xs.length > 1 ? xs.slice(0, -1).join(", ") + " and " + xs.at(-
 const freeList = (ms, more = 0) => and([...ms.map(m => `${esc(m.add)} ${m.drop ? "for " + esc(m.drop) : "into the open spot"} (${delta(m.gain, "win%")})`),
   ...(more > 0 ? [`${more} more`] : [])]);
 const ord = n => n + (n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th");
+const when = iso => new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const oddsColor = v => v > 0.6 ? "var(--pos)" : v < 0.35 ? "var(--neg)" : "var(--faint)";
 const tone = v => v > 0.05 ? "pos" : v < -0.05 ? "neg" : "";
 function heat(v) {
@@ -503,7 +504,7 @@ function viewWeek() {
   if (!w) { if (!W.loading) loadWeek(); return head("&nbsp;") + `<div class="panel">${SKEL}</div>`; }
   if (w.error) return head("") + `<div class="panel err">Couldn't load this week: ${esc(w.error)}. <button class="btn" data-act="week-retry">Try again</button></div>`;
   const end = new Date(w.week_end + "T12:00").toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
-  if (!w.opponent) return head(`Week ends ${end}.`) + `<div class="panel"><div class="empty"><b>Who are you playing this week?</b>Pick your opponent above. It's saved until ${end}, when the week rolls over. A Yahoo pull will fill it in, with the live score, once the API works.</div></div>`;
+  if (!w.opponent) return head(`Week ends ${end}.`) + `<div class="panel"><div class="empty"><b>Who are you playing this week?</b>Pick your opponent above. It's saved until ${end}, when the week rolls over. A snapshot with this week's matchup fills it in, with the live score.</div></div>`;
   const cats = Object.entries(w.cats), by = k => cats.filter(([, d]) => d.call === k).map(([c]) => lab(c));
   const verdict = w.win >= 60 ? ["accept", "Favoured"] : w.win <= 40 ? ["decline", "Underdog"] : ["toss-up", "Toss-up"];
   const tot = c => v => v == null ? "—" : c.endsWith("%") ? v.toFixed(1) + "%" : v.toFixed(0);
@@ -527,7 +528,7 @@ function viewWeek() {
         <td class="n val"><span class="dot" style="background:${oddsColor(d.odds / 100)}"></span>${Math.round(d.odds)}%</td>
         <td><span class="tag ${d.call === "safe" ? "safe" : d.call === "lost" ? "out" : d.call}" title="${CALL_TIP[d.call]}">${CALL[d.call]}</span></td></tr>`).join("")}</tbody></table></div>
       <div class="panel-b small muted" style="border-top:1px solid var(--line)">${advice} ${yg ? `Games played so far: ${yg.you.played} vs ${yg.them.played}.` : ""} Projected = ${w.live ? "the score so far plus " : ""}each player's games left × his per-game line × his chance of playing. Players in IL slots sit.
-        ${w.live ? "" : "No live score yet, so this assumes nothing has been played, which is right on Monday. A Yahoo pull adds the real score."}</div></div>
+        ${w.live ? "" : "No live score yet, so this assumes nothing has been played, which is right on Monday. A new snapshot adds the real score."}</div></div>
     <div class="panel"><div class="panel-h"><div><h2>Streaming adds</h2><p>Free agents who most raise your odds this week, each swapped for whichever of your three cheapest healthy players helps most. Season shows what keeping him does long-term.</p></div></div>
       ${playerTable(w.streams, { extra: streamCols, empty: "<b>No stream helps this week</b>Nobody on waivers raises your odds by 0.1% or more over your weakest players." })}</div>`;
 }
@@ -851,7 +852,10 @@ function viewWaivers() {
       <div class="panel"><div class="panel-h"><div><h2>Drop candidates</h2><p>${odds ? "The healthy players you'd miss least." : "Your three weakest healthy players."}</p></div></div>${playerTable(w.drop_candidates)}</div></div>
     <div class="panel"><div class="panel-h"><div><h2>Best available</h2><p>Top ${w.free_agents.length} free agents.</p></div></div>${playerTable(w.free_agents, { extra: [...(odds ? [{ h: "If added", v: p => `<span class="${tone(p.fit)} val">${delta(p.fit, "win%")}</span>` }] : []),
       ...(w.free_agents.some(p => p.owned != null) ? [{ h: `<span title="Share of Yahoo leagues that roster him">Owned</span>`, v: p => p.owned != null ? `${p.owned}%` : "" }] : []),
-      ...(w.free_agents.some(p => p.waiver) ? [{ h: "Add", v: p => p.waiver ? `<span class="tag" title="On waivers: put in a claim">claim by ${esc(p.waiver)}</span>` : `<span class="muted">now</span>` }] : [])], empty: "No free agent data. Refresh from Yahoo." })}</div>`;
+      ...(w.free_agents.some(p => p.waiver) ? [{ h: "Add", v: p => p.waiver ? `<span class="tag" title="On waivers: put in a claim">claim by ${esc(p.waiver)}</span>` : `<span class="muted">now</span>` }] : [])], empty: "No free agent data. Refresh from Yahoo." })}</div>
+    ${w.dropped?.length ? `<div class="panel"><div class="panel-h"><div><h2>Recently dropped</h2><p>Players let go in the snapshot's latest moves, newest first. Nobody has picked them up since.</p></div></div>
+      ${playerTable(w.dropped, { extra: [{ h: "Dropped by", v: p => esc(p.by) }, { h: "When", v: p => `<span class="muted">${esc(p.when)}</span>` },
+        ...(w.dropped.some(p => p.waiver) ? [{ h: "Add", v: p => p.waiver ? `<span class="tag" title="On waivers: put in a claim">claim by ${esc(p.waiver)}</span>` : `<span class="muted">now</span>` }] : [])] })}</div>` : ""}`;
 }
 
 function viewMovers() {
@@ -892,7 +896,7 @@ function renderShell() {
   if (!st) return;
   $("#league").innerHTML = `<b>${esc(st.league)}</b><span>${st.mode === "points" ? "Points" : st.cats.length + "-cat"} · ${st.teams.length} teams${st.demo ? " · demo data" : ""} ·
     <select id="me-team" class="me" aria-label="Your team" title="Which team is yours">${st.teams.map(t => opt(t, t, st.me)).join("")}</select></span>`;
-  $("#fetched").textContent = st.fetched ? "Rosters as of " + st.fetched : "";
+  $("#fetched").textContent = st.pulled ? "Snapshot pulled " + when(st.pulled) : st.fetched ? "Rosters as of " + st.fetched : "";
   $("#punts").innerHTML = st.mode === "points" ? "" : `<span>Punt</span>${st.cats.map(c => `<button class="chip" data-punt="${c}" aria-pressed="${punted(c)}" title="${punted(c) ? "Stop punting" : "Punt"} ${lab(c)}">${lab(c)}</button>`).join("")}`;
 }
 function render() {
@@ -901,7 +905,9 @@ function render() {
   if (S.error && !S.state) { v.innerHTML = `<div class="panel err">Couldn't load your league: ${esc(S.error)}. Is <code>python app.py</code> running?</div>`; return; }
   if (!S.state) return;
   const demo = S.state.demo && S.view === "team" ? `<div class="notice">This is a demo league drafted from real stats. Connect your Yahoo league with <code>python yahoo.py</code> (see README) to see your real team.</div>` : "";
-  v.innerHTML = demo + ({ team: viewTeam, week: viewWeek, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, gm: viewGM }[S.view] || viewTeam)();
+  const st = S.state, age = st.pulled ? (Date.now() - new Date(st.pulled)) / 864e5 : 0;
+  const stale = st.rolled || age > 1 ? `<div class="notice">Your snapshot ${st.rolled ? "is from last week's matchup" : `is ${Math.floor(age)} day${age >= 2 ? "s" : ""} old`} (pulled ${when(st.pulled)}), so the score and recent moves aren't in. Drop a new snapshot in the project folder and press Refresh.</div>` : "";
+  v.innerHTML = demo + stale + ({ team: viewTeam, week: viewWeek, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, gm: viewGM }[S.view] || viewTeam)();
   const m = $("#msgs"); if (m) m.scrollTop = m.scrollHeight;
 }
 function setView(v) { S.view = v; store.set("view", v); history.replaceState(null, "", "#" + v); render(); window.scrollTo(0, 0); }

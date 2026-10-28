@@ -440,7 +440,10 @@ One task per session: *"Read ROADMAP.md and do Next up N0"*. Run `python test_mo
 - `claude -p` also loads Martin's user-level settings, hooks (e.g. the ponytail SessionStart hook) and global CLAUDE.md. Check `claude --help` for a way to limit which settings it loads, so none of that leaks into GM answers.
 **Done when:** a chat question in the browser gets an answer quoting `model.py` numbers, a follow-up question remembers context, and New conversation starts fresh.
 
-### N3. Snapshot refresh loop `high`
+### N3. Snapshot refresh loop ✅ done Oct 27 (branch `trade-lab`)
+**Result:** the sidebar shows the snapshot's pull time (`state()["pulled"]`), and every view shows a notice once it's over a day old or its matchup week is over (`League.rolled`). That notice is at the top of the view, since the sidebar is hidden on phones. Waivers has **Recently dropped** (`League.dropped()`): players let go in `transactions`, newest first, that nobody has picked up since (10 on the Oct 27 file, from Aday Mara to Yves Missi). Once the snapshot's week is over, `League.__init__` takes this week's opponent and dates from `schedule`, with no score yet, so week 7 (Nov 30 – Dec 13) runs 14 days. Playoff weeks have dates but no opponent, so you pick one. Checked in the browser: a fake Oct 28 copy of the snapshot with PTS 250 dropped in the folder, then Refresh. The sidebar and the live score (100 → 250) both updated. Also checked at 390px, with no console errors. Q5 and playoff mode stay their own tasks. Apostrophe names (De'Aaron Fox) still parse.
+
+**Original plan:**
 **Why:** the league comes from Instinct text snapshots; re-importing by hand is the main chore.
 **Mostly covered by P1** (Oct 26): Instinct's dated file has the matchup totals, ranks, Yahoo projections, transactions and records, and P1 parses them and makes Refresh pick the newest file.
 **Left:**
@@ -490,7 +493,7 @@ All inline (no modals, per DESIGN.md); every new stat table honours punt dimming
 - **Q6. Global player search** in the top bar (today it's only on Trades). Opens the player card. `medium`
 - **Q7. Custom add/drop evaluator** on Waivers: pick any add and any drop and see the win-% change this week and for the season, like the trade builder. `high`
 - **Q8. Copy offer.** `medium` One click copies "I give X, Y for Z" plus a short pitch (via the AI GM / humanizer) to paste into Yahoo. Also logs it to the trade log (N6).
-- **Q9. Freshness.** `medium` Show when stats, schedule, injuries and the snapshot were last updated. Warn when the snapshot is older than a day, or the week rolled over since the last import.
+- **Q9. Freshness.** `medium` Snapshot part done in N3 (Oct 27): pull time in the sidebar, warning when over a day old or the week rolled over. Left: stats, schedule and injury cache times. Original: show when stats, schedule, injuries and the snapshot were last updated. Warn when the snapshot is older than a day, or the week rolled over since the last import.
 - **Q10. Daily brief.** `medium` A scheduled routine (`/schedule`) that writes a morning summary:
   - injuries on your team
   - waiver claims clearing today
@@ -543,7 +546,7 @@ Original plan:
 
 ### 3. Injury notes, ownership %, transactions, real standings (partly done Oct 26) `medium`
 
-Done without Yahoo: injury notes on hover (ESPN), plus "Owned" % and "claim by <date>" in Waivers (from the text snapshot). Not done: recently dropped list, real W-L next to projected. P1 parses both (`transactions`, `records`); the UI part is still to do.
+Done without Yahoo: injury notes on hover (ESPN), plus "Owned" % and "claim by <date>" in Waivers (from the text snapshot). Recently dropped list done in N3 (Oct 27). Not done: real W-L next to projected. P1 parses both (`transactions`, `records`); the UI part is still to do.
 
 **Why:** cheap context the API already has.
 

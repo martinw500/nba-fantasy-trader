@@ -155,7 +155,7 @@ Every screen is a left nav, a sticky top bar (league, punt chips, refresh), and 
 ### Data
 - **pos / neg**: fill colors for z-score cells, mixed with transparency up to 50% by magnitude (`|z| / 2.5`).
 - **pos-ink / neg-ink**: the text versions of the same hues for signed numbers (`+1.20`, `-0.85`).
-- **warn-soft / warn-ink**: the demo-data notice only.
+- **warn-soft / warn-ink**: data-source notices only (demo data, a stale snapshot).
 
 ### Named Rules
 **The Numbers Own the Color Rule.** Chrome is neutral; saturated color appears only where it encodes a number's sign and size, or a primary action.

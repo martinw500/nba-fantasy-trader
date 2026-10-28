@@ -253,7 +253,13 @@ def test_all():
     assert up.this_week(punt=["PTS"])["cats"]["PTS"] == {**w2["cats"]["PTS"], "odds": 0, "call": "punt"}
     stale = model.League({**snap, "matchup": {"opponent": "Them", "week_end": "2026-10-25"}}, pd.concat([base, twins]),
                          pd.concat([cur, twins]), today=model.date(2026, 10, 26))
-    assert stale.this_week()["opponent"] is None and stale.week_end == "2026-11-01"
+    assert stale.this_week()["opponent"] is None and stale.week_end == "2026-11-01" and stale.rolled
+    # ... unless the season schedule names the next one: a 14-day week, no score yet
+    sched = [{"week": 1, "start": "2026-10-20", "end": "2026-10-25", "matchups": [["Them", "Me"]]},
+             {"week": 2, "start": "2026-10-26", "end": "2026-11-08", "matchups": [["Them", "Me"]]}]
+    nxt = model.League({**stale.snap, "schedule": sched}, pd.concat([base, twins]), pd.concat([cur, twins]),
+                       today=model.date(2026, 10, 26))
+    assert nxt.week_end == "2026-11-08" and nxt.this_week()["opponent"] == "Them" and not nxt.this_week()["live"]
     # totals pulled after Monday's games already hold them: the rest of the week counts from Tuesday
     late = model.League({**snap, "matchup": {"opponent": "Them", "week_end": "2026-11-01", "from": "2026-10-27"}},
                         pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
@@ -439,6 +445,13 @@ Sharks has an open SF slot.""")
 
     w = lg.waivers()
     assert all(m["gain"] >= model.MOVE * lg.s for m in w["moves"])
+    # recently dropped: only players nobody has picked up since, newest first, each once
+    tx = [{"when": "Oct 27 1:20pm", "team": "Them", "type": "add", "player": "Player 101", "dropped": "Player 103"},
+          {"when": "Oct 26 7:00pm", "team": "Me", "type": "drop", "player": "Player 102"},
+          {"when": "Oct 25 7:00pm", "team": "Them", "type": "drop", "player": "Player 151"},  # back on a roster
+          {"when": "Oct 24 7:00pm", "team": "Them", "type": "drop", "player": "Player 103"}]
+    dr = model.League({**lg.snap, "transactions": tx}, base, cur).dropped()
+    assert [(p["name"], p["by"]) for p in dr] == [("Player 103", "Them"), ("Player 102", "Me")]
     assert set(lg.profile()["odds"]) == set(model.CATS)
 
 
