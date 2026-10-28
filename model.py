@@ -21,6 +21,7 @@ CLI (prints JSON, used by Claude Code and for quick checks):
   python model.py week --vs "Team"          # this week's matchup (--vs defaults to the snapshot's opponent)
   python model.py strategy                  # punt planner: every build's waiver adds + up to 3 trades, true odds (~15s)
   python model.py news                      # ESPN news on your players and their teammates since the snapshot
+  python model.py compare --players "A, B"  # 2 to 4 players side by side, with your win % with each in a roster spot
   add --punt "FT%,TOV" to any of them
 """
 import argparse
@@ -798,7 +799,7 @@ class League:
             out.append((s.isoformat(), (s + timedelta(6)).isoformat()))
         return out
 
-    def card(self, name, punt=()):
+    def card(self, name, punt=(), news=True):
         """One player in full (the app's player card): player() plus per-game lines (rest of season; the Yahoo or ESPN
         projection blended into it; this season, the last 30, 14 and 7 days from the box scores, or this season's stats
         without them; a window is left out when it holds the same games as the one before), his NBA games left this
@@ -830,7 +831,44 @@ class League:
                           for w, (s, gp) in lines.items()},
                 "weeks": [{"start": s, "end": e, "games": len(self.game_days(k, e, s))} for s, e in weeks],
                 "fit_rank": int(fit), "fit": round(100 * MARKET ** (fit - 1), 1),
-                **({"news": self.news([k]).get(k, [])[:3]} if self.news else {})}
+                **({"news": self.news([k]).get(k, [])[:3]} if self.news and news else {})}
+
+    def compare(self, names, punt=()):
+        """2 to 4 players side by side (Q3): each one's card() without news and, in 9-cat, `slot`: your season win %
+        with him in one of your roster spots. The compared players you own all leave, he comes in, and _after() keeps
+        your number of active players as a trade would (an injured one parks in a free IL slot, a spot too many drops
+        whoever you'd miss least, which can be him: `cut`; a spot short takes the best free agent outside the
+        comparison). So "keep A or B" and "trade for C or D" read off the same number. `win` is today's win %; `best`
+        names who's ahead on each number where higher is better (nobody when they're all level)."""
+        keys = list(dict.fromkeys(self.find(n) for n in names))
+        if not 2 <= len(keys) <= 4:
+            raise KeyError("Pick 2 to 4 different players to compare")
+        cards = [self.card(self.p.at[k, "PLAYER_NAME"], punt, news=False) for k in keys]
+        out = {"players": cards}
+        if self.mode != "points":
+            mine, w0 = [k for k in keys if k in self.rosters[self.me]], self.outlook(self.me, punt=punt)["win"]
+            for c, k in zip(cards, keys):
+                ks, dropped, added, il = self._after(self.me, mine, [k], punt)
+                if set(added) & set(keys):  # another compared free agent never fills the open spot
+                    ks = [x for x in ks if x not in added]
+                    added = self.best_fa(len(added), skip=ks + keys)
+                    ks += added
+                win = self.outlook(self.me, {self.me: self.vec(ks, il)}, punt)["win"]
+                c["slot"] = {"win": round(100 * win, 1), "delta": round(100 * (win - w0), 1) + 0.0, "cut": k in dropped,
+                             "drop": self.names([x for x in dropped if x != k]), "add": self.names(added)}
+            out["win"] = round(100 * w0, 1)
+        nums = {"value": lambda c: c["value"], "value_now": lambda c: c["value_now"], "form": lambda c: c.get("form"),
+                "avail": lambda c: c["avail"], "fit": lambda c: c["fit"],
+                "games": lambda c: sum(w["games"] for w in c["weeks"]) if c["weeks"] else None,
+                "slot": lambda c: c["slot"]["win"] if "slot" in c else None,
+                **{f"z.{cat}": (lambda cat: lambda c: c["z"][cat])(cat) for cat in self.cats},
+                **{f"week{i}": (lambda i: lambda c: c["weeks"][i]["games"] if c["weeks"] else None)(i) for i in range(4)}}
+        best = {}
+        for f, get in nums.items():
+            xs = {c["name"]: get(c) for c in cards if get(c) is not None}
+            if len(set(xs.values())) > 1:
+                best[f] = [n for n, v in xs.items() if v == max(xs.values())]
+        return {**out, "best": best}
 
     def roster_news(self, days=2):
         """News on your players and their NBA teammates in the rotation (10+ min), newest first: since the snapshot or
@@ -1678,7 +1716,7 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster", "week",
-                                    "strategy", "news"])
+                                    "strategy", "news", "compare"])
     ap.add_argument("--give", default="")
     ap.add_argument("--get", default="")
     ap.add_argument("--mode", default="fair", choices=["fair", "finesse"])
@@ -1693,6 +1731,7 @@ def main():
     ap.add_argument("--healthy", action="store_true", help="search: skip injured players you'd get")
     ap.add_argument("--shape", choices=["consolidate", "depth"])
     ap.add_argument("--max-overpay", type=float, help="search: most you'd overpay on the market, in %%")
+    ap.add_argument("--players", default="", help='compare: 2 to 4 players, e.g. "A, B"')
     a = ap.parse_args()
     split = lambda s: [x.strip() for x in s.split(",") if x.strip()]
     lg, punt = load(), split(a.punt)
@@ -1706,6 +1745,7 @@ def main():
            "week": lambda: lg.this_week(a.vs, punt),
            "strategy": lambda: lg.strategy(a.size),
            "news": lg.roster_news,
+           "compare": lambda: lg.compare(split(a.players), punt),
            "roster": lambda: lg.team_roster(a.team or lg.me, punt)}[a.cmd]()
     print(json.dumps(out, indent=1, ensure_ascii=False))
 

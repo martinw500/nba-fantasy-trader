@@ -240,6 +240,33 @@ def test_all():
             (r["net"], r["their_net"], r["market"], r["their_view"])], (x, r)
     model.TIERS["hard"] = hard
 
+    # compare (Q3): 2 to 4 different players; each one's card plus your win % with him in one of your roster spots.
+    # Your compared players all leave, so "keep A or B" is your roster with A (or B) and the best free agent outside
+    # the comparison in the other spot; an outsider who'd be your worst player is cut and leaves it as it is
+    for bad in (["Player 150"], ["Player 150", "player 150"], [f"Player {i}" for i in range(150, 170, 4)]):
+        try:
+            lg.compare(bad)
+            raise AssertionError(f"compared {bad}")
+        except KeyError:
+            pass
+    w0, me = lg.outlook("Me")["win"], lg.vecs["Me"]
+    c = lg.compare(["Player 150", "Player 198", "Player 139", "Player 101"])
+    keep, star, fa, scrub = (x["slot"] for x in c["players"])
+    assert c["win"] == round(100 * w0, 1) and [x["team"] for x in c["players"]] == ["Me", "Me", "FA", "FA"]
+    assert star["win"] > keep["win"] and c["best"]["slot"] == c["best"]["value"] == ["Player 198"]
+    assert keep["add"] == star["add"] == fa["add"] and not {"Player 139", "Player 101"} & set(keep["add"])
+    fill = lg.find(keep["add"][0])
+    swap = lambda inn: 100 * lg.outlook("Me", {"Me": me - lg.rows["player 150"] - lg.rows["player 198"]
+                                                     + lg.rows[fill] + lg.rows[inn]})["win"]
+    assert abs(keep["win"] - swap("player 150")) < 0.06 and abs(fa["win"] - swap("player 139")) < 0.06
+    assert scrub["cut"] is False  # two of your spots open up: he makes the roster
+    out = lg.compare(["Player 199", "Player 101"])["players"]
+    assert out[1]["slot"]["cut"] and out[1]["slot"]["win"] == round(100 * w0, 1) and out[0]["slot"]["drop"]
+    assert "news" not in out[0] and set(out[0]["lines"]) == {"ros", "season"}
+    # parked in an IL slot, he goes back there: the active spot he'd hold is filled from waivers
+    h = ill.compare(["Hurt Guy", "Player 150"])["players"][0]["slot"]
+    assert h["add"] and not h["cut"]
+
     # schedule: identical twins, one with 4 games left this week and one with 2; a return date wipes this week
     # and cuts rest-of-season availability to the share of games after it
     twins = model.keyed(pd.DataFrame([line(f"Twin {x}", 180) for x in "ABCDEF"]))
@@ -267,6 +294,9 @@ def test_all():
     assert [w["games"] for w in c["weeks"]] == [0, 2, 0, 0] and c["weeks"][1]["start"] == "2026-11-02"
     assert set(c["lines"]) == {"ros", "season"} and c["lines"]["season"]["gp"] == 60 and c["lines"]["ros"]["gp"] is None
     assert c["fit_rank"] >= 1 and c["mkt_rank"] >= 1 and c["team"] == "Me"
+    # compare: twin A's 4 games this week beat twin B's 2; level numbers (2 games each next week) name nobody
+    b = sl.compare(["Twin A", "Twin B"])["best"]
+    assert b["week0"] == ["Twin A"] and "week1" not in b
     # with box scores: this season, last 14 and last 7 days (Oct 26: since Oct 12 and Oct 19)
     box = pd.DataFrame([{**line("Twin A", 180, PTS=p), "GAME_DATE": pd.Timestamp(d)}
                         for p, d in ((30, "2026-10-24"), (20, "2026-10-20"), (10, "2026-10-15"), (40, "2026-10-01"))])
