@@ -50,12 +50,19 @@ def test_all():
             pass
     assert lg.trade(["Player 198"], ["Player 151", "Player 155"])["verdict"] == "decline"
 
-    # what they want: your players by their win % gain (your best first), who they'd drop, their own players' worth
+    # what they want: every player's worth to them (win % with him minus with the best free agent in his spot), your
+    # best first, who they'd drop; one yardstick both sides, so a 1-for-1's gain for them is about the difference
     w = lg.wants("Them")
-    gains = [x["their_gain"] for x in w["give"]]
-    assert gains == sorted(gains, reverse=True) and w["give"][0]["name"] == "Player 198" and gains[0] > 0
+    worth = [x["worth"] for x in w["give"]]
+    assert worth == sorted(worth, reverse=True) and w["give"][0]["name"] == "Player 198" and worth[0] > 0
     assert all(len(x["they_drop"]) == 1 for x in w["give"])  # a full roster drops one for him
     assert set(w["keep"]) == set(lg.names(lg.rosters["Them"])) and w["keep"]["Player 199"] == max(w["keep"].values())
+    # (their side only: trade() also counts you weaker as their opponent, all of it in a 2-team league, 1/11 in 12)
+    mine, now = {x["name"]: x["worth"] for x in w["give"]}, lg.outlooks["Them"]["win"]
+    for a, b in (("Player 198", "Player 151"), ("Player 174", "Player 175"), ("Player 150", "Player 199")):
+        tk, _, _, til = lg._after("Them", [lg.find(b)], [lg.find(a)])
+        swap = 100 * (lg.outlook("Them", {"Them": lg.vec(tk, til)})["win"] - now)
+        assert abs(swap - (mine[a] - w["keep"][b])) < 0.5, (a, b, swap)  # about: odds aren't additive
     try:
         lg.wants("Me")
         raise AssertionError("wants accepted your own team")

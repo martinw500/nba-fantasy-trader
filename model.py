@@ -2295,23 +2295,25 @@ class League:
         return sorted((self.player(k, punt) for k in self.rosters[team]), key=lambda p: -p["value"])
 
     def wants(self, team):
-        """What `team` wants from you (Trades). give: each of your players' worth to it in win % if it got him for
-        nothing (it drops whoever it'd miss least and parks the injured in IL slots, as in a trade: _after) and who it'd
-        drop, best for it first. keep: each of its own players' worth to it (_contrib), so you see who it'd miss least.
-        Real odds, nothing conceded: a player strong where it's far behind barely moves it, so a punt shows without
-        guessing it. (Value on its build() misread it: langangsters are weak in BLK and REB, Kessler is -3.6 there and
-        their second-best get, +3.7%, Oct 29.)"""
+        """What `team` wants from you (Trades): every player's worth to it in win %, its win % with him minus with the
+        best healthy free agent (`spot`) in his spot, both through _after() as in a trade (drops, IL slots). One
+        yardstick for both sides, so in a 1-for-1 its gain is about yours minus its own (Oct 29, real league: within
+        0.3 on average, 0.8 at worst, over 210 deals with three teams). give: your players, best for it first, with who
+        it'd drop; keep: its own players (low or negative = it'd let him go). Real odds, nothing conceded: a player
+        strong where it's far behind barely moves it, so a punt shows without guessing it (value on its build() misread
+        it: langangsters are weak in BLK and REB, Kessler is -3.6 there and among their best gets)."""
         if self.mode == "points" or team not in self.rosters or team == self.me:
             raise KeyError(f"What a team wants needs a category league and another team: "
                            f"{', '.join(t for t in self.rosters if t != self.me)}")
-        w0, name = self.outlooks[team]["win"], lambda k: self.p.at[k, "PLAYER_NAME"]
-        give = []
-        for k in self.rosters[self.me]:
-            tk, td, _, til = self._after(team, [], [k])
-            give.append({"name": name(k), "their_gain": round(100 * (self.outlook(team, {team: self.vec(tk, til)})["win"] - w0), 1),
-                         "they_drop": self.names(td)})
-        keep = {name(k): round(100 * v, 1) for k, v in self._contrib(team, self.rosters[team]).items()}
-        return {"team": team, "build": self.build(team), "give": sorted(give, key=lambda p: -p["their_gain"]), "keep": keep}
+        name = lambda k: self.p.at[k, "PLAYER_NAME"]
+        fa = self._waiver_level(self.effective())[:1].tolist()  # healthy: an injured one would sit in an IL slot
+        win = lambda r: 100 * self.outlook(team, {team: self.vec(r[0], r[3])})["win"]
+        spot, now = win(self._after(team, [], fa)), 100 * self.outlooks[team]["win"]
+        give = [{"name": name(k), "worth": round(win(r) - spot, 1), "they_drop": self.names(r[1])}
+                for k in self.rosters[self.me] for r in [self._after(team, [], [k])]]
+        keep = {name(k): round(now - win(self._after(team, [k], fa)), 1) for k in self.rosters[team]}
+        return {"team": team, "build": self.build(team), "spot": self.names(fa),
+                "give": sorted(give, key=lambda p: -p["worth"]), "keep": keep}
 
 
 def load(path=DATA / "league.json", refetch=()):

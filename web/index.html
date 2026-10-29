@@ -875,16 +875,16 @@ function viewTrades() {
   if ((!T.roster || T.roster.team !== T.team) && T.loading !== T.team) loadTradeRoster();
   if (!S.players) loadPlayers();
   const W = T.roster?.team === T.team ? T.roster.wants : null;  // what they want: worth to them in win %
-  const worth = W && Object.fromEntries([...W.give.map(x => [x.name, x.their_gain]), ...Object.entries(W.keep)]);
+  const worth = W && Object.fromEntries([...W.give.map(x => [x.name, x.worth]), ...Object.entries(W.keep)]);
   const item = (p, set) => {
     const on = set.has(p.name), lk = S.locks.has(p.name), w = worth?.[p.name];
     return `<label class="pitem ${on ? "on" : ""}"><input type="checkbox" data-pick="${set === T.give ? "give" : "get"}" value="${esc(p.name)}" ${on ? "checked" : ""}>
-    <span>${esc(p.name)}${statusTag(p)}</span><span class="muted small">${Number(p.value).toFixed(isPoints() ? 1 : 2)}${w == null ? "" : ` · <span title="Worth to ${esc(T.team)}: ${set === T.give ? "how much their" : "what their"} ${WIN().of} ${set === T.give ? "rises if they get him" : "loses without him"}">${w.toFixed(1)}%</span>`}</span>
+    <span>${esc(p.name)}${statusTag(p)}</span><span class="muted small">${Number(p.value).toFixed(isPoints() ? 1 : 2)}${w == null ? "" : ` · <span title="Worth to ${esc(T.team)}: their ${WIN().of} with him minus with ${esc(W.spot.join(""))} (the best healthy free agent) in his spot">${delta(w, "win%")}</span>`}</span>
     ${isPoints() ? "" : `<button class="lock" data-act="lock" data-name="${esc(p.name)}" aria-pressed="${lk}" aria-label="Lock ${esc(p.name)}" title="${lk ? "Locked: the finder never trades him" : "Lock so the finder never trades him"}"><svg class="i"><use href="#i-lock"/></svg></button>`}</label>`;
   };
   const theirs = T.roster && T.roster.team === T.team ? T.roster.roster.map(p => item(p, T.get)).join("") : `<div class="skel"></div><div class="skel"></div>`;
   const ready = T.give.size + T.get.size > 0;
-  return `<div class="head"><div><h1>Trades</h1><p class="sub">Check players to build a trade, then evaluate it or find deals built around them.${W ? ` After each value: what he's worth to ${esc(T.team)} in ${WIN().of}.` : ""}</p></div>
+  return `<div class="head"><div><h1>Trades</h1><p class="sub">Check players to build a trade, then evaluate it or find deals built around them.${W ? ` After each value: what he's worth to ${esc(T.team)}, their ${WIN().of} with him minus with the best free agent in his spot. Swap one for one and their gain is about your player's number minus theirs.` : ""}</p></div>
       <input type="search" class="input" id="find-player" list="all-players" placeholder="Add any player to the trade" aria-label="Add any rostered player to the trade" autocomplete="off" style="width:240px;max-width:100%">
       <datalist id="all-players">${S.players.map(p => `<option value="${esc(p.name)}">${esc(p.team)}</option>`).join("")}</datalist></div>
     <div class="grid2">
@@ -995,10 +995,10 @@ function findTitle() {
 function wantsPanel(W) {
   const mine = Object.fromEntries(S.state.roster.map(p => [p.name, p]));
   const rows = W.give.slice(0, 5).filter(x => mine[x.name]).map(x => ({ ...mine[x.name], ...x }));
-  const them = { h: "To them", v: p => `<span class="val ${tone(p.their_gain)}">${delta(p.their_gain, "win%")}</span>` };
+  const them = { h: "To them", v: p => `<span class="val ${tone(p.worth)}">${delta(p.worth, "win%")}</span>` };
   const drop = { h: "They'd drop", cls: "names", v: p => p.they_drop.map(esc).join(", ") || `<span class="muted">Nobody</span>` };
   const go = { h: "", v: p => `<button class="btn ghost" data-act="shop" data-name="${esc(p.name)}" data-team="${esc(W.team)}">Find deals</button>` };
-  return `<div class="panel"><div class="panel-h"><div><h2>What ${esc(W.team)} wants from you</h2><p>Your players who'd raise their ${WIN().of} the most, after they drop the player they'd miss least.${W.build.length ? ` They're weak in ${and(W.build.map(lab))}, and that's already counted: help there only moves them if they can catch up.` : ""}</p></div></div>
+  return `<div class="panel"><div class="panel-h"><div><h2>What ${esc(W.team)} wants from you</h2><p>Your players worth the most to them: their ${WIN().of} with him (dropping the player they'd miss least) minus with ${esc(W.spot.join(""))}, the best healthy free agent, in that spot.${W.build.length ? ` They're weak in ${and(W.build.map(lab))}, and that's already counted: help there only moves them if they can catch up.` : ""}</p></div></div>
     ${playerTable(rows, { extra: [them, drop, go] })}</div>`;
 }
 function findPanel() {
