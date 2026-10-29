@@ -24,7 +24,8 @@ Achiuwa (+1.2)". The other team is judged on the trade alone. A waiver move with
 league_overview has projected standings, per-category win odds and the user's odds vs each team, and "playoffs":
 the top "seats" teams make it, and each team has its record so far (category W-L-T), "proj" (expected final W-L),
 "playoffs" and "title" odds, simulated over the "weeks_left" with room for rosters to beat or miss their projections.
-Quote them as "93% to make the playoffs" rather than a projected rank. A category the
+Quote them as "93% to make the playoffs" rather than a projected rank. A trade's "playoffs" is the same odds before ->
+after for the user ("you") and the partner ("them"), in percent. A category the
 user can't win or already dominates barely moves their odds, so explain punts from that. "market" prices a deal the
 way managers do, from Yahoo's ranks (give / get in market value, diff_pct = what the user gains on market, verdict
 like "you overpay 35%"); "accept" is how likely they say yes, mostly on that. "their_view" is only how it reads on

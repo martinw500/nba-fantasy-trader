@@ -127,6 +127,7 @@ Classic pairings: big men punt FT%, high-usage guards punt TO, wings punt AST.
 - **Them**: their win % before → after. A trade can help both teams when the categories fit.
 - **Market**: how managers would price it, from Yahoo's ranks (see "Market value" below): what you send and get in market value, and a verdict like "you overpay 35%" or "even". **Will they say yes** reads mostly off this. The note under the verdict says how the deal looks on this season's hot and cold starts alone.
 - **Projected finish**: your league rank before → after.
+- **Playoff odds**: your chance to make the playoffs before → after, and your partner's (the League tab's Playoff race, rerun on both new rosters). Shown once the snapshot has the season schedule. Worth a look when a deal pushes a rival over the cut line.
 - Your odds change in each category.
 
 **Copy offer** copies the offer and a short pitch for the note on Yahoo's trade offer, built from the numbers (their weak spots it shores up, categories it adds, the market when it favours them, roster spots they free). It never claims more than that. **Ask AI GM for a pitch** writes a longer one in the chat. **Save trade** keeps it for comparing later.

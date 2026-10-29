@@ -946,6 +946,7 @@ function tradeResultOdds(r) {
         <div><dt>${them}</dt><dd><span class="${tone(r.their_net)}">${delta(r.their_net, "win%")}</span> <span class="muted small">${r.their_win}% → ${r.their_win_after}%</span></dd></div>
         <div><dt title="${MKT_TIP}">Market</dt><dd><span class="${mktTone(r.market.diff_pct)}">${cap(r.market.verdict)}</span> <span class="muted small">give ${Math.round(r.market.give)} · get ${Math.round(r.market.get)}</span></dd></div>
         <div><dt>Projected finish</dt><dd>${ord(r.rank)} → ${ord(r.rank_after)}</dd></div>
+        ${r.playoffs ? `<div><dt title="Chance to make the playoffs: your record so far plus the rest of the season simulated, both rosters updated">Playoff odds</dt><dd><span class="${tone(r.playoffs.you[1] - r.playoffs.you[0])}">${delta(r.playoffs.you[1] - r.playoffs.you[0], "win%")}</span> <span class="muted small">${r.playoffs.you.map(v => chance(v / 100)).join(" → ")} · them ${r.playoffs.them.map(v => chance(v / 100)).join(" → ")}</span></dd></div>` : ""}
         <div><dt title="Mostly the market, a little how it really helps them">Will they say yes</dt><dd>${acceptPill(r.accept)}</dd></div></dl></div>
       <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="copy-offer" title="Copies the offer and a short pitch to paste into Yahoo's trade note, and logs it under Offers sent">Copy offer</button><button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div></div>
     ${base}${cats}
@@ -1059,6 +1060,7 @@ function savedPanel() {
       ${row("Them", r => `<span class="${tone(r.their_net)}">${delta(r.their_net, r.unit)}</span>`)}
       ${isPoints() ? row("Looks to them", r => `<span class="${tone(r.their_view)}">${sign(r.their_view)}</span>`) : row("Market", r => mktDeal(r.market))}
       ${row("Projected finish", r => r.rank ? `${ord(r.rank)} → ${ord(r.rank_after)}` : "—")}
+      ${row("Playoff odds", r => r.playoffs ? r.playoffs.you.map(v => chance(v / 100)).join(" → ") : "—")}
       ${row("Will they say yes", r => r.accept ? acceptPill(r.accept) : "—")}
       ${S.state.cats.map(c => row(lab(c), r => { const d = (r.unit === "win%" ? r.odds : r.cats)[c]; return `<span class="${tone(d)}">${delta(d, r.unit)}</span>`; }, punted(c) ? "punted-col" : "")).join("")}
       <tr><td></td>${L.map((s, i) => `<td><button class="btn ghost" data-act="load-saved" data-i="${i}">Load</button><button class="btn ghost" data-act="unsave" data-i="${i}">Remove</button></td>`).join("")}</tr>

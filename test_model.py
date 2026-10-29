@@ -666,6 +666,13 @@ def test_all():
             "matchups": [{"teams": ["Me", "Them"], "totals": {"Me": {"PTS": 900}, "Them": {"PTS": 100}}}]}
     tue = lambda extra: model.League({**sn, **extra}, base, cur, today=model.date(2026, 11, 3)).playoffs["teams"]["Me"]["proj"][0]
     assert tue(live) > tue({}) + 0.3
+    # a trade's playoff odds, before -> after for both sides: after_trade()'s rosters, None without a schedule
+    pl, deal = model.League(sn, base, cur, today=model.date(2026, 11, 1)), (["Player 148"], ["Player 199"])
+    pct = lambda po, t: round(100 * po["teams"][t]["playoffs"], 1)
+    r, at = pl.trade(*deal, free=False)["playoffs"], pl.after_trade(*deal).playoffs
+    assert r == {"you": [pct(pl.playoffs, "Me"), pct(at, "Me")], "them": [pct(pl.playoffs, "Them"), pct(at, "Them")]}
+    assert r["you"][1] > r["you"][0] and r["them"][1] < r["them"][0]
+    assert lg.trade(["Player 150"], ["Player 199"])["playoffs"] is None
 
     # league text import: a trimmed Instinct snapshot (settings, rosters with ranks and "Empty slot" rows, injured
     # list skipped, free agents across three lists, matchups, transactions, projections, adds, schedule), sections it

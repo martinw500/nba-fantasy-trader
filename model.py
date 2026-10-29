@@ -1213,6 +1213,11 @@ class League:
         sb, sa = self.standings(), self.standings(ov)
         net = 100 * (a["win"] - b["win"])
         pct1 = lambda x: round(100 * x, 1)
+        po = None  # playoff odds (Q5) before -> after, both sides: real odds, a punt concedes nothing there
+        if self.playoffs:
+            after = self._copy({self.me: mk, other: tk}, self.fa, {self.me: set(mil), other: set(til)}).playoffs
+            po = {s: [pct1(x["teams"][t]["playoffs"]) for x in (self.playoffs, after)]
+                  for s, t in (("you", self.me), ("them", other))}
         side = lambda v0, v1, o0, o1, c: {"total": [total(v0, c), total(v1, c)], "odds": [pct1(o0[c]), pct1(o1[c])]}
         cats_detail = {c: {"you": side(self.vecs[self.me], ov[self.me], b["odds"], a["odds"], c),
                            "them": side(self.vecs[other], ov[other], self.outlooks[other]["odds"], to["odds"], c)}
@@ -1261,7 +1266,7 @@ class League:
             "unit": "win%", "value_net": out["net"], "net": round(net, 1), "their_net": round(100 * (tw - tb), 1),
             "win": round(100 * b["win"], 1), "win_after": round(100 * a["win"], 1),
             "their_win": round(100 * tb, 1), "their_win_after": round(100 * tw, 1),
-            "rank": sb[self.me]["rank"], "rank_after": sa[self.me]["rank"],
+            "rank": sb[self.me]["rank"], "rank_after": sa[self.me]["rank"], "playoffs": po,
             "odds": {c: round(100 * (a["odds"][c] - b["odds"][c]), 1) for c in self.cats},
             "you_drop": name(md), "you_add": name(ma), "they_drop": name(td), "they_add": name(ta), "market": mkt,
             "tiers": [t for t in TIERS if self._tier(t, net, 100 * (tw - tb), d)],
