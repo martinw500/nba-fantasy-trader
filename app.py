@@ -44,12 +44,15 @@ Search when the question needs fresh news, name the site you got it from, and st
 MODELS, EFFORTS = ("claude-opus-5-5", "claude-fable-5-1"), ("medium", "low", "high", "xhigh", "max")
 
 
-def claude_chat(message, punt, session=None, model=None, effort=None, web=True):
+def claude_chat(message, punt, session=None, model=None, effort=None, web=True, opts=()):
     """Answer through Claude Code headless (`claude -p`) on the user's own login, so no API key is needed.
     --safe-mode keeps Martin's CLAUDE.md, memory, plugins and hooks out; the GM playbook is SKILL.md.
-    model / effort fall back to the defaults unless they're on the lists; web adds the WebSearch tool."""
+    model / effort fall back to the defaults unless they're on the lists; web adds the WebSearch tool. opts: model.py
+    flags for the app's Waivers / Trades settings (--healthy-fa, --no-free, --their-free), so its numbers match."""
     skill = (ROOT / ".claude" / "skills" / "gm" / "SKILL.md").read_text(encoding="utf-8").split("---", 2)[2]
     flag = f'add --punt "{",".join(punt)}" to every model.py command' if punt else "no --punt"
+    if opts:
+        flag += f", and the app's Waivers / Trades settings: add {' '.join(opts)} to waivers, trade, search and strategy"
     web = ["WebSearch"] if web else []
     cmd = [shutil.which("claude"), "-p", "--output-format", "json", "--safe-mode",
            "--model", model if model in MODELS else MODELS[0], "--effort", effort if effort in EFFORTS else EFFORTS[0],
@@ -128,23 +131,26 @@ def api(path, q, body):
     global lg, gm
     punt = body.get("punt", q.get("punt", [""])[0].split(",") if q.get("punt") else [])
     punt = [c for c in punt if c]
+    # Waivers' "Healthy only": injured free agents off waivers for its suggestions and every trade's free moves
+    fl = lg.healthy_fa() if body.get("healthy_fa", q.get("healthy_fa", [""])[0]) else lg
     if path == "/api/state":
-        return lg.state(punt)
+        return fl.state(punt)
     if path == "/api/team":
         return {"team": body["team"], "roster": lg.team_roster(body["team"], punt), "build": lg.build(body["team"])}
     if path == "/api/trade":
-        return lg.trade(body["give"], body["get"], punt, their_free=bool(body.get("their_free")))
+        return fl.trade(body["give"], body["get"], punt, free=bool(body.get("free", True)),
+                        their_free=bool(body.get("their_free")))
     if path == "/api/ideas":
-        return lg.ideas(body.get("mode", "fair"), punt, body.get("team") or None)
+        return fl.ideas(body.get("mode", "fair"), punt, body.get("team") or None)
     if path == "/api/search":
-        return lg.search(body.get("give", []), body.get("get", []), body.get("lock", []), body.get("team") or None,
+        return fl.search(body.get("give", []), body.get("get", []), body.get("lock", []), body.get("team") or None,
                          int(body.get("size", 3)), body.get("tier", "fair"), body.get("goal", "win"),
                          body.get("cats", []), body.get("vs"), bool(body.get("healthy")), body.get("shape"), punt,
-                         limit=30, their_free=bool(body.get("their_free")),
+                         limit=30, free=bool(body.get("free", True)), their_free=bool(body.get("their_free")),
                          max_overpay=None if body.get("max_overpay") is None else float(body["max_overpay"]),
                          outside=int(body.get("outside") or 0))
     if path == "/api/strategy":  # punt planner, ~15s on the real league
-        return lg.strategy()
+        return fl.strategy()
     if path == "/api/player":  # the player card
         return lg.card(body["name"], punt)
     if path == "/api/compare":  # 2 to 4 players side by side
@@ -196,7 +202,10 @@ def api(path, q, body):
                 return {"reply": "Install Claude Code and log in (or add ANTHROPIC_API_KEY=... to .env) to chat with the AI GM."}
             return {"reply": ""} if body.get("reset") else claude_chat(body["message"], punt, body.get("session"),
                                                                        body.get("model"), body.get("effort"),
-                                                                       body.get("web", True) is not False)
+                                                                       body.get("web", True) is not False,
+                                                                       [f for f, on in (("--healthy-fa", body.get("healthy_fa")),
+                                                                                        ("--no-free", body.get("free") is False),
+                                                                                        ("--their-free", body.get("their_free"))) if on])
         if gm is None:
             import ai
             gm = ai.GM(lg)

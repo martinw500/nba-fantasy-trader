@@ -1307,8 +1307,8 @@ class League:
         scores it on today's rosters). their_free: the other team's too; off by default, since managers judge the
         deal itself, not their own waiver options (Martin, Oct 27). Points: value net of replacement level."""
         give, get = self._check(give, get)
-        if free:
-            lg = self.after_free(punt, keep=give)
+        if free or their_free:
+            lg = self.after_free(punt, keep=give) if free else self
             if their_free and get:
                 lg = lg.after_free(keep=get, team=lg.owner(get[0]))
             return lg.trade(give, get, punt, free=False)
@@ -1519,8 +1519,8 @@ class League:
             raise KeyError(f"Goal 'team' needs another team: {', '.join(t for t in self.rosters if t != self.me)}")
         give, get = self._check(give, get)
         team = team or (self.owner(get[0]) if get else None)  # a pinned get fixes the team (and lifts _rank's cap)
-        if free:
-            lg, out = self.after_free(punt, keep=give), []
+        if free or their_free:
+            lg, out = self.after_free(punt, keep=give) if free else self, []
             each = their_free and not team  # one search per partner, each on top of its own free moves
             for t in [x for x in self.rosters if x != self.me] if each else [team]:
                 lt = lg.after_free(keep=get, team=t) if their_free and t else lg
@@ -1907,6 +1907,14 @@ class League:
         lg.free = {**self.free, team: [*self.free.get(team, ()), *moves]}
         return lg
 
+    def healthy_fa(self):
+        """This league with injured free agents (OUT) off waivers: Waivers' "Healthy only". Its suggestions, the free
+        moves trades and Strategy are scored on top of and the open spots trades fill skip them. Rosters don't change,
+        so the cached team numbers stay."""
+        lg = copy.copy(self)
+        lg.fa = [k for k in self.fa if self.meta.get(k, {}).get("status", "") not in OUT]
+        return lg
+
     def _copy(self, rosters, fa, il=None):
         """A copy of the league with these rosters, free agents and IL slots (after_free, after_trade)."""
         lg = copy.copy(self)
@@ -2240,17 +2248,20 @@ class League:
 
     def movers(self, punt=(), limit=10):
         """Sell high: your players beating their rest-of-season value over the last FORM_DAYS (this season without box
-        scores). Buy low: good rest-of-season players on other teams below it. gap = form - value, past TREND."""
+        scores). Buy low: players on other teams below it who are still worth more than the waiver level (not just
+        stars: any rank). Hot pickups: free agents above it whose recent run beats the waiver level. gap = form -
+        value, past TREND."""
         form = self.value(punt=punt, frame="form")
         gap = form - self.value(form.index, punt)
-        mine = [k for k in self.rosters[self.me] if k in gap.index]
-        others = [k for t, ks in self.rosters.items() if t != self.me for k in ks if k in gap.index]
-        good = self.value(others, punt) > (1.5 if self.mode != "points" else 30)
-        sell = gap[mine].nlargest(limit)
-        buy = gap[[k for k in others if good[k]]].nsmallest(limit)
+        hot, cold = gap[gap >= TREND * self.u], gap[gap <= -TREND * self.u]
+        floor, ros = self.replacement(punt)[0], self.value(punt=punt)
+        others = {k for t, ks in self.rosters.items() if t != self.me for k in ks}
+        sell = hot[hot.index.isin(self.rosters[self.me])].nlargest(limit)
+        buy = cold[[k in others and ros.get(k, floor) > floor for k in cold.index]].nsmallest(limit)
+        pick = hot[[k in self.fa and form[k] > floor for k in hot.index]].nlargest(limit)
         fmt = lambda s: [{**self.player(k, punt), "gap": round(float(v), 2)} for k, v in s.items()]
         window = f"the last {FORM_DAYS} days" if self.logs is not None else "this season"
-        return {"sell_high": fmt(sell[sell >= TREND * self.u]), "buy_low": fmt(buy[buy <= -TREND * self.u]),
+        return {"sell_high": fmt(sell), "buy_low": fmt(buy), "pickups": fmt(pick),
                 "window": window, "note": f"Only players with {FORM_GP}+ games in it. Small samples swing hard."}
 
     def dropped(self, punt=(), limit=10):
@@ -2321,15 +2332,19 @@ def main():
     ap.add_argument("--add", default="", help="move: the free agent to add")
     ap.add_argument("--drop", default="", help="move: your player to drop (none: an open spot, else who you'd miss least)")
     ap.add_argument("--day", help="move: the day this week to make it, YYYY-MM-DD (default: its best day)")
+    ap.add_argument("--no-free", action="store_true", help="trade, search: on today's roster, not after your waiver moves")
+    ap.add_argument("--their-free", action="store_true", help="trade, search: the other team after its waiver moves too")
+    ap.add_argument("--healthy-fa", action="store_true", help="injured free agents off waivers (Waivers' Healthy only)")
     a = ap.parse_args()
     split = lambda s: [x.strip() for x in s.split(",") if x.strip()]
     lg, punt = load(), split(a.punt)
+    lg = lg.healthy_fa() if a.healthy_fa else lg
     out = {"team": lambda: {**lg.profile(), "roster": lg.team_roster(lg.me, punt)},
-           "trade": lambda: lg.trade(split(a.give), split(a.get), punt),
+           "trade": lambda: lg.trade(split(a.give), split(a.get), punt, not a.no_free, a.their_free),
            "ideas": lambda: lg.ideas(a.mode, punt, a.team),
            "search": lambda: lg.search(split(a.give), split(a.get), split(a.lock), a.team, a.size, a.tier, a.goal,
-                                       split(a.cats), a.vs, a.healthy, a.shape, punt, max_overpay=a.max_overpay,
-                                       outside=a.outside),
+                                       split(a.cats), a.vs, a.healthy, a.shape, punt, free=not a.no_free,
+                                       their_free=a.their_free, max_overpay=a.max_overpay, outside=a.outside),
            "waivers": lambda: lg.waivers(punt),
            "movers": lambda: lg.movers(punt),
            "week": lambda: lg.this_week(a.vs, punt),

@@ -263,7 +263,7 @@ tr.cmp-group td, tr.cmp-group:hover td { background: var(--panel-2); color: var(
 .msg.ai.thinking { color: var(--muted); }
 .compose { border-top: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .compose form { display: flex; gap: 8px; }
-.compose textarea { flex: 1; resize: none; border: 1px solid var(--line-strong); border-radius: 8px; padding: 9px 12px; background: var(--panel); min-height: 42px; max-height: 160px; }
+.compose textarea { flex: 1; resize: none; field-sizing: content; border: 1px solid var(--line-strong); border-radius: 8px; padding: 9px 12px; background: var(--panel); min-height: 42px; max-height: 160px; }
 .compose textarea::placeholder { color: var(--faint); }
 .sugs { display: flex; gap: 6px; flex-wrap: wrap; }
 
@@ -357,16 +357,17 @@ const link = new URLSearchParams(hashQuery);  // #trades?give=A,B&get=C opens an
 const S = {
   view: hashView || store.get("view", "team"),
   punt: new URLSearchParams(location.search).get("punt")?.split(",").filter(Boolean) ?? store.get("punt", []),  // ?punt=FT%25,TOV bookmarks a build
+  healthyFa: store.get("healthyFa", false),  // Waivers' Healthy only: injured free agents off waivers, trades' free moves too
   state: null, error: null,
   league: { team: null, data: null },
   week: {},  // { data, loading }; replaced on punt / team / refresh, so late answers land in the old object
   sched: {},  // { data, loading }: the schedule planner; replaced on punt / team / refresh
   plan: { sort: null, open: false, day: null },  // its NBA-teams table: sort, count only your open days; the picked day
   news: {},  // { data, error }: My team's News panel; replaced on team / refresh
-  strategy: {},  // { data, busy, sel }: the punt planner (sel: the build whose plan shows), ignores your punt, so only team / refresh replace it
+  strategy: {},  // { data, busy, sel }: the punt planner (sel: the build whose plan shows), ignores your punt, so only team / refresh / Healthy only replace it
   trade: { give: new Set(), get: new Set(), team: null, roster: null, result: null, busy: false },
   locks: new Set(store.get("locks", [])),
-  find: { tier: "fair", goal: "win", cats: [], vs: "", size: 3, healthy: false, theirs: store.get("theirs", false), shape: "", overpay: "", outside: "", team: "", list: null, busy: false, ran: "", sort: null },
+  find: { tier: "fair", goal: "win", cats: [], vs: "", size: 3, healthy: false, mine: store.get("mine", true), theirs: store.get("theirs", false), shape: "", overpay: "", outside: "", team: "", list: null, busy: false, ran: "", sort: null },
   improve: { kind: null, list: null, busy: false, sort: null },
   saved: { list: store.get("saved", []), evals: {}, loading: false },
   players: null,
@@ -375,14 +376,14 @@ const S = {
   compare: { names: store.get("compare", []), line: "ros" },  // + data, busy, error; data is dropped on punt / team / refresh
   pool: null,  // every rostered player and free agent, for Compare's search
   offers: null,  // Trades' Offers sent (data/offers.json), loaded on first view
-  chat: store.get("chat", []), chatBusy: false, chatSession: store.get("chatSession", null),
+  chat: store.get("chat", []), chatBusy: false, gmDraft: "", chatSession: store.get("chatSession", null),
   chatId: store.get("chatId", null), chats: null,  // the open conversation's id in data/chats.json, and the History list
   gmSet: { model: "claude-opus-5-5", effort: "medium", web: true, ...store.get("gmSet", {}) },  // AI GM tab's Model / Effort / Web search
 };
 const OUT = new Set(["O", "INJ", "IL", "IL+", "NA", "SUSP"]);
 
 async function api(path, body) {
-  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, punt: S.punt }) } : undefined);
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, punt: S.punt, healthy_fa: S.healthyFa }) } : undefined);
   const data = await r.json().catch(() => ({ error: `Server returned ${r.status}` }));
   if (!r.ok || data.error) throw new Error(data.error || `Request failed (${r.status})`);
   return data;
@@ -398,7 +399,7 @@ function reveal(sel) {  // scroll to a panel (a selector or the element), clear 
 
 async function loadState() {
   try {
-    S.state = await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")));
+    S.state = await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")) + (S.healthyFa ? "&healthy_fa=1" : ""));
     S.error = null;
   } catch (e) { S.error = e.message; }
   render();
@@ -892,7 +893,8 @@ function viewTrades() {
         <div class="panel-b" style="padding-top:0"><div class="plist" style="margin-top:12px">${theirs}</div></div></div>
     </div>
     <div class="toolbar"><button class="btn primary" data-act="evaluate" ${ready && !T.busy ? "" : "disabled"}>${T.busy ? "Evaluating…" : "Evaluate trade"}</button>
-      ${ready ? `<button class="btn ghost" data-act="clear-trade">Clear</button>` : ""}</div>
+      ${ready ? `<button class="btn ghost" data-act="ask-gm" title="Open the AI GM with this trade in the message box, then ask it anything about it">Ask AI GM</button>
+        <button class="btn ghost" data-act="clear-trade">Clear</button>` : ""}</div>
     ${findPanel()}
     ${T.result ? tradeResult(T.result) : ""}
     ${savedPanel()}
@@ -934,8 +936,9 @@ function tradeResultOdds(r) {
   const st = Object.entries(r.standings).filter(([t, s]) => t === S.state.me || s.rival || s.rank[0] !== s.rank[1] || Math.abs(s.win[1] - s.win[0]) >= 0.5)
     .sort((x, y) => x[1].rank[1] - y[1].rank[1]);
   const hint = r.build_after.filter(c => !punted(c));
-  const base = r.free.length || r.their_free.length ? `<div class="panel-b small muted" style="padding:8px 16px;border-bottom:1px solid var(--line)">
-      ${r.free.length ? `Compared with just making the waiver moves that need no trade: ${freeList(r.free)}.` : ""}
+  const asIs = !S.find.mine && !isPoints();
+  const base = r.free.length || r.their_free.length || asIs ? `<div class="panel-b small muted" style="padding:8px 16px;border-bottom:1px solid var(--line)">
+      ${r.free.length ? `Compared with just making the waiver moves that need no trade: ${freeList(r.free)}.` : asIs ? "Scored on your roster as it is today, without waiver pickups first." : ""}
       ${r.their_free.length ? `${them} is measured after its own best waiver moves: ${freeList(r.their_free.slice(0, 2), r.their_free.length - 2)}.` : ""}</div>` : "";
   const sides = [...r.give.map(p => ({ ...p, side: "You give" })), ...r.get.map(p => ({ ...p, side: "You get" }))];
   const moveCol = { h: "Move", v: p => p.move ? `<span class="tag ${p.move === "drop" ? "out" : ""}">${MOVE[p.move]}</span>` : "" };
@@ -980,7 +983,7 @@ const SKEL = `<div class="skel"></div><div class="skel"></div><div class="skel">
 const dealKey = x => [...x.give].sort() + "|" + [...x.get].sort();  // search puts pinned players first
 const isSaved = x => S.saved.list.some(s => dealKey(s) === dealKey(x));
 const opt = (v, h, cur) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(h)}</option>`;
-const findParams = () => { const F = S.find; return { tier: F.tier, goal: F.goal, cats: F.cats, vs: F.vs, size: F.size, healthy: F.healthy, their_free: F.theirs, shape: F.shape || null, max_overpay: F.overpay === "" ? null : +F.overpay, outside: +F.outside || 0, lock: [...S.locks] }; };
+const findParams = () => { const F = S.find; return { tier: F.tier, goal: F.goal, cats: F.cats, vs: F.vs, size: F.size, healthy: F.healthy, free: F.mine, their_free: F.theirs, shape: F.shape || null, max_overpay: F.overpay === "" ? null : +F.overpay, outside: +F.outside || 0, lock: [...S.locks] }; };
 function findTitle() {
   if (isPoints()) return "Trade finder";
   const g = [...S.trade.give], r = [...S.trade.get];
@@ -995,8 +998,8 @@ function findPanel() {
     : pinned ? `What ${esc(T.team)} might take for ${T.get.size > 1 ? "them" : "him"}, from your whole roster.` : "Every team that might bite, and what they'd send back.";
   const locks = (S.locks.size && !isPoints() ? ` ${S.locks.size} locked player${S.locks.size > 1 ? "s" : ""} left out.` : "")
     + (F.outside && !isPoints() ? ` Role players only: nobody in the market's top ${F.outside}${T.give.size + T.get.size ? " except the players you checked" : ""}.` : "");
-  const fr = isPoints() ? [] : st.waivers.free || [];
-  const free = fr.length ? ` Scored as if you'd already added ${and(fr.map(m => esc(m.add)))} off waivers${F.theirs ? ", and each partner had made its own best waiver moves" : ""}.` : "";
+  const fr = isPoints() || !F.mine ? [] : st.waivers.free || [];
+  const free = !isPoints() && !F.mine ? ` Scored on your roster as it is today, without waiver pickups first${F.theirs ? " (each partner's still count)" : ""}.` : fr.length ? ` Scored as if you'd already added ${and(fr.map(m => esc(m.add)))} off waivers${F.theirs ? ", and each partner had made its own best waiver moves" : ""}.` : "";
   const tiers = isPoints() ? ["fair", "finesse"] : Object.keys(TIER);
   const controls = `<div class="seg" role="group" aria-label="Difficulty">${tiers.map(k => `<button data-tier="${k}" aria-pressed="${F.tier === k}" title="${(isPoints() ? TIER_PTS : TIER)[k]}">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div>
     ${isPoints() ? "" : `<label class="field">Optimize for <select id="f-goal">${opt("win", "Win %", F.goal)}${opt("cats", "Categories…", F.goal)}${opt("team", "Beat a team…", F.goal)}</select></label>
@@ -1007,6 +1010,7 @@ function findPanel() {
       <label class="field" title="The most you'll overpay on market value. Each difficulty allows up to 30%">Max overpay <select id="f-overpay">${opt("", "Default", F.overpay)}${["20", "10", "0"].map(k => opt(k, k + "%", F.overpay)).join("")}</select></label>
       <label class="field" title="Keep the market's top players out of it on both sides, for deals between role players. Players you check stay in.">Players <select id="f-outside">${opt("", "Any", F.outside)}${["60", "100"].map(k => opt(k, `Outside the top ${k}`, F.outside)).join("")}</select></label>
       <label class="field"><input type="checkbox" id="f-healthy" ${F.healthy ? "checked" : ""}>Healthy only</label>
+      <label class="field" title="On: your gain is measured against the waiver moves you could make without a trade (listed below), so a deal gets no credit for a pickup. Off: on your roster as it is today, as if you make no pickups."><input type="checkbox" id="f-mine" ${F.mine ? "checked" : ""}>Count my waiver moves</label>
       <label class="field" title="On: the other team is measured against the waiver moves it could make instead. Off: it's judged on the trade alone, the way most managers look at an offer."><input type="checkbox" id="f-theirs" ${F.theirs ? "checked" : ""}>Count their waiver moves</label>`}
     <select id="f-team" aria-label="Limit to team" ${pinned ? `disabled title="Set by the player you're asking for"` : ""}>${opt("", "All teams", team)}${others.map(t => opt(t, t, team)).join("")}</select>`;
   const can = !F.busy && !(F.goal === "cats" && !F.cats.length && !isPoints());
@@ -1121,7 +1125,7 @@ async function evaluate() {
   const T = S.trade;
   T.busy = true; render();
   try {
-    const r = T.result = await api("/api/trade", { give: [...T.give], get: [...T.get], their_free: S.find.theirs });
+    const r = T.result = await api("/api/trade", { give: [...T.give], get: [...T.get], free: S.find.mine, their_free: S.find.theirs });
     T.give = new Set(r.give.map(p => p.name)); T.get = new Set(r.get.map(p => p.name));  // deep links may use short names
     if (r.other_team) T.team = r.other_team;
     if (S.view === "trades") history.replaceState(null, "", "#trades?" + ["give", "get"].map(k => k + "=" + [...T[k]].map(encodeURIComponent).join(",")).join("&"));
@@ -1165,7 +1169,7 @@ async function loadSaved() {
   const E = S.saved.evals;  // replaced on punt change / refresh, so late answers land in the old object
   S.saved.loading = true;
   await Promise.all(S.saved.list.filter(s => !E[dealKey(s)]).map(async s => {
-    try { E[dealKey(s)] = await api("/api/trade", { give: s.give, get: s.get, their_free: S.find.theirs }); } catch (e) { E[dealKey(s)] = { error: e.message }; }
+    try { E[dealKey(s)] = await api("/api/trade", { give: s.give, get: s.get, free: S.find.mine, their_free: S.find.theirs }); } catch (e) { E[dealKey(s)] = { error: e.message }; }
   }));
   S.saved.loading = false;
   if (S.view === "trades") render();
@@ -1206,7 +1210,8 @@ function viewWaivers() {
     : `<div class="empty"><b>No clear upgrades</b>Nobody on waivers beats your weakest healthy player by enough to bother.</div>`;
   const tryCol = { h: "", v: p => tryBtn(p.name) }, dropCol = { h: "", v: p => tryBtn(undefined, p.name) };
   const A = S.state.adds, addsLeft = !A ? "" : A.left ? ` ${A.left} of ${A.max} adds left this week.` : ` You've used all ${A.max} adds this week: these moves wait until ${esc(dayName(A.resets))}.`;
-  return `<div class="head"><div><h1>Waivers</h1><p class="sub">${odds ? `Free agents ranked by how much they'd raise your ${WIN().of}, swapped for your best drop.` : "Free agents ranked on your build."} Injured players on your roster are never suggested as drops.${addsLeft}</p></div></div>
+  return `<div class="head"><div><h1>Waivers</h1><p class="sub">${odds ? `Free agents ranked by how much they'd raise your ${WIN().of}, swapped for your best drop.` : "Free agents ranked on your build."} Injured players on your roster are never suggested as drops.${addsLeft}</p></div>
+      <label class="field" title="Leave injured free agents (out, IL, suspended) out of these suggestions, and out of the waiver moves trades and Strategy are scored on top of"><input type="checkbox" id="w-healthy" ${S.healthyFa ? "checked" : ""}>Healthy only</label></div>
     ${movePanel()}
     <div class="grid2"><div class="panel"><div class="panel-h"><div><h2>Suggested moves</h2><p>${odds ? `Add/drop pairs that clearly raise your ${WIN().of}.` : "Add/drop pairs worth at least +0.3."}${w.free?.length ? ` Trades are scored as if you'd made these first: ${freeList(w.free)}.` : ""}</p></div></div>${moves}</div>
       <div class="panel"><div class="panel-h"><div><h2>Drop candidates</h2><p>${odds ? "The healthy players you'd miss least." : "Your three weakest healthy players."}</p></div></div>${playerTable(w.drop_candidates, { extra: [dropCol] })}</div></div>
@@ -1301,8 +1306,10 @@ function viewMovers() {
   return `<div class="head"><div><h1>Hot &amp; cold</h1><p class="sub">Gap = value on your build over ${esc(m.window)} minus rest-of-season value. ${esc(m.note || "")}</p></div></div>
     <div class="panel"><div class="panel-h"><div><h2>Sell high</h2><p>Your players running well above their real value. Other managers see the hot run.</p></div></div>
       ${playerTable(m.sell_high, { extra: [gap], empty: "<b>Nobody's running hot</b>None of your players are far above their real value lately." })}</div>
-    <div class="panel"><div class="panel-h"><div><h2>Buy low</h2><p>Good players on other teams running cold.</p></div></div>
-      ${playerTable(m.buy_low, { extra: [owner, gap, offers], empty: "<b>No slumping studs</b>Check back after a few more games." })}</div>`;
+    <div class="panel"><div class="panel-h"><div><h2>Buy low</h2><p>Players on other teams running cold, at any rank, as long as they're still worth more than the best free agents.</p></div></div>
+      ${playerTable(m.buy_low, { extra: [owner, gap, offers], empty: "<b>Nobody's slumping</b>Check back after a few more games." })}</div>
+    <div class="panel"><div class="panel-h"><div><h2>Hot pickups</h2><p>Free agents running well above their real value, playing better lately than the best free agents are worth. Value is what they should do from here.</p></div></div>
+      ${playerTable(m.pickups || [], { extra: [gap], empty: "<b>Nobody on waivers is running hot</b>No free agent is far above his real value lately." })}</div>`;
 }
 
 // ---------- compare: 2 to 4 players side by side ----------
@@ -1416,7 +1423,7 @@ function viewGM() {
       <div class="panel hist"><div class="panel-h"><h2>History</h2></div>${historyList()}</div>
       <div class="panel chat"><div class="msgs" id="msgs">${msgs}</div>
       <div class="compose"><div class="sugs">${SUGS.map(s => `<button class="chip" data-sug="${esc(s)}">${esc(s)}</button>`).join("")}</div>
-        <form id="chat-form"><textarea id="chat-in" rows="1" placeholder="e.g. Is Jokić for Wembanyama + Suggs good for me?" ${S.chatBusy ? "disabled" : ""}></textarea>
+        <form id="chat-form"><textarea id="chat-in" rows="1" placeholder="e.g. Is Jokić for Wembanyama + Suggs good for me?" ${S.chatBusy ? "disabled" : ""}>${esc(S.gmDraft)}</textarea>
         <button class="btn primary" ${S.chatBusy ? "disabled" : ""} aria-label="Send"><svg class="i"><use href="#i-send"/></svg>Send</button></form></div></div></div>`;
 }
 // ---------- chat history: every conversation is kept in data/chats.json (app.py chats()), so any browser sees it ----------
@@ -1456,7 +1463,7 @@ async function newChat() {  // the old conversation stays in History
 async function ask(text) {
   if (!text.trim() || S.chatBusy) return;
   S.chat.push({ role: "user", text }); S.chatBusy = true; render();
-  try { const r = await api("/api/chat", { message: text, session: S.chatSession, ...S.gmSet }); S.chat.push({ role: "ai", text: r.reply });
+  try { const r = await api("/api/chat", { message: text, session: S.chatSession, ...S.gmSet, free: S.find.mine, their_free: S.find.theirs }); S.chat.push({ role: "ai", text: r.reply });
     if (r.session) store.set("chatSession", S.chatSession = r.session); }
   catch (e) { S.chat.push({ role: "ai", text: "Error: " + e.message }); }
   S.chatBusy = false; store.set("chat", S.chat); render();
@@ -1547,6 +1554,15 @@ document.addEventListener("click", async e => {
   }
   if (act === "clear-trade") { S.trade.give.clear(); S.trade.get.clear(); S.trade.result = null; history.replaceState(null, "", "#trades"); return render(); }
   if (act === "evaluate") return evaluate();
+  if (act === "ask-gm") {  // Trades → AI GM: the checked trade in the message box, cursor after it for the question
+    const T = S.trade, give = and([...T.give]), get = and([...T.get]);
+    S.gmDraft = T.give.size && T.get.size ? `Trade with ${T.team}: I give ${give}, I get ${get}. `
+      : T.get.size ? `I'm looking at getting ${get} from ${T.team}. ` : `I'm looking at trading away ${give}. `;
+    if (S.chats == null) await loadChats();  // first: its render would drop the focus
+    setView("gm");
+    const i = $("#chat-in"); i?.focus(); i?.setSelectionRange(i.value.length, i.value.length);
+    return;
+  }
   if (act === "week-retry") { S.week = {}; return render(); }
   if (act === "sched-retry") { S.sched = {}; return render(); }
   if (act === "sched-day") { S.plan.day = t.dataset.date; return render(); }
@@ -1587,6 +1603,13 @@ document.addEventListener("click", async e => {
 document.addEventListener("change", async e => {
   const t = e.target;
   if (t.dataset.pick) { const set = S.trade[t.dataset.pick]; t.checked ? set.add(t.value) : set.delete(t.value); S.trade.result = null; return render(); }
+  if (t.id === "w-healthy") {  // changes the waiver suggestions and every trade number (they build on your free moves)
+    const re = S.trade.result;
+    S.healthyFa = t.checked; store.set("healthyFa", t.checked);
+    S.trade.result = null; S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.strategy = {};
+    await loadState();
+    return re && evaluate();
+  }
   if (t.id === "trade-team") { S.trade.team = t.value; S.trade.get.clear(); S.trade.result = null; return render(); }
   if (t.id === "find-player") return pickPlayer(t.value);
   if (t.id === "cmp-player") return pickCompare(t.value);
@@ -1607,8 +1630,8 @@ document.addEventListener("change", async e => {
     } catch (err) { toast(err.message); }
     return render();
   }
-  if (t.id === "f-theirs") {  // changes every trade number, not just the finder's
-    S.find.theirs = t.checked; store.set("theirs", t.checked);
+  if (t.id === "f-theirs" || t.id === "f-mine") {  // changes every trade number, not just the finder's
+    const k = t.id.slice(2); S.find[k] = t.checked; store.set(k, t.checked);
     S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {};
     return S.trade.result ? evaluate() : render();
   }
@@ -1623,6 +1646,7 @@ document.addEventListener("change", async e => {
 document.addEventListener("input", e => {
   if (e.target.id === "find-player") pickPlayer(e.target.value, true);
   if (e.target.id === "cmp-player") pickCompare(e.target.value, true);
+  if (e.target.id === "chat-in") S.gmDraft = e.target.value;  // kept across re-renders (history loading, Ask AI GM)
   if (e.target.id === "mv-add" && !/^(insertText|insertCompositionText|delete)/.test(e.inputType || "")) pickMove(e.target.value, true);  // a pick or a paste, not typing
   // the top bar opens a card as soon as a name is picked or pasted, not while one is typed ("Player 1" on the way to "Player 15")
   if (e.target.id === "top-player" && !/^(insertText|insertCompositionText|delete)/.test(e.inputType || "")) pickGlobal(e.target.value, true);
@@ -1630,7 +1654,7 @@ document.addEventListener("input", e => {
 document.addEventListener("focusin", e => { if (e.target.id === "top-player" && !S.pool && S.state) loadPool(); });
 document.addEventListener("submit", e => {
   if (e.target.id !== "chat-form") return;
-  e.preventDefault(); const i = $("#chat-in"); const text = i.value; i.value = ""; ask(text);
+  e.preventDefault(); const i = $("#chat-in"); const text = i.value; i.value = S.gmDraft = ""; ask(text);
 });
 document.addEventListener("keydown", e => {
   if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest("input, textarea, select, [contenteditable]")) { e.preventDefault(); $("#top-player").focus(); }

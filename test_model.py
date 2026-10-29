@@ -58,6 +58,14 @@ def test_all():
     sells = [p["name"] for p in lg.movers()["sell_high"]]
     assert "Player 150" in sells and all(p["gap"] >= model.TREND for p in lg.movers()["sell_high"])
     assert lg.player("player 150")["trend"] == "up" and lg.movers()["window"] == "this season"  # no box scores here
+    # buy low: any rank above the waiver level on other teams; pickups: hot free agents
+    cur2 = cur.copy()
+    cur2.loc["player 151", "PTS"], cur2.loc["player 139", "PTS"] = 0, 40  # Them's worst player cold, a free agent hot
+    lg2 = model.League(lg.snap, base, cur2)
+    mv, floor = lg2.movers(), lg2.replacement()[0]
+    assert "Player 151" in [p["name"] for p in mv["buy_low"]] and "Player 139" in [p["name"] for p in mv["pickups"]]
+    assert all(p["team"] not in (lg2.me, "FA") and p["value"] > floor and p["gap"] <= -model.TREND for p in mv["buy_low"])
+    assert all(p["team"] == "FA" and p["form"] > floor and p["gap"] >= model.TREND for p in mv["pickups"])
 
     # matchup math: symmetric, identical teams are a coin flip, better players raise your odds
     A, B = lg.vecs["Me"], lg.vecs["Them"]
@@ -224,6 +232,10 @@ def test_all():
     assert r["free"] == [{"add": "Star FA", "drop": "Scrub B", "gain": r0["net"]}] and r["you_add"] == ["Scrub B"]
     assert abs(r["net"]) < 0.05 and fl.waivers()["free"][0]["add"] == "Star FA"
     assert not any("Star FA" in x["give"] for x in fl.search(tier="hard", limit=200))
+    # Waivers' Healthy only: injured, he's off waivers on that copy (so no free move), still on the league's
+    fl.meta["star fa"] = {**fl.meta["star fa"], "status": "O"}
+    assert "star fa" in fl.fa and all(m["add"] != "Star FA" for m in fl.healthy_fa().waivers()["free"])
+    fl.meta["star fa"]["status"] = ""
     # an NA free agent isn't part of the waiver level (replacement, FILL)
     na = model.League({**lg.snap, "free_agents": [{**f, "status": "NA" if f["name"] == "Player 139" else ""}
                                                   for f in lg.snap["free_agents"]]}, base, cur)
@@ -234,6 +246,7 @@ def test_all():
     # the other team is judged on the trade alone unless their_free: then it fills its own open spot first
     assert short.trade(["Player 198"], ["Player 151"])["their_free"] == []
     assert [m["drop"] for m in short.trade(["Player 198"], ["Player 151"], their_free=True)["their_free"]] == [None]
+    assert [m["drop"] for m in short.trade(["Player 198"], ["Player 151"], free=False, their_free=True)["their_free"]] == [None]
     assert short.search(tier="hard", their_free=True, limit=200) == short.search(team="Them", tier="hard",
                                                                                  their_free=True, limit=200)[:3]
 
