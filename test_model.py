@@ -160,6 +160,13 @@ def test_all():
     hits = lg.search(get=["Player 199"], lock=["Player 198"], tier="hard", limit=200)
     assert hits and all("Player 199" in x["get"] and "Player 198" not in x["give"] for x in hits)
     assert any(len(x["give"]) == 3 for x in hits)
+    # role players only (Q14): nobody in the market's top 10 on either side, except a pinned player; with everyone
+    # on your side locked there's nothing to search
+    top = set(lg.names(lg.market.index[lg.market["rank"] <= 10]))
+    role = lg.search(get=["Player 199"], tier="hard", limit=200, outside=10)
+    assert lg.search(get=["Player 199"], tier="hard", outside=60) == []
+    assert "Player 199" in top and role and all(not (set(x["give"]) | set(x["get"]) - {"Player 199"}) & top for x in role)
+    assert any(top & set(x["give"]) for x in hits)  # without it, top players are offered
     # search prices a deal like trade() does (same drops and pickups), 3-for-1s included
     for x in [h for h in hits if len(h["give"]) == 3][:3] + hits[:3]:
         assert lg.trade(x["give"], x["get"])["market"] == x["market"], x
@@ -533,11 +540,13 @@ def test_all():
     assert pp["week"]["opponent"] == "Them" and pp["cats"]["PTS"] == {"season": [0, 0], "week": [0, 0]}
 
     # weekly add limit (Q11). No cap in the settings: nothing counted, and the plan chains streams (a later one can
-    # replace an earlier streamer); its first move is the top stream, and each stream's day is his best one
+    # replace an earlier streamer) in day order (Q13: gains recounted in that order); its first pick is the top
+    # stream (here also first by day, so the same gain), and each stream's day is his best one
     wk = sl.this_week("Them")
     assert wk["adds"] is None and sl.adds() is None and sl.planner()["adds"] is None and wk["today"] == "2026-10-26"
     mv, top = wk["plan"]["moves"], wk["streams"][0]
     assert (mv[0]["add"], mv[0]["drop"], mv[0]["day"], mv[0]["gain"], mv[0]["games"]) == (top["name"], top["drop"], top["day"], top["gain"], top["games"])
+    assert [x["day"] for x in mv] == sorted(x["day"] for x in mv)
     assert 1 < len(mv) <= 5 and all(x["gain"] >= 0.1 for x in mv) and len({x["add"] for x in mv}) == len(mv)
     assert abs(wk["plan"]["gain"] - sum(x["gain"] for x in mv)) <= 0.05 * len(mv) + 0.01 and wk["plan"]["keep"]
     for st in wk["streams"]:  # the best day beats adding him on any other of his game days

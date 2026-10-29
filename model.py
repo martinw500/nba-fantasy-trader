@@ -746,12 +746,12 @@ class League:
         day = self._days(keys, self.week_end, start or {}, until)
         return collections.Counter(k for ks in day.values() for k in ks[:self.lineup])
 
-    def _days(self, keys, end, start=None, until=None):
-        """{date: players with a game that day, best first (per-game value)}, from today through `end`. start: a first
-        day for everyone (a later week), or {player: first day} (claims); until: {player: last day} (a later drop);
-        game_days() adds return dates."""
+    def _days(self, keys, end, start=None, until=None, by=None):
+        """{date: players with a game that day, best first (per-game value, or the Series `by`: the planner's build)},
+        from today through `end`. start: a first day for everyone (a later week), or {player: first day} (claims);
+        until: {player: last day} (a later drop); game_days() adds return dates."""
         day, until = {}, until or {}
-        for k in sorted(keys, key=self._value.get, reverse=True):
+        for k in sorted(keys, key=(self._value if by is None else by).get, reverse=True):
             for d in self.game_days(k, min(end, until.get(k, end)), start.get(k) if isinstance(start, dict) else start):
                 day.setdefault(d, []).append(k)
         return day
@@ -1350,12 +1350,13 @@ class League:
 
     def search(self, give=(), get=(), lock=(), team=None, size=3, tier="fair", goal="win", goal_cats=(),
                goal_team=None, healthy_only=False, shape=None, punt=(), limit=20, depth=10, free=True,
-               their_free=False, max_overpay=None):
+               their_free=False, max_overpay=None, outside=0):
         """9-cat trade search scored by the matchup model, vectorized over every give/get combo per team.
 
         give / get: players every deal must include. Pinning a get fixes the team and searches both whole rosters,
                otherwise it's your top `depth` vs theirs.
-        lock:  players never offered or asked for.
+        lock:  players never offered or asked for. outside: also every player in the market's top `outside`
+               (League.market rank), both sides: a role-player search (Q14). Pinned give / get stay in.
         tier:  how likely they say yes (TIERS: your gain, theirs, and the market gap). easy: they win on market, you
                still gain. fair: market within 15%, or 30% when both gain. finesse: market even or in their favour,
                the fit strongly yours. hard: you win on market. max_overpay (%): tightens the tier's market floor.
@@ -1382,7 +1383,7 @@ class League:
                 lt = lg.after_free(keep=get, team=t) if their_free and t else lg
                 out += lt.search(give, get, [*lock, *(a for ms in lt.free.values() for a, _, _ in ms)], t, size, tier,
                                  goal, goal_cats, goal_team, healthy_only, shape, punt, limit, depth, free=False,
-                                 max_overpay=max_overpay)
+                                 max_overpay=max_overpay, outside=outside)
             return self._rank(out, tier, team, limit)
         if max(len(give), len(get)) > size:
             raise KeyError(f"More than {size} pinned players on one side")
@@ -1390,7 +1391,7 @@ class League:
             if team and team != self.owner(get[0]):
                 raise KeyError(f"{self.names(get)[0]} plays for {self.owner(get[0])}, not {team}")
             team = self.owner(get[0])
-        lock = {self.find(n) for n in lock} - set(give) - set(get)
+        lock = ({self.find(n) for n in lock} | set(self.market.index[self.market["rank"] <= outside])) - set(give) - set(get)
         cats, me, wide = self.cats, self.me, bool(get)
         cv, pv = self.perceived()
         vg, vc, vm = self.value().to_dict(), pv.to_dict(), self.value(punt=punt).to_dict()
@@ -1442,6 +1443,8 @@ class League:
 
         roster, il_me = self.rosters[me], self.il[me]
         mine = combos(roster, give, vm)
+        if not mine:  # everyone you have is locked (or outside=)
+            return []
         GV, GH, gn, ga, gp, gseen, gmk = stack(mine, il_me)
         g_hurt, g_cut = parked(mine)
         my_rest = low([[k for k in roster if k not in c and k not in il_me] for c in mine], self._contrib(me, roster, punt))
@@ -1813,8 +1816,9 @@ class League:
         """Streams for the adds left (Q11): up to n moves, each the best (add, drop, day) on top of the ones before
         (_timed): a drop is one of `drops` or a streamer added earlier in the plan, so a later stream can replace an
         earlier one once his games are used. Stops when the next one adds under 0.1. -> (moves, start, until): each
-        move's day, add, drop and gain; start / until for starts()."""
-        start, until, moves, keys = {}, {}, [], list(keys)
+        move's day, add, drop and gain, in day order (Q13: each gain recounted on top of the days before, so one can
+        come out under 0.1; the total stays); start / until for starts()."""
+        start, until, moves, keys, base, prev = {}, {}, [], list(keys), list(keys), s0
         for _ in range(n):
             best = None
             for a in (x for x in cands if x not in keys):
@@ -1828,6 +1832,12 @@ class League:
             keys.append(a)
             s0 += g / 100
             moves.append({"day": s, "add": a, "drop": d, "gain": g})
+        moves.sort(key=lambda x: x["day"])
+        for i, x in enumerate(moves):
+            done = moves[:i + 1]
+            s = float(self._score(odds(self.week_vec(base + [y["add"] for y in done], {y["add"]: y["day"] for y in done},
+                                                     {y["drop"]: until[y["drop"]] for y in done}))))
+            x["gain"], prev = 100 * (s - prev), s
         return moves, start, until
 
     def this_week(self, opp=None, punt=(), limit=5):
@@ -2014,10 +2024,10 @@ class League:
 
     def planner(self, punt=(), n=3):
         """Schedule planner (Q4): your active players' NBA games per day for the rest of this matchup week and the
-        next n (weeks()), each day's starters (the best `lineup` with a game, as starts() picks them), who sits on an
-        overflow day, and open slots (fewer than `lineup` of yours play while the NBA does: room to stream). Players in
-        IL slots sit, injured players count from their return date. teams: every NBA team's games in those weeks,
-        on your open days (games a streamer from there would start), and in the fantasy playoff weeks, with your
+        next n (weeks()), each day's starters (the best `lineup` with a game, as starts() picks them but on the build's
+        value, Q13), who sits on an overflow day, and open slots (fewer than `lineup` of yours play while the NBA does:
+        room to stream). Players in IL slots sit, injured players count from their return date. teams: every NBA
+        team's games in those weeks, on your open days (games a streamer from there would start), and in the fantasy playoff weeks, with your
         players there and the best healthy free agent on your build (effective()). ponytail: today's roster in every
         week, positions ignored, and a player tagged out with no return date still counts."""
         if not self.sched:
@@ -2029,8 +2039,9 @@ class League:
         nba = {t: ds for t, ds in self.sched.items() if t in set(self.nba.values())}  # no All-Star or exhibition teams
         busy = collections.Counter(d for ds in nba.values() for d in ds)  # NBA teams playing each day
         weeks, opened, starts = [], [], collections.defaultdict(list)
+        eff, val = self.effective(punt), self.value(punt=punt)
         for s, e in spans:
-            day, days = self._days(play, e, s), []
+            day, days = self._days(play, e, s, by=val), []
             d = date.fromisoformat(s)
             while d.isoformat() <= e:
                 x, ks = d.isoformat(), day.get(d.isoformat(), [])
@@ -2048,7 +2059,6 @@ class League:
         po = self.playoff_weeks()
         within = lambda ds, s, e: sum(s <= d <= e for d in ds)
         healthy = [k for k in self.fa if self.meta.get(k, {}).get("status", "") not in OUT]
-        eff, val = self.effective(punt), self.value(punt=punt)
         fa = {}
         for k in sorted(healthy, key=eff.get, reverse=True):
             fa.setdefault(self.nba.get(k), k)
@@ -2061,7 +2071,7 @@ class League:
         teams.sort(key=lambda t: (-t["total"], -sum(t["playoffs"]), t["nba"]))
         roster = [{**self.player(k, punt), "sched": [{"games": len(self.game_days(k, e, s)), "starts": st}
                                                      for (s, e), st in zip(spans, starts[k])]}
-                  for k in sorted(play, key=self._value.get, reverse=True)]
+                  for k in sorted(play, key=val.get, reverse=True)]
         return {"lineup": self.lineup, "weeks": weeks, "teams": teams, "roster": roster,
                 "il": [{"name": self.p.at[k, "PLAYER_NAME"], **({"return": self.inj[k]["return"]} if self.inj.get(k, {}).get("return") else {})}
                        for k in me if k not in play],
@@ -2144,6 +2154,7 @@ def main():
     ap.add_argument("--healthy", action="store_true", help="search: skip injured players you'd get")
     ap.add_argument("--shape", choices=["consolidate", "depth"])
     ap.add_argument("--max-overpay", type=float, help="search: most you'd overpay on the market, in %%")
+    ap.add_argument("--outside", type=int, default=0, help="search: role players only, nobody in the market's top N")
     ap.add_argument("--players", default="", help='compare: 2 to 4 players, e.g. "A, B"')
     ap.add_argument("--add", default="", help="move: the free agent to add")
     ap.add_argument("--drop", default="", help="move: your player to drop (none: an open spot, else who you'd miss least)")
@@ -2155,7 +2166,8 @@ def main():
            "trade": lambda: lg.trade(split(a.give), split(a.get), punt),
            "ideas": lambda: lg.ideas(a.mode, punt, a.team),
            "search": lambda: lg.search(split(a.give), split(a.get), split(a.lock), a.team, a.size, a.tier, a.goal,
-                                       split(a.cats), a.vs, a.healthy, a.shape, punt, max_overpay=a.max_overpay),
+                                       split(a.cats), a.vs, a.healthy, a.shape, punt, max_overpay=a.max_overpay,
+                                       outside=a.outside),
            "waivers": lambda: lg.waivers(punt),
            "movers": lambda: lg.movers(punt),
            "week": lambda: lg.this_week(a.vs, punt),

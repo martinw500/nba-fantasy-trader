@@ -108,7 +108,8 @@ def api(path, q, body):
                          int(body.get("size", 3)), body.get("tier", "fair"), body.get("goal", "win"),
                          body.get("cats", []), body.get("vs"), bool(body.get("healthy")), body.get("shape"), punt,
                          limit=30, their_free=bool(body.get("their_free")),
-                         max_overpay=None if body.get("max_overpay") is None else float(body["max_overpay"]))
+                         max_overpay=None if body.get("max_overpay") is None else float(body["max_overpay"]),
+                         outside=int(body.get("outside") or 0))
     if path == "/api/strategy":  # punt planner, ~15s on the real league
         return lg.strategy()
     if path == "/api/player":  # the player card

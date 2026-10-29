@@ -75,7 +75,7 @@ class GM:
         def find_trades(give: list[str] | None = None, get: list[str] | None = None, lock: list[str] | None = None,
                         tier: str = "fair", goal: str = "win", goal_cats: list[str] | None = None,
                         goal_team: str | None = None, size: int = 3, team: str | None = None,
-                        max_overpay: float | None = None) -> str:
+                        max_overpay: float | None = None, outside: int = 0) -> str:
             """Search for trades, up to size-for-size. Pin players to aim it: get = offers for their player,
             give = buyers for yours, both = complete that trade, neither = open search. Each result has "accept"
             (Likely yes / Maybe / Long shot) and "market" (how managers would price it).
@@ -93,12 +93,14 @@ class GM:
                 size: max players per side, 1-3
                 team: only search this opponent (exact team name), or omit for all
                 max_overpay: most the user will overpay on the market, in % (tightens the tier)
+                outside: role players only: nobody in the market's top N on either side (60 or 100), pins stay in
             """
             if lg.mode == "points":  # points leagues keep the simple finder
                 return dump(lg.ideas("finesse" if tier == "finesse" else "fair", gm.punt, team, limit=12))
             try:
                 return dump(lg.search(give or [], get or [], lock or [], team, size, tier, goal, goal_cats or [],
-                                      goal_team, punt=gm.punt, limit=12, max_overpay=max_overpay))
+                                      goal_team, punt=gm.punt, limit=12, max_overpay=max_overpay,
+                                      outside=outside))
             except KeyError as e:
                 return f"Error: {e}"
 
