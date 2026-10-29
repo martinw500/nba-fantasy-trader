@@ -136,7 +136,9 @@ def api(path, q, body):
     if path == "/api/state":
         return fl.state(punt)
     if path == "/api/team":
-        return {"team": body["team"], "roster": lg.team_roster(body["team"], punt), "build": lg.build(body["team"])}
+        t = body["team"]  # wants: what they'd want from you (Trades), category leagues only
+        return {"team": t, "roster": lg.team_roster(t, punt), "build": lg.build(t),
+                **({"wants": lg.wants(t)} if t != lg.me and lg.mode != "points" else {})}
     if path == "/api/trade":
         return fl.trade(body["give"], body["get"], punt, free=bool(body.get("free", True)),
                         their_free=bool(body.get("their_free")))

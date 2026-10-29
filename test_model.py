@@ -50,6 +50,18 @@ def test_all():
             pass
     assert lg.trade(["Player 198"], ["Player 151", "Player 155"])["verdict"] == "decline"
 
+    # what they want: your players by their win % gain (your best first), who they'd drop, their own players' worth
+    w = lg.wants("Them")
+    gains = [x["their_gain"] for x in w["give"]]
+    assert gains == sorted(gains, reverse=True) and w["give"][0]["name"] == "Player 198" and gains[0] > 0
+    assert all(len(x["they_drop"]) == 1 for x in w["give"])  # a full roster drops one for him
+    assert set(w["keep"]) == set(lg.names(lg.rosters["Them"])) and w["keep"]["Player 199"] == max(w["keep"].values())
+    try:
+        lg.wants("Me")
+        raise AssertionError("wants accepted your own team")
+    except KeyError:
+        pass
+
     # punting a category removes it from value
     full, punted = lg.value(["player 190"]).iloc[0], lg.value(["player 190"], punt=["PTS"]).iloc[0]
     assert abs((full - punted) - lg.z.at["player 190", "PTS"]) < 1e-9

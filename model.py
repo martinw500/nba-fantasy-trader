@@ -2294,6 +2294,25 @@ class League:
     def team_roster(self, team, punt=()):
         return sorted((self.player(k, punt) for k in self.rosters[team]), key=lambda p: -p["value"])
 
+    def wants(self, team):
+        """What `team` wants from you (Trades). give: each of your players' worth to it in win % if it got him for
+        nothing (it drops whoever it'd miss least and parks the injured in IL slots, as in a trade: _after) and who it'd
+        drop, best for it first. keep: each of its own players' worth to it (_contrib), so you see who it'd miss least.
+        Real odds, nothing conceded: a player strong where it's far behind barely moves it, so a punt shows without
+        guessing it. (Value on its build() misread it: langangsters are weak in BLK and REB, Kessler is -3.6 there and
+        their second-best get, +3.7%, Oct 29.)"""
+        if self.mode == "points" or team not in self.rosters or team == self.me:
+            raise KeyError(f"What a team wants needs a category league and another team: "
+                           f"{', '.join(t for t in self.rosters if t != self.me)}")
+        w0, name = self.outlooks[team]["win"], lambda k: self.p.at[k, "PLAYER_NAME"]
+        give = []
+        for k in self.rosters[self.me]:
+            tk, td, _, til = self._after(team, [], [k])
+            give.append({"name": name(k), "their_gain": round(100 * (self.outlook(team, {team: self.vec(tk, til)})["win"] - w0), 1),
+                         "they_drop": self.names(td)})
+        keep = {name(k): round(100 * v, 1) for k, v in self._contrib(team, self.rosters[team]).items()}
+        return {"team": team, "build": self.build(team), "give": sorted(give, key=lambda p: -p["their_gain"]), "keep": keep}
+
 
 def load(path=DATA / "league.json", refetch=()):
     """The league from the snapshot, with every cache refreshed once past its window (refetch=("injuries",): now).
@@ -2312,7 +2331,7 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster", "week",
-                                    "strategy", "news", "compare", "schedule", "move", "sources"])
+                                    "strategy", "news", "compare", "schedule", "move", "sources", "wants"])
     ap.add_argument("--give", default="")
     ap.add_argument("--get", default="")
     ap.add_argument("--mode", default="fair", choices=["fair", "finesse"])
@@ -2354,7 +2373,8 @@ def main():
            "schedule": lambda: lg.planner(punt),
            "move": lambda: lg.add_drop(a.add, a.drop or None, punt, a.vs, a.day),
            "sources": lg.sources,
-           "roster": lambda: lg.team_roster(a.team or lg.me, punt)}[a.cmd]()
+           "roster": lambda: lg.team_roster(a.team or lg.me, punt),
+           "wants": lambda: lg.wants(a.team)}[a.cmd]()
     print(json.dumps(out, indent=1, ensure_ascii=False))
 
 

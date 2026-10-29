@@ -874,15 +874,17 @@ function viewTrades() {
   if (!T.team) T.team = others[0];
   if ((!T.roster || T.roster.team !== T.team) && T.loading !== T.team) loadTradeRoster();
   if (!S.players) loadPlayers();
+  const W = T.roster?.team === T.team ? T.roster.wants : null;  // what they want: worth to them in win %
+  const worth = W && Object.fromEntries([...W.give.map(x => [x.name, x.their_gain]), ...Object.entries(W.keep)]);
   const item = (p, set) => {
-    const on = set.has(p.name), lk = S.locks.has(p.name);
+    const on = set.has(p.name), lk = S.locks.has(p.name), w = worth?.[p.name];
     return `<label class="pitem ${on ? "on" : ""}"><input type="checkbox" data-pick="${set === T.give ? "give" : "get"}" value="${esc(p.name)}" ${on ? "checked" : ""}>
-    <span>${esc(p.name)}${statusTag(p)}</span><span class="muted small">${Number(p.value).toFixed(isPoints() ? 1 : 2)}</span>
+    <span>${esc(p.name)}${statusTag(p)}</span><span class="muted small">${Number(p.value).toFixed(isPoints() ? 1 : 2)}${w == null ? "" : ` · <span title="Worth to ${esc(T.team)}: ${set === T.give ? "how much their" : "what their"} ${WIN().of} ${set === T.give ? "rises if they get him" : "loses without him"}">${w.toFixed(1)}%</span>`}</span>
     ${isPoints() ? "" : `<button class="lock" data-act="lock" data-name="${esc(p.name)}" aria-pressed="${lk}" aria-label="Lock ${esc(p.name)}" title="${lk ? "Locked: the finder never trades him" : "Lock so the finder never trades him"}"><svg class="i"><use href="#i-lock"/></svg></button>`}</label>`;
   };
   const theirs = T.roster && T.roster.team === T.team ? T.roster.roster.map(p => item(p, T.get)).join("") : `<div class="skel"></div><div class="skel"></div>`;
   const ready = T.give.size + T.get.size > 0;
-  return `<div class="head"><div><h1>Trades</h1><p class="sub">Check players to build a trade, then evaluate it or find deals built around them.</p></div>
+  return `<div class="head"><div><h1>Trades</h1><p class="sub">Check players to build a trade, then evaluate it or find deals built around them.${W ? ` After each value: what he's worth to ${esc(T.team)} in ${WIN().of}.` : ""}</p></div>
       <input type="search" class="input" id="find-player" list="all-players" placeholder="Add any player to the trade" aria-label="Add any rostered player to the trade" autocomplete="off" style="width:240px;max-width:100%">
       <datalist id="all-players">${S.players.map(p => `<option value="${esc(p.name)}">${esc(p.team)}</option>`).join("")}</datalist></div>
     <div class="grid2">
@@ -895,6 +897,7 @@ function viewTrades() {
     <div class="toolbar"><button class="btn primary" data-act="evaluate" ${ready && !T.busy ? "" : "disabled"}>${T.busy ? "Evaluating…" : "Evaluate trade"}</button>
       ${ready ? `<button class="btn ghost" data-act="ask-gm" title="Open the AI GM with this trade in the message box, then ask it anything about it">Ask AI GM</button>
         <button class="btn ghost" data-act="clear-trade">Clear</button>` : ""}</div>
+    ${W ? wantsPanel(W) : ""}
     ${findPanel()}
     ${T.result ? tradeResult(T.result) : ""}
     ${savedPanel()}
@@ -988,6 +991,15 @@ function findTitle() {
   if (isPoints()) return "Trade finder";
   const g = [...S.trade.give], r = [...S.trade.get];
   return g.length && r.length ? "Complete this trade" : r.length ? `Offers for ${r.join(", ")}` : g.length ? `Buyers for ${g.join(", ")}` : "Open search";
+}
+function wantsPanel(W) {
+  const mine = Object.fromEntries(S.state.roster.map(p => [p.name, p]));
+  const rows = W.give.slice(0, 5).filter(x => mine[x.name]).map(x => ({ ...mine[x.name], ...x }));
+  const them = { h: "To them", v: p => `<span class="val ${tone(p.their_gain)}">${delta(p.their_gain, "win%")}</span>` };
+  const drop = { h: "They'd drop", cls: "names", v: p => p.they_drop.map(esc).join(", ") || `<span class="muted">Nobody</span>` };
+  const go = { h: "", v: p => `<button class="btn ghost" data-act="shop" data-name="${esc(p.name)}" data-team="${esc(W.team)}">Find deals</button>` };
+  return `<div class="panel"><div class="panel-h"><div><h2>What ${esc(W.team)} wants from you</h2><p>Your players who'd raise their ${WIN().of} the most, after they drop the player they'd miss least.${W.build.length ? ` They're weak in ${and(W.build.map(lab))}, and that's already counted: help there only moves them if they can catch up.` : ""}</p></div></div>
+    ${playerTable(rows, { extra: [them, drop, go] })}</div>`;
 }
 function findPanel() {
   const F = S.find, T = S.trade, st = S.state, title = findTitle(), n = F.size, pinned = T.get.size > 0;
@@ -1544,6 +1556,7 @@ document.addEventListener("click", async e => {
     const mine = act === "shop", name = [t.dataset.name];
     Object.assign(S.trade, { give: new Set(mine ? name : []), get: new Set(mine ? [] : name), result: null });
     if (!mine) S.trade.team = t.dataset.team;
+    else if (t.dataset.team) S.find.team = t.dataset.team;  // What they want: deals with that team only
     setView("trades");
     return isPoints() || find(true);
   }
