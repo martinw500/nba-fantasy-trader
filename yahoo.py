@@ -56,6 +56,7 @@ def snapshot(league_id=None):
     if "point" in (s.scoring_type or ""):
         points = {by_id[m.stat_id]: m.value for m in s.stat_modifiers.stats if m.stat_id in by_id}
     roster = sum(rp.count for rp in s.roster_positions if rp.position not in BENCH_ONLY)
+    slots = [rp.position for rp in s.roster_positions if rp.position not in BENCH_ONLY | {"BN"} for _ in range(rp.count)]
 
     teams, me = {}, None
     for t in q.get_league_teams():
@@ -71,7 +72,8 @@ def snapshot(league_id=None):
         fa += [pl(p) for p in (got if isinstance(got, list) else [got])]
 
     snap = {"name": text(q.get_league_info().name), "me": me, "teams": teams, "free_agents": fa,
-            "settings": {"teams": len(teams), "roster": roster, "mode": "points" if points else "9cat",
+            "settings": {"teams": len(teams), "roster": roster, "starters": len(slots), "slots": slots,
+                         "mode": "points" if points else "9cat",
                          "cats": list(by_id.values()), "points": points,
                          "scoring": "one_win" if s.scoring_type == "headone" else "categories"}}  # "head" = categories
     try:  # this week's opponent and both teams' totals so far. ponytail: unverified yfpy shapes, like the rest
@@ -227,7 +229,9 @@ def parse_text(text):
     seats = re.match(r"(\d+) teams", rules.get("Playoffs", ""))
     scoring = next((k for k, w in (("categories", "categor"), ("one_win", "one win")) if w in rules.get("Scoring type", "").lower()), None)
     po = re.match(r"[^(]*?Weeks? ([\d, and]+)", rules.get("Playoffs", ""))  # "8 teams, Weeks 21, 22 and 23 (Mon Mar 22 ..."
+    pos = [x.strip() for x in rules.get("Roster slots", "").split("(")[0].split(",") if x.strip()]  # starting slots
     out["settings"] = {**({"roster": int(slots[1]) + int(slots[2]), "starters": int(slots[1]),
+                           **({"slots": pos} if len(pos) == int(slots[1]) else {}),
                            **({"il": int(slots[3])} if slots[3] else {})} if slots else {}),
                        **({"scoring": scoring} if scoring else {}), **({"max_adds": int(adds[0])} if adds else {}),
                        **({"playoff_teams": int(seats[1])} if seats else {}),

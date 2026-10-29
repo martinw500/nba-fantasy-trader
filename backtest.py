@@ -204,7 +204,8 @@ def mondays():
     player's team, the regulars, who was out (sat his team's last game, until his next one: exact return dates, which
     ESPN's feed only estimates) and next week's box scores."""
     g, base = logs(SEASON), model.baseline(model.fetch(PREV), model.fetch(PREV2))
-    pre, T = model.prior(base, experts(g, base)), "TEAM_ABBREVIATION"
+    ex, T = experts(g, base), "TEAM_ABBREVIATION"
+    pre = model.prior(base, ex)
     first = g.sort_values("GAME_DATE").groupby("key")[T].first()
     for w in range(1, int(g.week.max()) + 1):
         past, nxt = g[g.week < w], g[g.week == w]
@@ -212,24 +213,27 @@ def mondays():
         line = model.ros(pre, cur)
         team = past.sort_values("GAME_DATE").groupby("key")[T].last().combine_first(first)
         regs, out = line.index[line.MIN >= model.REGULAR], sat(g, line, team, w)
-        yield {"pre": pre, "past": past, "cur": cur, "line": line, "team": team, "regs": regs, "out": out, "nxt": nxt}
+        yield {"pre": pre, "past": past, "cur": cur, "line": line, "team": team, "regs": regs, "out": out, "nxt": nxt,
+               "expert": ex.index}
 
 
 def lifted(m, deboost=True):
     """Week m's per-game lines with teammates' injuries (League does the same): this season net of the lifts players
-    had (model.had()), plus each out regular's lift over a player's games before his return."""
-    lift = model.lifts(m["line"][m["line"].index.isin(m["cur"].index) | m["line"].index.isin(m["regs"])], m["team"],
-                       m["regs"])
+    had (model.had()), plus each team's out regulars' lifts (model.lifts(), everyone out at once sitting together, in
+    stretches between their returns: model.stretches(); less what the preseason projection counts: model.priced_in())
+    over a player's games in each stretch."""
+    pool = m["line"][m["line"].index.isin(m["cur"].index) | m["line"].index.isin(m["regs"])]
     line = m["line"]
     if deboost:
-        h = model.had(m["past"], m["team"], lift).reindex(m["cur"].index).dropna()
+        h = model.had(m["past"], m["team"], pool, m["regs"]).reindex(m["cur"].index).dropna()
         full = m["cur"].copy()
         full.loc[h.index, h.columns] = (full.loc[h.index, h.columns] - h).clip(lower=0)
         line = model.ros(m["pre"], full)
-    lift = lift[lift.index.get_level_values("by").isin(list(m["out"]))]
+    spans = model.stretches(m["out"], m["team"], m["nxt"].GAME_DATE.min())
+    lift = model.priced_in(model.lifts(pool, m["team"], [s for _, _, s in spans]), m["cur"].index, m["cur"].GP, m["expert"])
     games = m["nxt"][["key", "GAME_DATE"]].merge(lift.index.to_frame(index=False), on="key")
-    games["on"] = games.GAME_DATE < games.by.map(m["out"])
-    share = games.groupby(["key", "by"]).on.mean()
+    games["on"] = [spans[s][0] <= d < spans[s][1] for s, d in zip(games["set"], games.GAME_DATE)]
+    share = games.groupby(["key", "by", "set"]).on.mean()
     boost = lift.loc[share.index].mul(share, axis=0).groupby(level="key").sum()
     return line, boost[boost.MIN > 0]
 
@@ -271,39 +275,46 @@ def teammates(grid=((0.37, 0.25),)):
 
 
 def mondays_played(season):
-    """Each Monday from week 1 to 4 weeks from the end, the 200 best players on that Monday's line who played their
-    team's last game (one who sat it out is ESPN's to call): games in his better past season (best) and each one, games
-    so far (played, of `games`: the most anyone has played, as League does) and the share of his team's games left he
-    played (y)."""
-    prev, prev2 = (f"{int(season[:4]) - n}-{int(season[2:4]) - n + 1:02d}" for n in (1, 2))
+    """Each Monday from week 1 to 4 weeks from the end, the 200 best players on that Monday's line: games in his better
+    past season (best, of 82) and each of the last three, games so far (played, of `games`: the most anyone has played,
+    as League does), how many of his team's games in a row he's sat (out: 0 if he played the last one) and the share of
+    his team's games left (y) and this week's (wk) he played."""
+    prev, prev2, prev3 = (f"{int(season[:4]) - n}-{int(season[2:4]) - n + 1:02d}" for n in (1, 2, 3))
     g, last, older, T = logs(season), model.fetch(prev), model.fetch(prev2), "TEAM_ABBREVIATION"
     base, first, rows = model.baseline(last, older), g.sort_values("GAME_DATE").groupby("key")[T].first(), []
+    third = model.fetch(prev3).GP
     for w in range(1, int(g.week.max()) - 3):
-        past, fut = g[g.week < w], g[g.week >= w]
+        past, fut, nxt = g[g.week < w], g[g.week >= w], g[g.week == w]
         cur = per_game(past)
         team = past.sort_values("GAME_DATE").groupby("key")[T].last().combine_first(first)
         pool = model.zscores(model.ros(base, cur).dropna(subset=["MIN"]), TEAMS * ROSTER).sum(axis=1).nlargest(200)
-        end, seen = past.groupby(T).GAME_DATE.max(), set(zip(past.key, past.GAME_DATE))
-        on = [k for k in pool.index if team.get(k) in end and (k, end[team[k]]) in seen]
-        left = team[on].map(fut.groupby(T).GAME_ID.nunique())
+        days, seen = past.groupby(T).GAME_DATE.unique(), past.groupby("key").GAME_DATE.max()
+        on = [k for k in pool.index if team.get(k) in days]
+        share = lambda games: (games.groupby("key").GAME_ID.count().reindex(on).fillna(0)
+                               / team[on].map(games.groupby(T).GAME_ID.nunique())).clip(upper=1)
         rows.append(pd.DataFrame({"season": season, "week": w, "best": base.GP.reindex(on), "last": last.GP.reindex(on),
-                                  "older": older.GP.reindex(on), "played": cur.GP.reindex(on), "games": cur.GP.max(),
-                                  "left": left, "y": (fut.groupby("key").GAME_ID.count().reindex(on).fillna(0) / left)
-                                  .clip(upper=1)}))
+                                  "older": older.GP.reindex(on), "third": third.reindex(on),
+                                  "played": cur.GP.reindex(on).fillna(0), "games": cur.GP.max(),
+                                  "out": [(days[team[k]] > seen.get(k, pd.Timestamp.min)).sum() for k in on],
+                                  "left": team[on].map(fut.groupby(T).GAME_ID.nunique()), "y": share(fut),
+                                  "wk": share(nxt).fillna(0), "wk_n": team[on].map(nxt.groupby(T).GAME_ID.nunique())}))
     return pd.concat(rows)
 
 
-def availability(seasons=("2024-25", "2025-26")):
+def availability(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
     """Each Monday's availability guess (model.availability() over a grid of its knobs, and the rule before N9) vs the
-    share of games left that players who were playing then suited up for (mondays_played()): squared error weighted by
-    games left, and bias (guess - actual), pooled, per season, on the first 6 weeks and for players who lost one of the
-    two past seasons (under 30 games, 60+ in the other), repeat absentees (under 60 in both), sophomores and rookies.
-    Fitted AVAIL_PAST, AVAIL_K and AVAIL_T on 2024-25 and 2025-26 (Oct 28)."""
+    share of games left that players who played their team's last game suited up for (mondays_played()): squared error
+    weighted by games left, and bias (guess - actual), pooled, per season, on the first 6 weeks and for players who lost
+    one of the two past seasons (under 30 games, 60+ in the other), repeat absentees (under 60 in both), sophomores
+    (no games before last season) and rookies. Fitted AVAIL_PAST, AVAIL_K and AVAIL_T on 2024-25 and 2025-26 (Oct 28);
+    refitting on all four seasons gains 1% and holds out worse on those two (M5). Then, for players who sat their
+    team's last game (no return date known: STATUS_AVAIL's case), games played over the guess by how many they'd sat."""
     d = pd.concat(map(mondays_played, seasons), ignore_index=True)
+    sat, d = d[d.out > 0].copy(), d[d.out == 0]
     lo, hi = d[["last", "older"]].fillna(0).min(axis=1), d[["last", "older"]].fillna(0).max(axis=1)
     subs = {"all": d.week > 0, **{s: d.season == s for s in seasons}, "weeks 1-6": d.week <= 6,
             "lost one": (lo < 30) & (hi >= 60) & d.older.notna(), "repeat": (hi < 60) & d.older.notna(),
-            "sophomore": d.older.isna() & d["last"].notna(), "rookie": d.best.isna()}
+            "sophomore": d.older.isna() & d["last"].notna() & d.third.isna(), "rookie": d.best.isna()}
     old = (d["last"].fillna(0) + 0.5 * d.older.fillna(0) + d.played + 0.85 * (123 + d.games) / 2) / (1.5 * (123 + d.games))
     old = old.where(d.best.notna(), 0.85)  # before N9: both seasons (the older at half) and this one, 1/3 toward 85%
 
@@ -323,10 +334,16 @@ def availability(seasons=("2024-25", "2025-26")):
     for name, x in [("before N9", old), (f"chosen {chosen}", guess(chosen))] + [
             (f"{k}", p[k]) for k in sorted(grid, key=lambda k: err(p[k], subs["all"]))[:5]]:
         print(f"{name:26}" + "".join(f"{e:.4f} {b:+.3f}".rjust(19) for e, b in (err(x, s) for s in subs.values())))
-    for a, b in itertools.permutations(seasons):
-        k = min(grid, key=lambda k: err(p[k], subs[a])[0])
-        print(f"best on {a} {k}: {b} {err(p[k], subs[b])[0]:.4f} (before N9 {err(old, subs[b])[0]:.4f})")
+    for s in seasons:
+        k = min(grid, key=lambda k: err(p[k], d.season != s)[0])
+        print(f"best without {s} {k}: {s} {err(p[k], subs[s])[0]:.4f} (chosen {err(guess(chosen), subs[s])[0]:.4f})")
     guess(chosen)
+    sat["p"] = model.availability(sat.best, sat.played, sat.games)
+    ratio = lambda x: pd.Series({"n": len(x), "rest of season": (x.y * x.left).sum() / (x.p * x.left).sum(),
+                                 "this week": (x.wk * x.wk_n).sum() / (x.p * x.wk_n).sum()})
+    print(f"\n== sat his team's last game: games played / availability(), by games in a row sat ==")
+    print(pd.concat([sat.groupby(pd.cut(sat.out, [0, 1, 2, 5, 10, 999], labels=["1", "2", "3-5", "6-10", "11+"]),
+                                 observed=True).apply(ratio).T, ratio(sat).rename("all")], axis=1).round(3).to_string())
 
 
 # 2026-27's season on 2025-26's NBA weeks: 20 matchups (weeks 7 and 17 run two NBA weeks, 6-7 and 16-17), then three

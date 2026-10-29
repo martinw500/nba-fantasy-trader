@@ -371,7 +371,7 @@ const S = {
   saved: { list: store.get("saved", []), evals: {}, loading: false },
   players: null,
   card: {},  // { name, t, data, error }: the open player card, under that name in the t-th player table of the view
-  move: { add: "", drop: "", result: null, busy: false },  // Waivers' add/drop evaluator (Q7); result is dropped on punt / team / refresh
+  move: { add: "", drop: "", day: "", result: null, busy: false },  // Waivers' add/drop evaluator (Q7); result is dropped on punt / team / refresh
   compare: { names: store.get("compare", []), line: "ros" },  // + data, busy, error; data is dropped on punt / team / refresh
   pool: null,  // every rostered player and free agent, for Compare's search
   offers: null,  // Trades' Offers sent (data/offers.json), loaded on first view
@@ -790,13 +790,13 @@ function calendarPanel(d) {
   const x = all.find(x => x.date === T.day);
   const detail = !x ? "" : !x.nba ? `<b>${dayName(x.date)}</b>: no NBA games.`
     : `<b>${dayName(x.date)}</b>: ${x.players.length + x.sit.length} of your players have a game (${x.nba} NBA teams play). ${x.players.length ? `Starting: ${and(x.players.map(esc))}.` : ""}
-      ${x.sit.length ? ` <span class="neg">Sitting: ${and(x.sit.map(esc))}</span>, your lowest-valued players with a game${S.punt.length ? " on your build" : ""}. A stream adds nothing today.` : ""}
-      ${x.open ? ` <span class="pos">${plural(x.open, "starting spot")} open</span>: a free agent who plays today would start${A && !A.left && d.weeks[0].days.includes(x) ? `, but you have no adds left this week` : ""}.` : ""}`;
+      ${x.sit.length ? ` <span class="neg">Sitting: ${and(x.sit.map(esc))}</span>, ${x.open ? "no open spot fits their positions" : `your lowest-valued players with a game${S.punt.length ? " on your build" : ""}. A stream adds nothing today`}.` : ""}
+      ${x.open ? ` <span class="pos">${plural(x.open, "starting spot")} open</span>: ${x.fill && x.fill.length < 5 ? `a ${x.fill.join(" or ")}` : "a free agent"} who plays today would start${A && !A.left && d.weeks[0].days.includes(x) ? `, but you have no adds left this week` : ""}.` : ""}`;
   return `<div class="panel"><div class="panel-h"><div><h2>Games per day</h2><p>How many of your active players have a game each day. Only ${L} start: red days have more (the rest sit), green days have open spots a streamer would fill. Pick a day to see who starts.</p></div></div>
     <div class="tw"><table class="cal"><thead><tr><th>Week</th>${WD.map(w => `<th class="d">${w}</th>`).join("")}
-      <th class="n" title="Games your players start (best ${L} with a game each day)">Starts</th><th class="n" title="Games lost because ${L} better players have a game that day">Sit</th><th class="n" title="Empty starting spots on days the NBA plays: room to stream">Open</th></tr></thead>
+      <th class="n" title="Games your players start (best ${L} with a game each day)">Starts</th><th class="n" title="Games lost because ${L} better players have a game that day${d.slots.length ? ", or no open slot fits his position" : ""}">Sit</th><th class="n" title="Empty starting spots on days the NBA plays: room to stream">Open</th></tr></thead>
     <tbody>${rows}</tbody></table></div>
-    <div class="panel-b small" style="border-top:1px solid var(--line)">${detail} <span class="muted">Counts use today's roster and assume everyone with a game plays, except injured players with a return date (they count from it). Positions are ignored.</span></div></div>`;
+    <div class="panel-b small" style="border-top:1px solid var(--line)">${detail} <span class="muted">Counts use today's roster and assume everyone with a game plays, except injured players with a return date (they count from it). ${d.slots.length ? `Starters fill your ${d.slots.join(", ")} slots by position.` : "Positions are ignored."}</span></div></div>`;
 }
 function teamsPanel(d) {
   const T = S.plan, key = T.open ? "open" : "weeks", s = T.sort || { k: "total", dir: -1 }, n = d.teams.length || 1;
@@ -947,6 +947,7 @@ function tradeResultOdds(r) {
         <div><dt title="${MKT_TIP}">Market</dt><dd><span class="${mktTone(r.market.diff_pct)}">${cap(r.market.verdict)}</span> <span class="muted small">give ${Math.round(r.market.give)} · get ${Math.round(r.market.get)}</span></dd></div>
         <div><dt>Projected finish</dt><dd>${ord(r.rank)} → ${ord(r.rank_after)}</dd></div>
         ${r.playoffs ? `<div><dt title="Chance to make the playoffs: your record so far plus the rest of the season simulated, both rosters updated">Playoff odds</dt><dd><span class="${tone(r.playoffs.you[1] - r.playoffs.you[0])}">${delta(r.playoffs.you[1] - r.playoffs.you[0], "win%")}</span> <span class="muted small">${r.playoffs.you.map(v => chance(v / 100)).join(" → ")} · them ${r.playoffs.them.map(v => chance(v / 100)).join(" → ")}</span></dd></div>` : ""}
+        ${r.title ? `<div><dt title="Chance to win the league: the same simulation through the playoff bracket">Title odds</dt><dd><span class="${tone(r.title.you[1] - r.title.you[0])}">${delta(r.title.you[1] - r.title.you[0], "win%")}</span> <span class="muted small">${r.title.you.map(v => chance(v / 100)).join(" → ")} · them ${r.title.them.map(v => chance(v / 100)).join(" → ")}</span></dd></div>` : ""}
         <div><dt title="Mostly the market, a little how it really helps them">Will they say yes</dt><dd>${acceptPill(r.accept)}</dd></div></dl></div>
       <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="copy-offer" title="Copies the offer and a short pitch to paste into Yahoo's trade note, and logs it under Offers sent">Copy offer</button><button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div></div>
     ${base}${cats}
@@ -972,7 +973,7 @@ function tradeResultOdds(r) {
     </div>`;
 }
 // ---------- trade finder (9-cat: search() with the checked players as pins; points: today's ideas()) ----------
-const TIER = { easy: "They win on market value and you still gain", fair: "Market value within 15%, or within 30% when both teams gain", finesse: "Even on market value or in their favour, but the fit is strongly yours", hard: "You win on market value. Needs a good pitch" };
+const TIER = { easy: "They win on market value and you still gain", fair: "Market value within 15% either way: an offer that looks even", finesse: "Even on market value or in their favour, but the fit is strongly yours", hard: "You win on market value, so it needs a good pitch. Also lets you send up to 30% less when the deal helps their team too. Deals rated Maybe come before long shots" };
 const TIER_PTS = { fair: "Both teams gain", finesse: "They look like the winner on hot starts, but you gain more" };
 const ACC_RANK = { "Likely yes": 2, "Maybe": 1, "Long shot": 0 };
 const SKEL = `<div class="skel"></div><div class="skel"></div><div class="skel"></div>`;
@@ -1061,6 +1062,7 @@ function savedPanel() {
       ${isPoints() ? row("Looks to them", r => `<span class="${tone(r.their_view)}">${sign(r.their_view)}</span>`) : row("Market", r => mktDeal(r.market))}
       ${row("Projected finish", r => r.rank ? `${ord(r.rank)} → ${ord(r.rank_after)}` : "—")}
       ${row("Playoff odds", r => r.playoffs ? r.playoffs.you.map(v => chance(v / 100)).join(" → ") : "—")}
+      ${row("Title odds", r => r.title ? r.title.you.map(v => chance(v / 100)).join(" → ") : "—")}
       ${row("Will they say yes", r => r.accept ? acceptPill(r.accept) : "—")}
       ${S.state.cats.map(c => row(lab(c), r => { const d = (r.unit === "win%" ? r.odds : r.cats)[c]; return `<span class="${tone(d)}">${delta(d, r.unit)}</span>`; }, punted(c) ? "punted-col" : "")).join("")}
       <tr><td></td>${L.map((s, i) => `<td><button class="btn ghost" data-act="load-saved" data-i="${i}">Load</button><button class="btn ghost" data-act="unsave" data-i="${i}">Remove</button></td>`).join("")}</tr>
@@ -1154,7 +1156,8 @@ async function improve(kind) {
   if (S.improve !== I) return;  // punt or settings changed meanwhile
   const seen = new Set([dealKey(I.base)]), s = x => x.score ?? x.net;
   const list = res.flatMap(r => r.value || []).filter(x => !seen.has(dealKey(x)) && seen.add(dealKey(x)));
-  list.sort((a, b) => tier === "fair" ? Math.min(s(b), b.their_net) - Math.min(s(a), a.their_net) : s(b) - s(a));
+  list.sort((a, b) => ["easy", "fair"].includes(tier) ? Math.min(s(b), b.their_net) - Math.min(s(a), a.their_net)
+    : ACC_RANK[b.accept] - ACC_RANK[a.accept] || s(b) - s(a));  // as model.search() ranks
   if (!list.length && res.some(r => r.reason)) toast(res.find(r => r.reason).reason.message);
   Object.assign(I, { list: list.slice(0, 30), busy: false }); render();
 }
@@ -1222,10 +1225,13 @@ function movePanel() {
   if (!S.pool) loadPool();
   const fas = (S.pool || []).filter(p => p.team === "FA");
   const mine = [...st.roster].sort((a, b) => a.value - b.value);  // weakest first: the usual drops
+  const days = [], [d0, d1] = st.matchup_days || [];  // this week's days left, for the day the move is made (Q11)
+  for (let d = d0 && new Date(d0 + "T00:00Z"); !isPoints() && st.adds?.left !== 0 && d && d.toISOString().slice(0, 10) <= d1; d.setUTCDate(d.getUTCDate() + 1)) days.push(d.toISOString().slice(0, 10));
   const form = `<div class="toolbar" style="padding:10px 16px;border-bottom:1px solid var(--line)">
       <label class="field">Add <input type="search" class="input" id="mv-add" list="mv-fas" value="${esc(M.add)}" placeholder="Any free agent" aria-label="Free agent to add" autocomplete="off" style="width:220px;max-width:100%"></label>
       <datalist id="mv-fas">${fas.map(p => `<option value="${esc(p.name)}">Free agent</option>`).join("")}</datalist>
-      <label class="field">Drop <select id="mv-drop" title="Pick for me: your open spot if you have one, else the healthy player you'd miss least">${opt("", "Pick for me", M.drop)}${mine.map(p => opt(p.name, p.name + (p.status ? ` (${p.status})` : ""), M.drop)).join("")}</select></label>
+      <label class="field">Drop <select id="mv-drop" title="Pick for me: your open spot if you have one, else the healthy player you'd miss least">${opt("", "Pick for me", M.drop)}${mine.map(p => opt(p.name, p.name + (p.il ? " · IL slot" : "") + (p.status ? ` (${p.status})` : ""), M.drop)).join("")}</select></label>
+      ${days.length ? `<label class="field">Make it on <select id="mv-day" title="This week's number counts the move from this day, and your drop plays his games until then. Best day: whichever helps this week most">${opt("", "Best day", M.day)}${days.map(d => opt(d, dayName(d), M.day)).join("")}</select></label>` : ""}
       <button class="btn primary" data-act="mv-eval" ${M.add && !M.busy ? "" : "disabled"}>${M.busy ? "Evaluating…" : "Evaluate move"}</button>
       ${M.add || M.drop ? `<button class="btn ghost" data-act="mv-clear">Clear</button>` : ""}</div>`;
   const desc = isPoints() ? "Pick any free agent and any of your players to see what the swap does to your fantasy points per game."
@@ -1242,7 +1248,7 @@ function moveResult(r) {
     add.parks && `He's injured, so he goes into a free IL slot and counts from his return.`,
     r.open && `This leaves ${plural(r.open, "active spot")} open. Filling ${r.open > 1 ? "them is more adds" : "it is another add"}: try that move too.`,
     wk?.claim && `He's on waivers: he counts from ${mdy(wk.claim)}, when the claim clears.`,
-    wk?.day && wk.day > (wk.claim || wk.today) && `This week it's best made on ${esc(dayName(wk.day))}${wk.games?.kept ? `: ${and(gone.map(x => esc(x.name)))} ${gone.length > 1 ? "start" : "starts"} ${plural(wk.games.kept, "more game")} first` : ", his first game"}.`,
+    wk?.day && wk.day > (wk.claim || wk.today) && `This week it's ${S.move.day ? "made" : "best made"} on ${esc(dayName(wk.day))}${wk.games?.kept ? `: ${and(gone.map(x => esc(x.name)))} ${gone.length > 1 ? "start" : "starts"} ${plural(wk.games.kept, "more game")} first` : ", his first game"}.`,
     r.capped && `You've used all ${r.adds.max} adds this week, so the move waits until ${esc(dayName(r.adds.resets))}: the season number still counts, this week's doesn't.`,
     r.adds && !r.capped && (r.adds.left === 1 ? `It's your last add this week.` : `It uses 1 of your ${r.adds.left} adds left this week.`),
     wk && wk.net >= 0.1 && r.net < 0 && `It helps this week but costs you over the season: a stream. Drop him again once his games are used.`,
@@ -1273,10 +1279,10 @@ async function evalMove() {
   const M = S.move; if (!M.add) return;
   M.busy = true; render();
   try {  // short or misspelt names (a deep link) come back as the players' real names
-    const r = await api("/api/move", { add: M.add, drop: M.drop || null });
+    const r = await api("/api/move", { add: M.add, drop: M.drop || null, day: M.day || null });
     if (S.move === M) {
       Object.assign(M, { result: r, add: r.add.name, drop: r.drop.find(x => !x.auto)?.name || "" });
-      if (S.view === "waivers") history.replaceState(null, "", "#waivers?add=" + encodeURIComponent(M.add) + (M.drop ? "&drop=" + encodeURIComponent(M.drop) : ""));
+      if (S.view === "waivers") history.replaceState(null, "", "#waivers?add=" + encodeURIComponent(M.add) + (M.drop ? "&drop=" + encodeURIComponent(M.drop) : "") + (M.day ? "&day=" + M.day : ""));
     }
   } catch (err) { toast(err.message); }
   M.busy = false;
@@ -1465,7 +1471,7 @@ function renderShell() {
   if (!st) return;
   $("#league").innerHTML = `<b>${esc(st.league)}</b><span>${st.mode === "points" ? "Points" : st.cats.length + "-cat"} · ${st.teams.length} teams${st.demo ? " · demo data" : ""} ·
     <select id="me-team" class="me" aria-label="Your team" title="Which team is yours">${st.teams.map(t => opt(t, t, st.me)).join("")}</select></span>`;
-  $("#fetched").innerHTML = esc(st.pulled ? "Snapshot pulled " + when(st.pulled) : st.fetched ? "Rosters as of " + st.fetched : "") +
+  $("#fetched").innerHTML = (st.pulled ? `<span title="${esc(when(st.pulled))}">Snapshot pulled ${esc(ago(st.pulled))}</span>` : esc(st.fetched ? "Rosters as of " + st.fetched : "")) +
     (st.sources?.length ? `<div class="fresh">${st.sources.map(x => { const f = freshness(x);
       return `<span title="${esc(freshTitle(x))}">${esc(x.label)}</span><span class="${f === "ok" ? "" : "warn"}" title="${esc(freshTitle(x))}">${f === "missing" ? "none" : f === "failed" ? "old copy, " + howOld(x.fetched) : ago(x.fetched)}</span>`; }).join("")}</div>` : "");
   $("#punts").innerHTML = st.mode === "points" ? "" : `<span>Punt</span>${st.cats.map(c => `<button class="chip" data-punt="${c}" aria-pressed="${punted(c)}" title="${punted(c) ? "Stop punting" : "Punt"} ${lab(c)}">${lab(c)}</button>`).join("")}`;
@@ -1547,7 +1553,7 @@ document.addEventListener("click", async e => {
   if (act === "sched-open") { S.plan.open = t.dataset.open === "1"; return render(); }
   if (act === "find") return find();
   if (act === "mv-eval") return evalMove();
-  if (act === "mv-clear") { S.move = { add: "", drop: "", result: null, busy: false }; history.replaceState(null, "", "#waivers"); return render(); }
+  if (act === "mv-clear") { S.move = { add: "", drop: "", day: "", result: null, busy: false }; history.replaceState(null, "", "#waivers"); return render(); }
   if (act === "mv-try") {
     const M = S.move;
     if ("add" in t.dataset) M.add = t.dataset.add;
@@ -1586,6 +1592,7 @@ document.addEventListener("change", async e => {
   if (t.id === "cmp-player") return pickCompare(t.value);
   if (t.id === "mv-add") return pickMove(t.value);
   if (t.id === "mv-drop") { Object.assign(S.move, { drop: t.value, result: null }); return render(); }
+  if (t.id === "mv-day") { Object.assign(S.move, { day: t.value, result: null }); return render(); }
   if (t.id === "top-player") return pickGlobal(t.value);
   if (t.id === "week-opp") { S.week = {}; loadWeek(t.value); return render(); }
   if (t.id.startsWith("gm-")) { S.gmSet[t.id.slice(3)] = t.type === "checkbox" ? t.checked : t.value; store.set("gmSet", S.gmSet); return render(); }
@@ -1595,7 +1602,7 @@ document.addEventListener("change", async e => {
       S.state = await api("/api/me", { team: t.value });
       Object.assign(S.trade, { give: new Set(), get: new Set(), team: null, roster: null, result: null });
       S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null; S.week = {}; S.sched = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names);
-      S.move = { add: "", drop: "", result: null, busy: false };
+      S.move = { add: "", drop: "", day: "", result: null, busy: false };
       toast(`You're ${t.value} now`);
     } catch (err) { toast(err.message); }
     return render();
@@ -1640,7 +1647,7 @@ $("#refresh").addEventListener("click", async e => {
 render();
 if (S.view === "compare" && link.has("players")) setCompare(link.get("players").split(",").filter(Boolean));
 loadState().then(() => {
-  if (S.state && S.view === "waivers" && link.has("add")) { Object.assign(S.move, { add: link.get("add"), drop: link.get("drop") || "" }); return evalMove(); }
+  if (S.state && S.view === "waivers" && link.has("add")) { Object.assign(S.move, { add: link.get("add"), drop: link.get("drop") || "", day: link.get("day") || "" }); return evalMove(); }
   if (!S.state || S.view !== "trades" || !(link.has("give") || link.has("get"))) return;
   const names = k => (link.get(k) || "").split(",").filter(Boolean);
   Object.assign(S.trade, { give: new Set(names("give")), get: new Set(names("get")) });

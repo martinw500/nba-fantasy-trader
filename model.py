@@ -49,6 +49,7 @@ import pandas as pd
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
 OLDER, LAST, CUR = "2024-25", "2025-26", "2026-27"
+SHORT = {"2019-20": 70, "2020-21": 72}  # seasons under 82 games (COVID; 2019-20's teams played 64-75): fetch() scales GP
 CATS = ["FG%", "FT%", "FG3M", "PTS", "REB", "AST", "STL", "BLK", "TOV"]
 COUNTING = CATS[2:]
 RAW = ["FGM", "FGA", "FTM", "FTA"] + COUNTING
@@ -63,6 +64,8 @@ FORM_DAYS, FORM_GP = 14, 3  # recent form: value over the last 14 days, for play
 # a 14-day window's gap among 2025-26 regulars mid-season (2.9-3.2 on Dec 15 and Feb 15): a third of them get one
 TREND = 3.0
 OUT = {"O", "INJ", "IL", "IL+", "NA", "SUSP"}  # Yahoo statuses that mean "not playing now"
+POS = ["PG", "SG", "SF", "PF", "C"]
+SLOT_POS = {"G": {"PG", "SG"}, "F": {"SF", "PF"}, "Util": set(POS)}  # starting slots that take more than their own name
 
 # Matchup model. DISPERSION, SCHED_CV and PCT_NOISE are fitted to real weeks of 2025-26 box scores (backtest.py: 20
 # simulated leagues, predictions from what was known each Monday, injured regulars sitting until a rough return date as
@@ -76,7 +79,10 @@ WEAK = 0.35                                        # a "weak spot" / punt hint: 
                                                    # weeks (about the bottom 10% of team-categories once odds are calibrated)
 FILL = 0.5                                         # share of a sat-out player's games your bench/streamers cover
                                                    # (not in backtest.py: its rosters never change, so nobody fills in)
-STATUS_AVAIL = {"GTD": 0.9, "DTD": 0.9, "O": 0.7, "SUSP": 0.8, "INJ": 0.6, "IL": 0.5, "IL+": 0.4, "NA": 0.0}
+# A status tag with no ESPN return date, on a player who sat his team's last game: the share of availability() he
+# plays rest of season (python backtest.py availability, 2022-23 to 2025-26: 0.93 after sitting 1 game, 0.81 over all,
+# 0.71 after 11+). SUSP is a guess. A tagged player who played his team's last game isn't cut (_availability()).
+STATUS_AVAIL = {"GTD": 0.93, "DTD": 0.93, "O": 0.8, "SUSP": 0.8, "INJ": 0.7, "IL": 0.7, "IL+": 0.7, "NA": 0.0}
 # Availability (availability()): a game of his better past season counts AVAIL_PAST of one this season, pulled toward
 # AVAIL_T by AVAIL_K games. Fitted on 2024-25 and 2025-26 (python backtest.py availability: each Monday's guess vs the
 # share of games left that players who were playing then suited up for). Past games barely predict it (correlation
@@ -85,8 +91,10 @@ AVAIL_PAST, AVAIL_K, AVAIL_T = 0.2, 50, 0.7
 # Teammates' injuries (lifts()), fitted on 2025-26 box scores (python backtest.py teammates): while a regular (REGULAR+
 # minutes) sits, SHARE of his minutes go to teammates playing 10+, split by their room under ROOM minutes x
 # e^(ROLE x role similarity) and played at their own rates; USAGE of the USAGE_STATS those minutes don't replace go to
-# the same players by their output. The rest goes to the end of the bench.
-REGULAR, SHARE, ROOM, ROLE, USAGE = 25, 0.37, 36, 0.5, 0.25
+# the same players by their output. The rest goes to the end of the bench. SHARE was 0.37 (the in-sample fit, each
+# sitter alone) until M4 (Oct 28): with everyone out at once spread together and the preseason projection's part taken
+# out (priced_in()), next week's stats are best at 0.5 in 2025-26 and out of sample in 2024-25, minutes better still
+REGULAR, SHARE, ROOM, ROLE, USAGE = 25, 0.5, 36, 0.5, 0.25
 USAGE_STATS = ["FGM", "FGA", "FTM", "FTA", "PTS", "AST", "TOV"]  # rebounds, steals, blocks and threes barely move
 
 # Playoff odds (season_sim()): how far a team's real weeks land from its projected odds, as logit shifts on every
@@ -109,12 +117,16 @@ MARKET = 0.97
 CHASE = 20
 EVEN = 5  # market gap (%) that still reads as "even"
 # Trade search difficulty: (min gain for you, min gain for them, both win %; market gap range, % you gain on market).
-# easy: they win on market and you still gain. fair: market within 15% (or FAIR_FIT, below). finesse: market even or
-# in their favour, but the fit is strongly yours. hard: you win on market, needs a pitch. No tier overpays over 30%.
+# easy: they win on market and you still gain. fair: market within 15%, an offer that looks even. finesse: market even
+# or in their favour, but the fit is strongly yours. hard: you win on market, needs a pitch (or FAIR_FIT, below).
+# No tier overpays over 30%.
 # ponytail: starting guesses like the knobs above; tune once real offers get accepted or turned down.
 TIERS = {"easy": (0.5, -1, -30, -EVEN), "fair": (1, -np.inf, -15, 15), "finesse": (1.5, -2.5, -30, EVEN),
          "hard": (3, -6, EVEN, np.inf)}
-FAIR_FIT = 30  # fair's second route: both teams gain in real odds and the market is within this (Martin, Oct 26)
+# hard's second route: you win on market by up to this and both teams gain in real odds, so the fit is the pitch ("you
+# may send slightly lesser players, as long as the fit helps them", Martin, Oct 26). It was part of fair (both ways)
+# until Oct 28, when fair's 15-29% gaps read as unfair (Martin: "some of them don't seem really fair")
+FAIR_FIT = 30
 VERDICT, MOVE, GUARD = 0.5, 0.5, 1  # trade accept/decline beyond +-; waiver move worth listing; most a cats/team goal
                                     # search may cost you
 # The win-% cutoffs above (and accept()'s) are in One Win terms. A categories league's win % moves about 2.5x less
@@ -124,12 +136,19 @@ CAT_SCALE = 0.4
 PAIRS = [("FT%", "TOV"), ("FG%", "TOV"), ("FG%", "FT%"), ("AST", "TOV"), ("FG3M", "FT%"), ("FG%", "FG3M")]
 
 
+ACCEPT = ["Long shot", "Maybe", "Likely yes"]
+
+
+def accept_level(mkt, their_net, s=1.0):
+    """How likely the other manager says yes, as an index into ACCEPT: mostly on market value (priced()'s diff_pct), a
+    little on real fit. Within 15% on the market, or a lowball up to FAIR_FIT that helps them, is at least a Maybe.
+    Works on arrays (search() ranks with it)."""
+    likely = (mkt <= -EVEN) & (their_net > -s)
+    return np.where(likely, 2, np.where((mkt <= TIERS["fair"][3]) | ((their_net > 0) & (mkt <= FAIR_FIT)), 1, 0))
+
+
 def accept(mkt, their_net, s=1.0):
-    """How likely the other manager says yes: mostly on market value (priced()'s diff_pct), a little on real fit.
-    Anything fair-priced (TIERS, FAIR_FIT) is at least a Maybe."""
-    if mkt <= -EVEN and their_net > -s:
-        return "Likely yes"
-    return "Maybe" if mkt <= TIERS["fair"][3] or (their_net > 0 and mkt <= FAIR_FIT) else "Long shot"
+    return ACCEPT[int(accept_level(mkt, their_net, s))]
 
 
 def priced(give, get):
@@ -168,8 +187,8 @@ FAILED = {}  # cache file name -> why its last refresh failed in this process; a
 
 
 def fetch(season, max_age_hours=None):
-    """Per-game stats from stats.nba.com, cached in data/. The current season refreshes when the cache is stale;
-    offline, the old copy (logged in FAILED for freshness()). No copy at all and no network raises."""
+    """Per-game stats from stats.nba.com, cached in data/, GP out of 82 games (SHORT). The current season refreshes when
+    the cache is stale; offline, the old copy (logged in FAILED for freshness()). No copy at all and no network raises."""
     cache = DATA / f"stats_{season}.csv"
     stale = max_age_hours and cache.exists() and time.time() - cache.stat().st_mtime > max_age_hours * 3600
     if not cache.exists() or stale:
@@ -185,7 +204,8 @@ def fetch(season, max_age_hours=None):
             if not cache.exists():
                 raise
             print(f"Couldn't refresh {cache.name} ({e}); using the old copy.", file=sys.stderr)
-    return keyed(pd.read_csv(cache))
+    df = keyed(pd.read_csv(cache))
+    return df.assign(GP=df.GP * 82 / SHORT[season]) if season in SHORT else df
 
 
 TRICODE = {"GS": "GSW", "NY": "NYK", "SA": "SAS", "NO": "NOP", "PHO": "PHX", "WSH": "WAS", "UTAH": "UTA", "BRK": "BKN",
@@ -370,8 +390,9 @@ def keyed(df):
 def baseline(last, older):
     """Pre-season per-game line from the last two seasons: GP-weighted, a game two seasons ago counting OLDER_W of one
     last season, pulled toward a fringe-rotation line by REGRESS games (so a 5-game season doesn't count as gospel, and
-    a player who missed all of last season isn't treated as a rookie). GP = games in his better season, for
-    availability(). Backtested on 2025-26 (backtest.py): slightly better weekly odds than last season alone."""
+    a player who missed all of last season isn't treated as a rookie). GP = games in his better season (of 82: fetch()
+    scales SHORT seasons), for availability(). Backtested on 2025-26 (backtest.py): slightly better weekly odds than
+    last season alone."""
     cols = ["MIN"] + RAW
     keys = last.index.union(older.index)
     fringe = last.nlargest(200, "MIN").tail(60)[cols].mean().to_numpy()
@@ -445,54 +466,104 @@ def ros(base, cur, k=SHRINK, k_min=MIN_SHRINK):
     return out
 
 
-def lifts(line, team, keys):
-    """Per-game change to teammates' lines (MIN + RAW) while each regular in `keys` sits, as if he sat alone (the
-    knobs above). line: per-game lines of everyone who can take his minutes (this season's players) and of `keys`;
-    team: {player: NBA team}. Role similarity: cosine of per-minute AST, REB, BLK and 3PM, standardized over the
-    rotation. Rows (player, by)."""
+def lifts(line, team, sets):
+    """Per-game change to teammates' lines (MIN + RAW) while each set of players sits together (one set per stretch of
+    days or per game; players out in a set can't take minutes). A team's regulars in a set (REGULAR+ minutes) hand
+    SHARE of their minutes, most minutes first, to its rotation (10+) minus everyone in the set, by room under ROOM
+    (less what the set's earlier sitters already gave) x e^(ROLE x role similarity: cosine of per-minute AST, REB,
+    BLK and 3PM, standardized over the rotation), nobody past ROOM (what nobody has room for goes to the end of the
+    bench). They play them at their own rates, and take USAGE of the shots,
+    points, assists and turnovers those minutes don't replace, by output. line: per-game lines of everyone who can
+    take minutes (this season's players) and of the regulars; team: {player: NBA team}. Rows (player, by, set: its
+    position in `sets`)."""
     cols = ["MIN"] + RAW
     rot = line.loc[line.MIN >= 10, cols].astype(float)
     pm = rot[["AST", "REB", "BLK", "FG3M"]].div(rot.MIN, axis=0)
     prof = ((pm - pm.mean()) / pm.std()).to_numpy()
     at, tm = {k: i for i, k in enumerate(rot.index)}, pd.Series(team).reindex(rot.index).to_numpy()
-    out = []
-    for j in keys:
-        if j not in at or rot.at[j, "MIN"] < REGULAR:
-            continue
-        mates = (tm == team.get(j)) & (rot.index != j)
-        if not mates.any():
-            continue
-        b, p, q = rot[mates], prof[mates], prof[at[j]]
-        sim = p @ q / np.sqrt((p * p).sum(1) * (q @ q) + 1e-9)
-        w = np.clip(ROOM - b.MIN.to_numpy(), 0, None) * np.exp(ROLE * sim)
-        if w.sum() <= 0:
-            continue
-        mins = SHARE * rot.at[j, "MIN"] * w / w.sum()
-        rate = b[RAW].div(b.MIN, axis=0)
-        d = rate.mul(mins, axis=0)  # his minutes at their own rates
-        used = rate[USAGE_STATS].mul(b.MIN + mins, axis=0)  # and what those don't replace, by output
-        d[USAGE_STATS] += USAGE * used / used.sum().clip(lower=1e-9) * (rot.loc[j, USAGE_STATS] - d[USAGE_STATS].sum())
-        out.append(d.assign(MIN=mins, by=j))
+    mins_all, rate_all = rot.MIN.to_numpy(), rot[RAW].div(rot.MIN, axis=0).to_numpy()
+    use = [RAW.index(c) for c in USAGE_STATS]
+    done, out = {}, []
+    for s, members in enumerate(sets):
+        for t in {team.get(j) for j in members}:
+            sit = frozenset(j for j in members if team.get(j) == t)
+            if (t, sit) not in done:  # the same players out on the same team: the same lifts (had()'s games repeat)
+                done[t, sit] = rows = []
+                mates = (tm == t) & ~rot.index.isin(list(sit))
+                given = np.zeros(mates.sum())
+                if not mates.any():
+                    continue
+                for j in sorted((j for j in sit if j in at and mins_all[at[j]] >= REGULAR), key=lambda j: (-mins_all[at[j]], j)):
+                    p, q = prof[mates], prof[at[j]]
+                    sim = p @ q / np.sqrt((p * p).sum(1) * (q @ q) + 1e-9)
+                    room = np.clip(ROOM - mins_all[mates] - given, 0, None)
+                    w = room * np.exp(ROLE * sim)
+                    m, todo, on = np.zeros(len(w)), SHARE * mins_all[at[j]], w > 0  # no room at all: usage only
+                    while todo > 1e-9 and on.any():  # split by weight; whoever reaches ROOM is full, the rest re-split
+                        x = todo * np.where(on, w, 0) / w[on].sum()
+                        full = on & (m + x > room)
+                        if not full.any():
+                            m += x
+                            break
+                        todo -= (room - m)[full].sum()
+                        m[full], on = room[full], on & ~full
+                    given += m
+                    rate = rate_all[mates]
+                    d = rate * m[:, None]  # his minutes at their own rates
+                    used = rate[:, use] * (mins_all[mates] + given)[:, None]  # and what those don't replace, by output
+                    left = rot.loc[j, USAGE_STATS].to_numpy() - d[:, use].sum(0)
+                    d[:, use] += USAGE * used / used.sum(0).clip(min=1e-9) * left
+                    rows.append(pd.DataFrame(np.column_stack([m, d]), index=rot.index[mates], columns=cols).assign(by=j))
+            out += [r.assign(set=s) for r in done[t, sit]]
     if not out:
-        return pd.DataFrame(columns=cols, index=pd.MultiIndex.from_tuples([], names=["key", "by"]), dtype=float)
-    return pd.concat(out).set_index("by", append=True).rename_axis(["key", "by"])[cols]
+        return pd.DataFrame(columns=cols, index=pd.MultiIndex.from_tuples([], names=["key", "by", "set"]), dtype=float)
+    return pd.concat(out).set_index(["by", "set"], append=True).rename_axis(["key", "by", "set"])[cols]
 
 
-def had(logs, team, lift):
-    """The lift (lifts()) each player had per game in these box scores: every game a teammate in `lift` sat out (one of
-    his team's games from his first for it, or all of them if he's yet to play) adds that teammate's lift, averaged
-    over the player's games. ros() reads this season net of it, as if everyone played."""
+def stretches(out, team, start):
+    """[(from, until, players out)]: each team's stretches between its injured players' returns. out: {player: the
+    day he plays again}; a stretch runs from its first day up to (not including) `until`, with everyone not back yet."""
+    spans = []
+    for t in {team.get(k) for k in out}:
+        mine = {k: r for k, r in out.items() if team.get(k) == t}
+        ends = sorted(set(mine.values()))
+        spans += [(a, b, frozenset(k for k, r in mine.items() if r > a)) for a, b in zip([start] + ends[:-1], ends)]
+    return spans
+
+
+def priced_in(lift, played, gp, expert):
+    """lifts() less what an expert projection already counts: a sitter out since before the season (no games in it)
+    was in the preseason line, which is PROJ_W of a player's prior, and the prior holds MIN_SHRINK / (GP + MIN_SHRINK)
+    of his minutes (ros()). played: players with games this season; gp: {player: games this season}; expert: players
+    with an expert line. Without it, teammates of preseason absentees ran 0.15-0.3 min a game over at SHARE 0.65-0.8
+    (2025-26), the rest under. ponytail: a projection updated after a mid-season injury isn't spotted (Yahoo's may be)."""
+    k, j = lift.index.get_level_values("key"), lift.index.get_level_values("by")
+    keep = 1 - PROJ_W * MIN_SHRINK / (pd.Series(gp).reindex(k).fillna(0).to_numpy() + MIN_SHRINK) * k.isin(list(expert))
+    return lift.mul(np.where(j.isin(list(played)), 1.0, keep), axis=0)
+
+
+def had(logs, team, line, regs):
+    """The lift (lifts()) each player had per game in these box scores: every game some of the regulars `regs` sat out
+    (one of their team's games from their first for it, or all of them if they're yet to play) adds what those players
+    out together handed him, averaged over the player's games. ros() reads this season net of it, as if everyone
+    played. line: as lifts()'."""
     T, cols = "TEAM_ABBREVIATION", ["MIN"] + RAW
     games, sat = logs.drop_duplicates([T, "GAME_ID"]), []
-    for j in lift.index.get_level_values("by").unique():
+    for j in regs:
         mine = logs[(logs.key == j) & (logs[T] == team.get(j))]
         tg = games[(games[T] == team.get(j)) & (games.GAME_DATE >= mine.GAME_DATE.min() if len(mine) else True)]
         sat.append(tg.loc[~tg.GAME_ID.isin(mine.GAME_ID), [T, "GAME_ID"]].assign(by=j))
-    if not sat:
+    sat = pd.concat(sat) if sat else pd.DataFrame(columns=[T, "GAME_ID", "by"])
+    if not len(sat):
         return pd.DataFrame(columns=cols, dtype=float)
-    n = logs[[T, "GAME_ID", "key"]].merge(pd.concat(sat), on=[T, "GAME_ID"]).groupby(["key", "by"]).size()
-    n = n[n.index.isin(lift.index)]  # games each player played while `by` sat
-    return lift.loc[n.index].mul(n, axis=0).groupby(level=0).sum().div(logs.key.value_counts(), axis=0).dropna()
+    out = sat.groupby([T, "GAME_ID"]).by.agg(frozenset).rename("sit").reset_index()
+    sets = list(out.sit.unique())
+    lift = lifts(line, team, sets).groupby(level=["key", "set"]).sum()  # each player's lift per set, all sitters
+    out["set"] = out.sit.map({s: i for i, s in enumerate(sets)})
+    pg = logs[[T, "GAME_ID", "key"]].merge(out[[T, "GAME_ID", "set"]], on=[T, "GAME_ID"])  # games played while some sat
+    pg = pg[pd.MultiIndex.from_frame(pg[["key", "set"]]).isin(lift.index)]
+    n = pg.groupby(["key", "set"]).size()
+    return lift.loc[n.index].mul(n, axis=0).groupby(level="key").sum().div(logs.key.value_counts(), axis=0).dropna()
 
 
 def zscores(df, pool_size, ref=None):
@@ -542,6 +613,29 @@ def cat_probs(A, B, cats, A0=None, B0=None, ties=False):
             tie.append(phi((diff + 0.5) / sd) - phi((diff - 0.5) / sd))
         out.append(phi(diff / np.sqrt(var + 1e-12)))  # no games left: a banked lead is a sure win
     return (np.stack(out, -1), np.stack(tie, -1)) if ties else np.stack(out, -1)
+
+
+def lineup(slots, pos):
+    """{slot index: player index} for the day's starters, given the starting slots (["PG", "G", "Util", ...]) and each
+    player's positions (sets, best player first; an empty set, position unknown, fits anywhere). Each player starts if
+    the ones kept so far can still be fitted around him (an augmenting path moves them between slots), which gives the
+    best lineup: the sets of players that fit together form a matroid, so greedy by value is optimal."""
+    held = {}
+
+    def place(j, seen):
+        for i, s in enumerate(slots):
+            if i not in seen and (not pos[j] or pos[j] & SLOT_POS.get(s, {s})):
+                seen.add(i)
+                if i not in held or place(held[i], seen):
+                    held[i] = j
+                    return True
+        return False
+
+    for j in range(len(pos)):
+        if len(held) == len(slots):
+            break
+        place(j, set())
+    return held
 
 
 def total(v, c):
@@ -615,7 +709,9 @@ class League:
     def __init__(self, snap, base=None, cur=None, sched=None, inj=None, today=None, logs=None, proj=None, news=None):
         s = snap["settings"]
         self.snap, self.teams_n, self.roster_n = snap, s.get("teams", 12), s.get("roster", 13)
-        self.lineup = s.get("starters", 10)  # players whose games count each day
+        self.slots = s.get("slots") or []  # starting slots by position (yahoo.py reads them); none = any players start
+        self.lineup = len(self.slots) or s.get("starters", 10)  # players whose games count each day
+        self._lineups = {}  # _lineup() cache: players with a game -> starters
         self.mode = s.get("mode", "9cat")
         self.scoring = s.get("scoring", "categories")  # Yahoo's H2H default; "one_win" = only the matchup counts
         self.s = 1.0 if self.scoring == "one_win" else CAT_SCALE  # scales the One Win cutoffs
@@ -664,18 +760,23 @@ class League:
             m = {"week_start": wk["start"], "week_end": wk["end"], **({"opponent": opp} if opp else {})} if wk else {}
         self.matchup = m
         self.week_end = m.get("week_end") or sunday
-        # teammates' injuries: every regular's lift (lifts()) read off this season's box scores (had()), so a teammate's
-        # minutes while he sat aren't counted as the new normal; the injured ones' lifts then go back on for the share
-        # of each teammate's games before the return (_boost): rest of season here, this week in p_week
+        # teammates' injuries: the lifts players had in this season's box scores while regulars sat (had()) come off,
+        # so a teammate's minutes while he sat aren't counted as the new normal. Then the injured go back on: each
+        # team's players out with a return date sit together in stretches between their returns (stretches()), each
+        # stretch's lifts (lifts()) counted over each teammate's games in it (_boost): rest of season here, this week
+        # in p_week
         regs = line.index[line.MIN >= REGULAR]
-        lift = lifts(line[line.index.isin(cur.index) | line.index.isin(regs)], self.nba, regs)
-        if logs is not None and len(lift):
-            h = had(logs, self.nba, lift).reindex(cur.index).dropna()
+        takers = line[line.index.isin(cur.index) | line.index.isin(regs)]  # who can take minutes, and the regulars
+        if logs is not None:
+            h = had(logs, self.nba, takers, regs).reindex(cur.index).dropna()
             full = cur.copy()
             full.loc[h.index, h.columns] = (full.loc[h.index, h.columns] - h).clip(lower=0)
             line = ros(pre, full)
-        back = {k for k, i in self.inj.items() if (i.get("return") or "") > self.today}
-        self.lift = lift[lift.index.get_level_values("by").isin(back)]
+        out = {k: i["return"] for k, i in self.inj.items() if (i.get("return") or "") > self.today}
+        spans = stretches(out, self.nba, self.today)
+        lift = priced_in(lifts(takers, self.nba, [s for _, _, s in spans]), cur.index[cur.GP > 0], cur.GP, self.proj.index)
+        self.lift = lift.set_axis(pd.MultiIndex.from_tuples([(k, j, *spans[s][:2]) for k, j, s in lift.index],
+                                                            names=["key", "by", "from", "until"]))
         ahead = self._boost("9999")
         line.loc[ahead.index, ahead.columns] += ahead
         self.p = line[cols].copy()
@@ -727,7 +828,7 @@ class League:
         for pl in players:
             k = self.find(pl["name"], strict=False)
             if k:
-                self.meta[k] = pl
+                self.meta[k] = dict(pl)  # a copy: ESPN's injury tags land here, never in the snapshot it came from
                 keys.append(k)
         return keys
 
@@ -742,9 +843,22 @@ class League:
         """{player: games he starts the rest of this week}. Yahoo only scores starters, so each day the best `lineup`
         players with a game count and bench games fill in on light days. start: {player: first day}, for claims and
         timed adds; until: {player: last day}, for a drop made later in the week (Q11).
-        ponytail: best = per-game value, position eligibility ignored; a lineup set by hand can count fewer."""
+        ponytail: best = per-game value, each in a slot his positions fit (_lineup); a lineup set by hand can count fewer."""
         day = self._days(keys, self.week_end, start or {}, until)
-        return collections.Counter(k for ks in day.values() for k in ks[:self.lineup])
+        return collections.Counter(k for ks in day.values() for k in self._lineup(ks))
+
+    def _pos(self, k):
+        return {x for x in self.meta.get(k, {}).get("pos", "").split(",") if x}
+
+    def _lineup(self, ks):
+        """A day's starters among ks (players with a game, best first): lineup() on the league's starting slots, else
+        the best `lineup`. Best first too."""
+        if not self.slots:
+            return ks[:self.lineup]
+        key = tuple(ks)
+        if key not in self._lineups:
+            self._lineups[key] = [ks[j] for j in sorted(lineup(self.slots, [self._pos(k) for k in ks]).values())]
+        return self._lineups[key]
 
     def _days(self, keys, end, start=None, until=None, by=None):
         """{date: players with a game that day, best first (per-game value, or the Series `by`: the planner's build)},
@@ -758,20 +872,26 @@ class League:
 
     def _boost(self, end):
         """Per-game lift each player gets from injured teammates (self.lift) over his games from today through `end`:
-        each one's lift times the share of those games before his return."""
+        each stretch's lift (who's out together then) times the share of those games in it."""
         share = []
-        for k, j in self.lift.index:
+        for k, j, a, b in self.lift.index:
             days = self.game_days(k, end)
-            share.append(sum(d < self.inj[j]["return"] for d in days) / max(len(days), 1))
+            share.append(sum(a <= d < b for d in days) / max(len(days), 1))
         return self.lift.mul(share, axis=0).groupby(level="key").sum()
 
     def _availability(self, base, cur):
         """Share of games a player suits up for: availability() (his better past season and this one), then cut by
         injury status. Returns (rate, rest-of-season, share of games left after his return). A known return date
-        replaces the status guess: rest of season he plays the share of remaining games after it."""
+        replaces the status guess: rest of season he plays the share of remaining games after it. Without one, a tag
+        cuts nothing if he played his team's last game (players who did play what availability() says).
+        ponytail: one cut for both horizons; This week runs high for an undated O who sat (0.47 of his rate this week,
+        0.8 rest of season, backtest.py availability). ESPN dates everyone it lists, so it's rare; split it if not."""
         a = availability(base.GP.reindex(self.p.index), cur.GP.reindex(self.p.index).fillna(0),
                          cur.GP.max() if len(cur) else 0)
         status = pd.Series({k: STATUS_AVAIL.get(m.get("status", ""), 1.0) for k, m in self.meta.items()}, dtype=float)
+        if self.logs is not None:
+            last, seen = self.logs.groupby("TEAM_ABBREVIATION").GAME_DATE.max(), set(zip(self.logs.key, self.logs.GAME_DATE))
+            status[[k for k in status.index if (k, last.get(self.nba.get(k))) in seen]] = 1.0
         share = pd.Series(1.0, index=a.index)
         for k, i in self.inj.items():
             rest = [d for d in self.sched.get(self.nba.get(k), ()) if d >= self.today]
@@ -844,8 +964,8 @@ class League:
         floor = -np.inf if max_overpay is None else -max_overpay
         gain = you > y * self.s
         ok = gain & (them > t * self.s) & (mkt >= max(lo, floor)) & (mkt <= hi)
-        if tier == "fair":  # or both teams gain and the gap is moderate: you may send slightly lesser players
-            ok = ok | (gain & (them > 0) & (mkt >= max(-FAIR_FIT, floor)) & (mkt <= FAIR_FIT))
+        if tier == "hard":  # or you win on market by up to FAIR_FIT and both teams gain: the fit is the pitch
+            ok = ok | ((you > TIERS["fair"][0] * self.s) & (them > 0) & (mkt >= EVEN) & (mkt <= FAIR_FIT))
         return ok
 
     def weakest(self, team, m, pv):
@@ -881,6 +1001,7 @@ class League:
                 **({"games": int(self.games_week[k])} if self.sched else {}),
                 **({"injury": self.inj[k]["note"], "return": self.inj[k]["return"]} if k in self.inj else {}),
                 **({"lift": self.lifted[k]} if k in self.lifted else {}),  # injured teammates whose minutes he takes
+                **({"il": True} if k in self.il.get(self.owner(k), ()) else {}),  # parked in an IL / IL+ / NA slot
                 **({"proj": self.proj.at[k, "src"]} if k in self.proj.index else {}),  # whose projection his line blends in
                 **{f: m[f] for f in ("owned", "waiver") if f in m},  # Yahoo roster % / on waivers until
                 "z": {c: round(float(self.z.at[k, c]), 2) for c in self.cats}}
@@ -897,14 +1018,15 @@ class League:
     @functools.cached_property
     def lifted(self):
         """{player: [each injured teammate whose minutes he takes (self.lift), back when, how many of the player's
-        games come before that (game_days(), so after his own return), and his per-game lift in them]}, for lifts of
-        half a minute or more in at least one game."""
+        games come before that (game_days(), so after his own return), and his per-game lift in them, averaged over the
+        stretches with whoever else is out]}, for lifts of half a minute or more in at least one game."""
         out = {}
-        for (k, j), d in self.lift.iterrows():
-            n = sum(x < self.inj[j]["return"] for x in self.game_days(k))
-            if d.MIN >= 0.5 and n:
+        for (k, j), rows in self.lift.groupby(level=["key", "by"]):
+            n = [sum(a <= x < b for x in self.game_days(k)) for _, _, a, b in rows.index]  # his games in each stretch
+            d = rows.mul(n, axis=0).sum() / max(sum(n), 1)  # the lift over all of them
+            if d.MIN >= 0.5 and sum(n):
                 out.setdefault(k, []).append({"by": self.p.at[j, "PLAYER_NAME"], "return": self.inj[j]["return"],
-                                              "games": n, **{c: round(float(d[c]), 1) for c in ["MIN"] + COUNTING}})
+                                              "games": sum(n), **{c: round(float(d[c]), 1) for c in ["MIN"] + COUNTING}})
         return out
 
     def weeks(self, n=3):
@@ -1135,14 +1257,16 @@ class League:
 
     def _after(self, team, out, inn, punt=()):
         """Roster after a trade, keeping its number of active players: injured players coming in take its free IL slots
-        (longest out first), extra active players mean dropping whoever costs the least win % (an injured one coming in
-        isn't dropped), open spots get the best free agents. Players parked in IL slots hold no active spot.
+        (longest out first), extra active players fill its open active spots (_room) and past those mean dropping
+        whoever costs the least win % (an injured one coming in isn't dropped), spots the trade opens get the best free
+        agents (one it already had stays open: filling it isn't the trade). Players parked in IL slots hold no active spot.
         -> (keys, dropped, added, parked)"""
         hurt = sorted((k for k in inn if self.meta.get(k, {}).get("status", "") in OUT), key=lambda k: (self.back[k], k))
         il = [k for k in self.il[team] if k not in out]
         il += hurt[:max(self.il_n - len(il), 0)]
         keys = [k for k in self.rosters[team] if k not in out] + list(inn)
         n = len(keys) - len(il) - len(self._playing(self.rosters[team]))
+        n = max(n - self._room(team), 0) if n > 0 else n
         dropped, added = [], []
         if n > 0:
             c = self._contrib(team, [k for k in keys if k not in il and k not in hurt], punt)
@@ -1152,6 +1276,10 @@ class League:
             added = self.best_fa(-n, skip=keys)
             keys += added
         return keys, dropped, added, il
+
+    def _room(self, team):
+        """Open active spots: how many players a team can take in a trade before it has to drop one."""
+        return max(self.roster_n - len(self._playing(self.rosters[team])), 0)
 
     # --- trades ------------------------------------------------------------
     def names(self, keys):
@@ -1213,11 +1341,11 @@ class League:
         sb, sa = self.standings(), self.standings(ov)
         net = 100 * (a["win"] - b["win"])
         pct1 = lambda x: round(100 * x, 1)
-        po = None  # playoff odds (Q5) before -> after, both sides: real odds, a punt concedes nothing there
+        po = ti = None  # playoff and title odds (Q5) before -> after, both sides: real odds, a punt concedes nothing there
         if self.playoffs:
             after = self._copy({self.me: mk, other: tk}, self.fa, {self.me: set(mil), other: set(til)}).playoffs
-            po = {s: [pct1(x["teams"][t]["playoffs"]) for x in (self.playoffs, after)]
-                  for s, t in (("you", self.me), ("them", other))}
+            po, ti = ({s: [pct1(x["teams"][t][c]) for x in (self.playoffs, after)] for s, t in (("you", self.me), ("them", other))}
+                      for c in ("playoffs", "title"))
         side = lambda v0, v1, o0, o1, c: {"total": [total(v0, c), total(v1, c)], "odds": [pct1(o0[c]), pct1(o1[c])]}
         cats_detail = {c: {"you": side(self.vecs[self.me], ov[self.me], b["odds"], a["odds"], c),
                            "them": side(self.vecs[other], ov[other], self.outlooks[other]["odds"], to["odds"], c)}
@@ -1242,9 +1370,18 @@ class League:
             if p["value_now"] - p["value"] > 0.5:
                 flags.append(f"{p['name']} is playing {p['value_now'] - p['value']:.1f} above his real value: "
                              "you'd be buying at peak hype.")
-        posset = lambda keys: {x for k in keys for x in self.meta.get(k, {}).get("pos", "").split(",") if x}
-        if lost := sorted(posset(self.rosters[self.me]) - posset(mk)):
-            flags.append(f"Leaves you with no {', '.join(lost)}.")
+        # positions: a starting slot none of your active players fits stays empty every day. The season numbers don't
+        # see it (no C-eligible player costs fatty zhou ~6% of his games, Oct 28), so it's a flag
+        on = lambda ks, il: self._lineup([k for k in ks if k not in il])
+        if self.slots and (n := self.lineup - len(on(mk, mil))) > self.lineup - len(on(self.rosters[self.me], self.il[self.me])):
+            flags.append(f"Leaves {n} of your {self.lineup} starting slots with nobody to fill {'it' if n == 1 else 'them'}: "
+                         f"you'd need a {' or '.join(self._fill(on(mk, mil)))}.")
+        if cut := [k for k in md if k in get]:
+            flags.append(f"You'd drop {' and '.join(name(cut))} as soon as he arrives: leave him out. It's the same deal "
+                         "for you, and it only hands them a roster spot.")
+        if cut := [k for k in td if k in give]:
+            flags.append(f"They'd drop {' and '.join(name(cut))} as soon as he arrives: leave him out. It's the same deal "
+                         "for them, and you keep him.")
         flags += [f"{t} gains more than you ({100 * (sa[t]['win'] - sb[t]['win']):+.1f}% vs {100 * mine_d:+.1f}%)"
                   + (", and they're your trade partner." if t == other else f", and they're projected {sb[t]['rank']}.")
                   for t in sorted(rival, key=lambda t: sb[t]["rank"])]
@@ -1266,7 +1403,7 @@ class League:
             "unit": "win%", "value_net": out["net"], "net": round(net, 1), "their_net": round(100 * (tw - tb), 1),
             "win": round(100 * b["win"], 1), "win_after": round(100 * a["win"], 1),
             "their_win": round(100 * tb, 1), "their_win_after": round(100 * tw, 1),
-            "rank": sb[self.me]["rank"], "rank_after": sa[self.me]["rank"], "playoffs": po,
+            "rank": sb[self.me]["rank"], "rank_after": sa[self.me]["rank"], "playoffs": po, "title": ti,
             "odds": {c: round(100 * (a["odds"][c] - b["odds"][c]), 1) for c in self.cats},
             "you_drop": name(md), "you_add": name(ma), "they_drop": name(td), "they_add": name(ta), "market": mkt,
             "tiers": [t for t in TIERS if self._tier(t, net, 100 * (tw - tb), d)],
@@ -1363,8 +1500,9 @@ class League:
         lock:  players never offered or asked for. outside: also every player in the market's top `outside`
                (League.market rank), both sides: a role-player search (Q14). Pinned give / get stay in.
         tier:  how likely they say yes (TIERS: your gain, theirs, and the market gap). easy: they win on market, you
-               still gain. fair: market within 15%, or 30% when both gain. finesse: market even or in their favour,
-               the fit strongly yours. hard: you win on market. max_overpay (%): tightens the tier's market floor.
+               still gain. fair: market within 15%. finesse: market even or in their favour, the fit strongly yours.
+               hard: you win on market (up to 30% when both gain). max_overpay (%): tightens the tier's market floor.
+               No deal has a player the side taking him would cut on arrival (the deal without him is the same).
         goal:  "win" (weekly win %), "cats" (your odds in goal_cats) or "team" (head-to-head vs goal_team).
                The last two skip deals that cost you more than GUARD win %.
         shape: "consolidate" (you send more players) or "depth" (you get more).
@@ -1433,14 +1571,17 @@ class League:
                     vals[i, j], vecs[i, j], mk[i, j] = c[k], self.rows[k], mv[k]
             return vals, vecs, mk
 
-        def drops(A, B, n):  # vector and market value of the n cheapest of A's (per give combo) and B's (per get combo)
+        def drops(A, B, n, inn):  # vector and market value of the n cheapest of A's (per give combo) and B's (per get
+            # combo), and whether one of them is a player coming in (inn: "A" or "B"), cut as soon as he arrives
             a, b = len(A[0]), len(B[0])
             pair = lambda x, y: np.concatenate([np.broadcast_to(x[:, None], (a, b) + x.shape[1:]),
                                                 np.broadcast_to(y[None], (a, b) + y.shape[1:])], 2)
-            pick = np.argsort(pair(A[0], B[0]), -1)[..., :size]
+            vals = pair(A[0], B[0])
+            pick = np.argsort(vals, -1)[..., :size]
             cut, mk = np.take_along_axis(pair(A[1], B[1]), pick[..., None], 2), np.take_along_axis(pair(A[2], B[2]), pick, 2)
             on = np.arange(size) < n[..., None]
-            return (on[..., None] * cut).sum(2), (on * mk).sum(2)
+            new = on & np.isfinite(np.take_along_axis(vals, pick, 2)) & ((pick >= size) == (inn == "B"))
+            return (on[..., None] * cut).sum(2), (on * mk).sum(2), new.any(-1)
 
         fa, fam = np.zeros((size + 1, len(RAW))), np.arange(size + 1) * self.spot  # the best 0..size free agents
         for i, k in enumerate(self.best_fa(size)):  # (vectors; market: open spots), for whoever ends up with open spots
@@ -1473,10 +1614,12 @@ class League:
             to_me = np.minimum(r_hurt[None], np.maximum(self.il_n - len(il_me) + gp[:, None], 0))
             to_t = np.minimum(g_hurt[:, None], np.maximum(self.il_n - len(il_t) + rp[None], 0))
             n_me, n_t = rn[None] - to_me - ga[:, None], gn[:, None] - to_t - ra[None]
+            n_me = np.where(n_me > 0, np.maximum(n_me - self._room(me), 0), n_me)  # open active spots take extras
+            n_t = np.where(n_t > 0, np.maximum(n_t - self._room(t), 0), n_t)
             healthy = lambda cs: [[k for k in c if not injured(k)] for c in cs]  # an injured player coming in stays
-            my_drop, my_drop_m = drops(my_rest, low(healthy(theirs), c_in), n_me)
-            their_drop, their_drop_m = drops(low(healthy(mine), c_t),
-                                             low([[k for k in keys if k not in c and k not in il_t] for c in theirs], c_t), n_t)
+            my_drop, my_drop_m, my_cut = drops(my_rest, low(healthy(theirs), c_in), n_me, "B")
+            their_drop, their_drop_m, their_cut = drops(low(healthy(mine), c_t),
+                                                        low([[k for k in keys if k not in c and k not in il_t] for c in theirs], c_t), n_t, "A")
             me_after = self.vecs[me] - GH[:, None] + RV[None] - r_cut[J, to_me] - my_drop + fa[np.clip(-n_me, 0, size)]
             them_after = self.vecs[t] - RH[None] + GV[:, None] - g_cut[I, to_t] - their_drop + fa[np.clip(-n_t, 0, size)]
             give_m = gmk[:, None] - their_drop_m + fam[np.clip(-n_t, 0, size)]  # market value each side ends up with
@@ -1501,15 +1644,18 @@ class League:
                 score = 100 * (odds - np.mean([before["odds"][c] for c in goal_cats]))
             else:
                 score = dme
-            ok = self._tier(tier, score, dthem, mkt, max_overpay)
+            # a player cut on arrival adds nothing to the side taking him and hands the other a roster spot (a waiver
+            # move it could make anyway): the deal without him is the real one
+            ok = self._tier(tier, score, dthem, mkt, max_overpay) & ~my_cut & ~their_cut
             if goal != "win":
                 ok &= dme > -GUARD * self.s
             if shape == "consolidate":
                 ok &= gn[:, None] > rn[None]
             elif shape == "depth":
                 ok &= gn[:, None] < rn[None]
-            G, R = np.nonzero(ok)
-            rank = np.minimum(score, dthem)[G, R] if tier in ("easy", "fair") else score[G, R]
+            G, R = np.nonzero(ok)  # fair, easy: both gain; finesse, hard: likelier to be accepted, then your gain
+            rank = (np.minimum(score, dthem) if tier in ("easy", "fair") else
+                    1000 * accept_level(mkt, dthem, self.s) + score)[G, R]
             top = np.argsort(-rank)[:limit]
             for gi, ri in zip(G[top], R[top]):
                 m = priced(float(give_m[gi, ri]), float(get_m[gi, ri]))
@@ -1523,7 +1669,7 @@ class League:
     @staticmethod
     def _rank(out, tier, team, limit):
         s = lambda x: x.get("score", x["net"])
-        out.sort(key=lambda x: -min(s(x), x["their_net"]) if tier in ("easy", "fair") else -s(x))
+        out.sort(key=lambda x: -min(s(x), x["their_net"]) if tier in ("easy", "fair") else (-ACCEPT.index(x["accept"]), -s(x)))
         if not team:  # spread suggestions across teams
             per_team = {}
             out = [o for o in out if per_team.setdefault(o["team"], []).append(o) or len(per_team[o["team"]]) <= 3]
@@ -2033,10 +2179,12 @@ class League:
         value, Q13), who sits on an overflow day, and open slots (fewer than `lineup` of yours play while the NBA does:
         room to stream). Players in IL slots sit, injured players count from their return date. teams: every NBA
         team's games in those weeks, on your open days (games a streamer from there would start), and in the fantasy playoff weeks, with your
-        players there and the best healthy free agent on your build (effective()). ponytail: today's roster in every
-        week, positions ignored, and a player tagged out with no return date still counts."""
+        players there and the best healthy free agent on your build (effective()). Starters fill the league's slots by
+        position (_lineup), so a player can sit with a spot open (fill: the positions that could take it).
+        ponytail: today's roster in every week, a player tagged out with no return date still counts, and the teams'
+        open-day counts don't check the streamer's position."""
         if not self.sched:
-            return {"lineup": self.lineup, "weeks": [], "teams": [], "roster": [], "il": [], "playoffs": [], "adds": self.adds()}
+            return {"lineup": self.lineup, "slots": self.slots, "weeks": [], "teams": [], "roster": [], "il": [], "playoffs": [], "adds": self.adds()}
         me = self.rosters[self.me]
         play, name = self._playing(me), lambda ks: [self.p.at[k, "PLAYER_NAME"] for k in ks]
         spans = [(max(self.today, self.matchup.get("from", "")), self.week_end)] + self.weeks(n)
@@ -2050,10 +2198,12 @@ class League:
             d = date.fromisoformat(s)
             while d.isoformat() <= e:
                 x, ks = d.isoformat(), day.get(d.isoformat(), [])
-                days.append({"date": x, "nba": busy[x], "players": name(ks[:self.lineup]), "sit": name(ks[self.lineup:]),
-                             "open": max(self.lineup - len(ks), 0) if busy[x] else 0})
+                on = self._lineup(ks)
+                o = self.lineup - len(on) if busy[x] else 0
+                days.append({"date": x, "nba": busy[x], "players": name(on), "sit": name(k for k in ks if k not in on),
+                             "open": o, **({"fill": self._fill(on)} if o and self.slots else {})})
                 d += timedelta(1)
-            c = collections.Counter(k for ks in day.values() for k in ks[:self.lineup])
+            c = collections.Counter(k for ks in day.values() for k in self._lineup(ks))
             for k in play:
                 starts[k].append(c[k])
             opened.append({x["date"] for x in days if x["open"]})
@@ -2077,10 +2227,16 @@ class League:
         roster = [{**self.player(k, punt), "sched": [{"games": len(self.game_days(k, e, s)), "starts": st}
                                                      for (s, e), st in zip(spans, starts[k])]}
                   for k in sorted(play, key=val.get, reverse=True)]
-        return {"lineup": self.lineup, "weeks": weeks, "teams": teams, "roster": roster,
+        return {"lineup": self.lineup, "slots": self.slots, "weeks": weeks, "teams": teams, "roster": roster,
                 "il": [{"name": self.p.at[k, "PLAYER_NAME"], **({"return": self.inj[k]["return"]} if self.inj.get(k, {}).get("return") else {})}
                        for k in me if k not in play],
                 "playoffs": [{"week": w, "start": s, "end": e} for w, s, e in po], "adds": self.adds()}
+
+    def _fill(self, on):
+        """Positions a streamer could play to start next to these starters (an open slot he fits, maybe after moving
+        theirs)."""
+        pos = [self._pos(k) for k in on]
+        return [x for x in POS if len(lineup(self.slots, pos + [{x}])) > len(on)]
 
     def movers(self, punt=(), limit=10):
         """Sell high: your players beating their rest-of-season value over the last FORM_DAYS (this season without box
@@ -2113,6 +2269,7 @@ class League:
                 "me": self.me, "teams": list(self.rosters), "fetched": self.snap.get("fetched", ""), "demo": self.snap.get("demo", False),
                 "pulled": self.snap.get("pulled", ""), "rolled": self.rolled,  # snapshot time; its week is over
                 "adds": self.adds(),  # adds used and left this matchup week (None: no weekly cap)
+                "matchup_days": [max(self.today, self.matchup.get("from", "")), self.week_end],  # days a move can still count
                 "sources": self.sources(),  # when stats, box scores, schedule, injuries, projections, news were fetched
                 "roster": sorted((self.player(k, punt) for k in self.rosters[self.me]), key=lambda p: -p["value"]),
                 "profile": self.profile() if self.mode != "points" else None,
@@ -2130,8 +2287,8 @@ class League:
 def load(path=DATA / "league.json", refetch=()):
     """The league from the snapshot, with every cache refreshed once past its window (refetch=("injuries",): now).
     It keeps each cache's file time (`loaded`), so sources() shows what this copy was built from."""
-    if not Path(path).exists():
-        import yahoo
+    if not Path(path).exists() and Path(path) == DATA / "league.json":  # first run: the demo league (yahoo.demo()
+        import yahoo                                                    # writes there, never to another path)
         yahoo.demo()
     lg = League(json.loads(Path(path).read_text(encoding="utf-8")), sched=schedule(), inj=injuries("injuries" in refetch),
                 logs=gamelogs(CUR, 12), proj=espn(), news=news)

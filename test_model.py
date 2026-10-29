@@ -97,6 +97,13 @@ def test_all():
     # injuries: an "INJ" tag lowers a player's expected weekly contribution
     lg.meta["player 199"] = {**lg.meta["player 199"], "status": "INJ"}
     assert lg._availability(base, cur)[1]["player 199"] < lg.avail["player 199"]
+    # ...if he sat his team's last game. Played it: the tag cuts nothing (M5, backtest.py availability)
+    day = lambda d, *ks: pd.DataFrame({"key": list(ks), "TEAM_ABBREVIATION": "XXX", "GAME_DATE": pd.Timestamp(d)})
+    lg.logs = pd.concat([day("2026-10-26", "player 199"), day("2026-10-27", "player 198")])
+    assert lg._availability(base, cur)[1]["player 199"] < lg.avail["player 199"]
+    lg.logs = day("2026-10-27", "player 199")
+    assert lg._availability(base, cur)[1]["player 199"] == lg.avail["player 199"]
+    lg.logs = None
     # availability (N9): one lost season isn't fragility (the baseline keeps his better season: 58, not 5), a repeat
     # absentee (41 at best) stays below him, this season's games count, and a rookie starts from 85%
     kess = model.baseline(*(model.keyed(pd.DataFrame([line("Kess", 100, gp=n)])) for n in (5, 58)))
@@ -107,15 +114,18 @@ def test_all():
     # finder honours its own rules
     for idea in lg.ideas("fair"):
         d = idea["market"]["diff_pct"]
-        assert idea["net"] >= lg.s - 0.05 and (abs(d) <= 15 or idea["their_net"] > 0 and abs(d) <= model.FAIR_FIT)
+        assert idea["net"] >= lg.s - 0.05 and abs(d) <= 15
     for idea in lg.ideas("finesse"):
         assert idea["net"] >= 1.5 * lg.s - 0.05 and idea["market"]["diff_pct"] <= model.EVEN
 
-    # tiers: your gain, theirs (win %) and the market gap (% you gain on market). Fair has two routes (Martin, Oct 26):
-    # the market within 15%, or both teams gaining and within 30%. No tier overpays over 30%; max_overpay only tightens
+    # tiers: your gain, theirs (win %) and the market gap (% you gain on market). Fair is the market within 15% either
+    # way; hard (you win on market) also takes a gap up to 30% your way when both teams gain (Martin, Oct 26; in fair,
+    # both ways, until Oct 28). No tier overpays over 30%; max_overpay only tightens
     s = lg.s
     assert lg._tier("fair", 2 * s, -5 * s, -14) and not lg._tier("fair", 2 * s, -5 * s, -20)
-    assert lg._tier("fair", 2 * s, 0.1, 25) and not lg._tier("fair", 2 * s, 0.1, 35)
+    assert not lg._tier("fair", 2 * s, 0.1, 25) and not lg._tier("fair", 2 * s, 0.1, -25)
+    assert lg._tier("hard", 2 * s, 0.1, 25) and not lg._tier("hard", 2 * s, -0.1, 25) and not lg._tier("hard", 2 * s, 0.1, 35)
+    assert not lg._tier("hard", 0.5 * s, 0.1, 25) and lg._tier("easy", 2 * s, 0.1, -25)
     assert not lg._tier("fair", 2 * s, 0.1, -12, max_overpay=10) and lg._tier("fair", 2 * s, 0.1, -8, max_overpay=10)
     assert lg._tier("easy", s, 0, -20) and not lg._tier("easy", s, 0, 0)  # easy: they win on market
     assert lg._tier("hard", 4 * s, -5 * s, 60) and not lg._tier("hard", 4 * s, 0, 0)  # hard: you do
@@ -227,6 +237,33 @@ def test_all():
     assert short.search(tier="hard", their_free=True, limit=200) == short.search(team="Them", tier="hard",
                                                                                  their_free=True, limit=200)[:3]
 
+    # an open active spot takes an extra player without a drop (Birds had one on Oct 27, when they took Chet Holmgren +
+    # Paul Reed for Tatum); a spot the trade opens gets a pickup, one it already had stays open; search agrees
+    op = model.League({**lg.snap, "teams": {**lg.snap["teams"], "Them": lg.snap["teams"]["Them"][:-1]}}, base, cur)
+    assert op._room("Them") == 1 and op._room("Me") == 0
+    r = op.trade(["Player 194", "Player 190"], ["Player 151"], free=False)
+    assert r["they_drop"] == [] and r["they_add"] == [] and len(r["you_add"]) == 1
+    r1 = op.trade(["Player 194"], ["Player 195", "Player 191"], free=False)
+    assert len(r1["you_drop"]) == 1 and len(r1["they_add"]) == 1  # they had one open, the trade opens another
+    model.TIERS["hard"] = (-99, -99, -np.inf, np.inf)  # every deal
+    for r, deal in ((r, (["Player 194", "Player 190"], ["Player 151"])), (r1, (["Player 194"], ["Player 195", "Player 191"]))):
+        x = [y for y in op.search(*deal, size=2, tier="hard", free=False, limit=500)
+             if sorted(y["give"]) == sorted(deal[0]) and sorted(y["get"]) == sorted(deal[1])]
+        assert [(x[0]["net"], x[0]["their_net"], x[0]["market"])] == [(r["net"], r["their_net"], r["market"])], (x, r)
+    # a deal never has a player the side taking him would cut on arrival: it's the same deal without him, plus a
+    # roster spot for the side sending him. trade() says so
+    xs = lg.search(get=["Player 195"], size=3, tier="hard", free=False, limit=5000)
+    assert any(len(x["get"]) > len(x["give"]) for x in xs) and any(len(x["get"]) < len(x["give"]) for x in xs)
+    for x in xs[:40] + [x for x in xs if len(x["get"]) != len(x["give"])][:40]:
+        r = lg.trade(x["give"], x["get"], free=False)
+        assert not set(r["you_drop"]) & set(x["get"]) and not set(r["they_drop"]) & set(x["give"]), x
+    junk = (["Player 150"], ["Player 151", "Player 155"])  # Them's two worst: you'd cut one at once
+    found = lg.search(*junk, tier="hard", free=False, limit=500)
+    assert found and not [x for x in found if x["give"] == junk[0] and sorted(x["get"]) == junk[1]]
+    r = lg.trade(*junk, free=False)
+    assert set(r["you_drop"]) & set(junk[1]) and any(f.startswith("You'd drop Player 151") for f in r["flags"])
+    model.TIERS["hard"] = hard
+
     # IL slots (N5): a parked player holds no active spot and nobody covers his missed games, so he counts for less
     # than an active one. Sending him frees no spot (the player coming back costs a drop), an injured player coming in
     # parks in a free slot (an open spot: a pickup), and search scores both deals like trade()
@@ -237,8 +274,8 @@ def test_all():
         pd.concat([base, hurt]), pd.concat([cur, hurt.assign(GP=5)]))
     pts = model.RAW.index("PTS")
     assert ill.il == {"Me": {"hurt guy"}, "Them": set()} and ill.rows_il["hurt guy"][pts] < ill.rows["hurt guy"][pts]
-    sent, got = ill.trade(["Hurt Guy"], ["Player 151"], free=False), ill.trade(["Player 150"], ["Sore Guy"], free=False)
-    assert len(sent["you_drop"]) == 1 and sent["you_add"] == [] and len(sent["they_add"]) == 1
+    sent, got = ill.trade(["Hurt Guy"], ["Player 195"], free=False), ill.trade(["Player 150"], ["Sore Guy"], free=False)
+    assert len(sent["you_drop"]) == 1 and sent["you_drop"] != ["Player 195"] and sent["you_add"] == [] and len(sent["they_add"]) == 1
     assert got["you_drop"] == [] and len(got["you_add"]) == 1
     model.TIERS["hard"] = (-99, -99, -np.inf, np.inf)  # every deal, as above
     for r in (sent, got):
@@ -340,7 +377,26 @@ def test_all():
     # ... and a bench player fills in on a light day: twin a (a claim) only plays from Oct 30, so twin b starts Monday
     assert sl.starts(["player 198", "twin a", "twin b"], {"twin a": "2026-10-30"}) == {"player 198": 4, "twin a": 2,
                                                                                          "twin b": 1}
+    # positions (the snapshot's slots): starters fill the slots best first, moving one between slots to fit another in;
+    # a player with no listed position fits anywhere. Twin A is a C behind a better C, so the PG Twin D starts over him
+    assert model.lineup(["PG", "G"], [{"PG", "SG"}, {"PG"}]) == {0: 1, 1: 0}
+    assert sorted(model.lineup(["PG", "C", "Util"], [{"C"}, {"C"}, {"C"}, {"PG"}]).values()) == [0, 1, 3]
+    assert sorted(model.lineup(["F", "C"], [{"PG"}, set(), {"PF"}]).values()) == [1, 2]
+    old = dict(sl.meta)
+    sl.slots, sl._lineups = ["PG", "C"], {}
+    for k, x in (("player 198", "C"), ("twin a", "C"), ("twin d", "PG")):
+        sl.meta[k] = {**sl.meta[k], "pos": x}
+    assert sl.starts(["player 198", "twin a", "twin d"]) == {"player 198": 4, "twin d": 4}
+    assert sl._fill(["player 198"]) == ["PG"] and sl._fill(["player 198", "twin d"]) == []
+    sl.slots, sl.meta, sl._lineups = [], old, {}
     sl.lineup = 10
+    # a trade that leaves a slot nobody active fits is flagged; one that keeps a C isn't
+    ps = league()[0]
+    ps.slots, ps.lineup = ["C", "Util"], 2
+    for k in ps.rosters["Me"] + ps.rosters["Them"]:
+        ps.meta[k] = {**ps.meta[k], "pos": "C" if k == "player 198" else "PG"}
+    assert "Leaves 1 of your 2 starting slots with nobody to fill it: you'd need a C." in ps.trade(["Player 198"], ["Player 199"], free=False)["flags"]
+    assert not any("starting slots" in f for f in ps.trade(["Player 194"], ["Player 195"], free=False)["flags"])
     # player card: games this matchup week and the next three (Monday-Sunday without a season schedule), after his
     # return date; without box scores, this season's stats line
     c = sl.card("Twin C")
@@ -442,7 +498,8 @@ def test_all():
                                                     **{c: r * mins for c, r in rates(big).items()})
     ml = model.keyed(pd.DataFrame([mate("Star", 34), mate("Guard", 20), mate("Big", 20, True), mate("Iron", 38),
                                    mate("Deep", 8), mate("Sixth", 24, True), mate("Other", 20, t="BBB")]))
-    lf = model.lifts(ml, ml.TEAM_ABBREVIATION.to_dict(), list(ml.index))
+    team = ml.TEAM_ABBREVIATION.to_dict()
+    lf = model.lifts(ml, team, [[k] for k in ml.index]).droplevel("set")  # each one sitting alone
     assert set(lf.index.get_level_values("by")) == {"star", "iron"}  # Sixth (24 min) isn't a regular, Other has no mates
     s = lf.xs("star", level="by")
     assert set(s.index) == {"guard", "big", "iron", "sixth"}  # same team, 10+ minutes
@@ -451,17 +508,47 @@ def test_all():
     own = ml.loc[s.index, model.RAW].div(ml.loc[s.index, "MIN"], axis=0).mul(s.MIN, axis=0)  # his minutes, their rates
     assert np.allclose(s.REB, own.REB) and np.allclose(s.STL, own.STL)
     assert abs((s.PTS - own.PTS).sum() - model.USAGE * (ml.at["star", "PTS"] - own.PTS.sum())) < 1e-9
+    # sitting together (M4): Star and Iron out at once hand out SHARE of both their minutes to the players left (Iron
+    # takes none of Star's, nor his usage), most minutes first, and nobody passes ROOM with both
+    both = model.lifts(ml, team, [["star", "iron"]]).droplevel("set")
+    got = both.groupby(level="key").sum()
+    assert set(got.index) == {"guard", "big", "sixth"} and abs(got.MIN.sum() - model.SHARE * (34 + 38)) < 1e-9
+    assert (ml.MIN[got.index] + got.MIN <= model.ROOM + 1e-9).all()
+    bs = both.xs("star", level="by")  # Star's unreplaced shots go to the players left, Iron (out too) takes none
+    own2 = ml.loc[bs.index, model.RAW].div(ml.loc[bs.index, "MIN"], axis=0).mul(bs.MIN, axis=0)
+    assert abs((bs.PTS - own2.PTS).sum() - model.USAGE * (ml.at["star", "PTS"] - own2.PTS.sum())) < 1e-9
+    # ROOM is a cap: a lone sitter with more to give than the rotation has room fills it, the rest goes to the bench
+    big = model.lifts(ml.assign(MIN=ml.MIN.where(ml.index != "star", 120.0)), team, [["star"]]).droplevel("set")
+    room = model.ROOM - ml.MIN[big.index.get_level_values("key")].to_numpy()
+    assert np.allclose(big.MIN.to_numpy()[room > 0], room[room > 0]) and big.MIN.sum() < model.SHARE * 120
+    # stretches between returns, per team: who's still out in each
+    sp = model.stretches({"a": "2026-11-03", "b": "2026-11-10", "c": "2026-11-03"}, {"a": "AAA", "b": "AAA", "c": "BBB"},
+                         "2026-10-28")
+    assert sorted(sp, key=lambda x: (sorted(x[2]), x[0])) == [
+        ("2026-10-28", "2026-11-03", frozenset({"a", "b"})), ("2026-11-03", "2026-11-10", frozenset({"b"})),
+        ("2026-10-28", "2026-11-03", frozenset({"c"}))]
+    # priced_in(): a sitter out since before the season (no games in it) was in the preseason projection, so a player
+    # with an expert line keeps 1 - PROJ_W x MIN_SHRINK / (GP + MIN_SHRINK) of his lift; Iron has played, no cut
+    pi = model.priced_in(lf, ["iron"], {"guard": 4}, ["guard"])
+    keep = 1 - model.PROJ_W * model.MIN_SHRINK / (4 + model.MIN_SHRINK)
+    assert np.allclose(pi.loc[("guard", "star")], keep * lf.loc[("guard", "star")])
+    assert np.allclose(pi.loc[("big", "star")], lf.loc[("big", "star")]) and np.allclose(pi.xs("iron", level="by"), lf.xs("iron", level="by"))
     # had(): the lift a player had per game in the box scores. Star joined in game 1 and sat games 3 and 4, so Guard
     # (5 games) had 2/5 of it; game 0 came before Star's first and doesn't count
     box = pd.DataFrame([{"key": k, "TEAM_ABBREVIATION": "AAA", "GAME_ID": g, "GAME_DATE": pd.Timestamp(2026, 10, 20 + g)}
                         for g in range(5) for k in ("guard", "star") if k == "guard" or g in (1, 2)])
-    h = model.had(box, ml.TEAM_ABBREVIATION.to_dict(), lf[lf.index.get_level_values("by") == "star"])
+    h = model.had(box, team, ml, ["star"])
     assert list(h.index) == ["guard"] and np.allclose(h.loc["guard"], 2 / 5 * s.loc["guard"])
+    # ... and a game two regulars sat counts their lifts together: Iron played games 0-3 and sat game 4 with Star
+    box2 = pd.concat([box, pd.DataFrame([{"key": "iron", "TEAM_ABBREVIATION": "AAA", "GAME_ID": g,
+                                          "GAME_DATE": pd.Timestamp(2026, 10, 20 + g)} for g in range(4)])])
+    h2 = model.had(box2, team, ml, ["star", "iron"])
+    assert np.allclose(h2.loc["guard"], (s.loc["guard"] + got.loc["guard"]) / 5)
     # in the league: Twin C (AAA, out until Nov 3) lifts Twins A, D and F (AAA) for their games before then: every
     # game this week (p_week, which week_vec uses), 4 of the 6 left (p, rest of season). BBB's Twin B gets nothing
     no = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
                       sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week})
-    up = sl.lift.loc[("twin a", "twin c")]
+    up = sl.lift.xs(("twin a", "twin c"), level=("key", "by")).iloc[0]
     gap = lambda a, b, k: (a.loc[k, model.RAW] - b.loc[k, model.RAW]).astype(float).to_numpy()
     assert up.MIN > 0.5 and not len(no.lift)
     assert np.allclose(gap(sl.p, no.p, "twin a"), 4 / 6 * up[model.RAW]) and np.allclose(gap(sl.p_week, no.p, "twin a"), up[model.RAW])
@@ -475,6 +562,20 @@ def test_all():
                         sched={"AAA": week[1:], "BBB": week, "XXX": week},
                         inj={"Twin C": {"status": "O", "note": "Ankle.", "return": "2026-10-27"}})
     assert len(gone.lift) and not gone.lifted and not gap(gone.p_week, no.p, "twin a").any()
+    # two out at once: Twin D (AAA) is out until Oct 30 too, so until then Twin C's and Twin D's minutes go to the
+    # AAA players left, and from Oct 30 Twin D takes his share of Twin C's. The twins play 31.6, so Twin C (first of
+    # two equal) fills Twin A's room both times and Twin D's minutes go to the bench, but his unreplaced shots still
+    # come Twin A's way. Twin A's week (Oct 26, 28, 30, Nov 1) is half of each stretch
+    two = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
+                       sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week},
+                       inj={"Twin C": {"status": "O", "note": "Ankle.", "return": "2026-11-03"},
+                            "Twin D": {"status": "O", "note": "Knee.", "return": "2026-10-30"}})
+    ta = two.lift.xs("twin a", level="key").groupby(level="from").sum()
+    assert list(ta.index) == ["2026-10-26", "2026-10-30"] and np.allclose(ta.MIN, model.ROOM - no.p.at["twin a", "MIN"])
+    assert ta.PTS.iloc[0] > ta.PTS.iloc[1] > 0
+    assert np.allclose(gap(two.p_week, no.p, "twin a"), (ta[model.RAW].iloc[0] + ta[model.RAW].iloc[1]) / 2)
+    assert [(x["by"], x["games"]) for x in two.player("twin a")["lift"]] == [("Twin C", 4)]  # Twin D's: no minutes
+    assert "twin d" not in two.lift.xs("2026-10-26", level="from").index.get_level_values("key")  # out: takes nothing
     # ... and the box scores are read net of the lifts players had: Twin C sat 2 of Twin A's 4 games, so Twin A's line
     # drops (back to what it'd be with everyone playing); Twin D, with no games, keeps his
     bx = pd.DataFrame([{**line(f"Twin {t}", 180), "TEAM_ABBREVIATION": "AAA", "GAME_ID": g,
@@ -669,9 +770,11 @@ def test_all():
     # a trade's playoff odds, before -> after for both sides: after_trade()'s rosters, None without a schedule
     pl, deal = model.League(sn, base, cur, today=model.date(2026, 11, 1)), (["Player 148"], ["Player 199"])
     pct = lambda po, t: round(100 * po["teams"][t]["playoffs"], 1)
-    r, at = pl.trade(*deal, free=False)["playoffs"], pl.after_trade(*deal).playoffs
+    tr, at = pl.trade(*deal, free=False), pl.after_trade(*deal).playoffs
+    r = tr["playoffs"]
     assert r == {"you": [pct(pl.playoffs, "Me"), pct(at, "Me")], "them": [pct(pl.playoffs, "Them"), pct(at, "Them")]}
     assert r["you"][1] > r["you"][0] and r["them"][1] < r["them"][0]
+    assert tr["title"]["you"] == [round(100 * x["teams"]["Me"]["title"], 1) for x in (pl.playoffs, at)]
     assert lg.trade(["Player 150"], ["Player 199"])["playoffs"] is None
 
     # league text import: a trimmed Instinct snapshot (settings, rosters with ranks and "Empty slot" rows, injured
@@ -755,6 +858,7 @@ Sharks has an open SF slot.""")
     assert got["pulled"] == "2026-10-26T23:37:00-07:00" and got["from"] == "2026-10-27"  # Oct 26's games are banked
     assert got["week"] == {"week": 2, "start": "2026-10-26", "end": "2026-11-01"}
     assert got["settings"] == {"roster": 13, "starters": 10, "il": 3, "scoring": "categories", "max_adds": 4,
+                               "slots": ["PG", "SG", "G", "SF", "PF", "F", "C", "C", "Util", "Util"],
                                "playoff_teams": 8, "playoff_weeks": [21, 22, 23]}
     fz = got["teams"]["fatty zhou"]
     assert fz[0] == {"name": "Nikola Jokić", "nba": "DEN", "pos": "C", "status": "", "slot": "C",
@@ -823,7 +927,7 @@ Sharks has an open SF slot.""")
         "Brick A", "Brick B", "Brick C"} and not any(s["trade"]["later"] for s in ft["steps"][1:])
     for s in ft["steps"][1:]:
         d = s["trade"]["market"]["diff_pct"]
-        assert abs(d) <= 15 or s["trade"]["their_net"] > 0 and abs(d) <= model.FAIR_FIT
+        assert abs(d) <= 15
     assert {p["name"] for p in ft["buy"][:3]} == {"Brick A", "Brick B", "Brick C"}  # far below their worth to FT%
     # sell list, its mirror: your players the market prices 5+ above their worth to the build, biggest gap first, with
     # why. Yahoo ranks Player 154 (about #46 to us) #1, Player 158 runs hot (Cur 1, Pre 30), and a free-throw

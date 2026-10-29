@@ -24,8 +24,8 @@ Achiuwa (+1.2)". The other team is judged on the trade alone. A waiver move with
 league_overview has projected standings, per-category win odds and the user's odds vs each team, and "playoffs":
 the top "seats" teams make it, and each team has its record so far (category W-L-T), "proj" (expected final W-L),
 "playoffs" and "title" odds, simulated over the "weeks_left" with room for rosters to beat or miss their projections.
-Quote them as "93% to make the playoffs" rather than a projected rank. A trade's "playoffs" is the same odds before ->
-after for the user ("you") and the partner ("them"), in percent. A category the
+Quote them as "93% to make the playoffs" rather than a projected rank. A trade's "playoffs" (and "title") is the same odds
+before -> after for the user ("you") and the partner ("them"), in percent. A category the
 user can't win or already dominates barely moves their odds, so explain punts from that. "market" prices a deal the
 way managers do, from Yahoo's ranks (give / get in market value, diff_pct = what the user gains on market, verdict
 like "you overpay 35%"); "accept" is how likely they say yes, mostly on that. "their_view" is only how it reads on
@@ -86,8 +86,9 @@ class GM:
                 get: other team's players every deal must include (all from one team)
                 lock: players never offered or asked for
                 tier: how likely they say yes, by market value. "easy": they win on market, the user still gains.
-                    "fair": market within 15% (30% when both teams gain). "finesse": market even or in their favour,
-                    but the fit is strongly the user's. "hard": the user wins on market, needs a pitch.
+                    "fair": market within 15% either way, an offer that looks even. "finesse": market even or in their
+                    favour, but the fit is strongly the user's. "hard": the user wins on market, needs a pitch (up to
+                    30% the user's way when both teams gain: the fit is the pitch).
                 goal: "win" (weekly win odds), "cats" (user's odds in goal_cats) or "team" (head-to-head vs goal_team)
                 goal_cats: categories for goal "cats", e.g. ["STL", "AST"]
                 goal_team: exact team name for goal "team"
