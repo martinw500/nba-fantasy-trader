@@ -129,7 +129,7 @@ Classic pairings: big men punt FT%, high-usage guards punt TO, wings punt AST.
 - **Projected finish**: your league rank before → after.
 - Your odds change in each category.
 
-**Ask AI GM for a pitch** writes a short message to send the other manager. **Save trade** keeps it for comparing later.
+**Copy offer** copies the offer and a short pitch for the note on Yahoo's trade offer, built from the numbers (their weak spots it shores up, categories it adds, the market when it favours them, roster spots they free). It never claims more than that. **Ask AI GM for a pitch** writes a longer one in the chat. **Save trade** keeps it for comparing later.
 
 **Add any player to the trade** (top right) jumps to any rostered player: it switches to his team and checks him. The top bar's **Find a player** opens his card instead. The URL updates to `#trades?give=A,B&get=C` after each evaluation, so you can bookmark a trade. Last names work in the link too, as long as only one player has that name.
 
@@ -154,6 +154,8 @@ Points leagues keep the simpler finder: Fair or Finesse, 1-for-1 up to 2-for-2, 
 **Improve this deal** appears after you evaluate a trade. **Throw-ins** keeps everyone in the deal and adds a player to either side. **Swaps** replaces one player at a time. Both use the finder's settings.
 
 **Saved trades** (bottom of the tab) compares saved deals side by side. They're re-scored against today's rosters and your punts every time, so the numbers never go stale.
+
+**Offers sent** (under Saved trades) lists every offer you copied with what the app predicted then (market, Will they say yes). Mark each one Accepted or Declined when you hear back. The log lives in `data/offers.json`, and it's the only real data for tuning how the app guesses whether a manager says yes.
 
 **Find a buyer** on My team and **Find offers** on Hot & cold's buy-low list run these searches directly.
 

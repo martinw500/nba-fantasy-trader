@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import traceback
+import uuid
 import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -83,12 +84,44 @@ def chats(body):
                                         "messages": list(c["messages"])}
         if body.get("delete"):
             saved.pop(body["delete"], None)
-        if c or body.get("delete"):  # write a copy, then swap it in, so a crash never leaves half a file
-            tmp = CHATS.with_suffix(".tmp")
-            tmp.write_text(json.dumps(saved, indent=1, ensure_ascii=False), encoding="utf-8")
-            tmp.replace(CHATS)
+        if c or body.get("delete"):
+            write(CHATS, saved)
     return sorted(({"id": k, "title": v["title"], "updated": v["updated"], "n": len(v["messages"])}
                    for k, v in saved.items()), key=lambda x: x["updated"], reverse=True)
+
+
+def write(path, data):
+    """Write a copy, then swap it in, so a crash never leaves half a file."""
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+
+
+OFFERS = model.DATA / "offers.json"
+OFFER_KEYS = ("me", "team", "give", "get", "text", "unit", "net", "their_net", "their_view", "win", "win_after",
+              "market", "accept", "verdict")
+
+
+def offers(body, punt):
+    """Trade offers you copied for Yahoo (Q8), newest first in data/offers.json: the deal, what the model said then
+    and the answer you mark. It's the data for tuning HYPE, TIERS and accept() (N6). {log: offer} adds one (the same
+    deal still waiting for an answer is replaced), {set: id, outcome: "yes" | "no" | None} marks it, {delete: id}
+    removes it; every call returns the list."""
+    with chats_lock:
+        saved = json.loads(OFFERS.read_text(encoding="utf-8")) if OFFERS.exists() else []
+        if o := body.get("log"):
+            o = {k: o.get(k) for k in OFFER_KEYS}
+            deal = lambda x: (x["me"], x["team"], sorted(x["give"]), sorted(x["get"]))
+            saved = [{**o, "punt": punt, "id": uuid.uuid4().hex[:8], "sent": datetime.now().isoformat(timespec="seconds"),
+                      "outcome": None}] + [x for x in saved if x["outcome"] or deal(x) != deal(o)]
+        for x in saved:
+            if x["id"] == body.get("set"):
+                x["outcome"] = body.get("outcome") if body.get("outcome") in ("yes", "no") else None
+        if body.get("delete"):
+            saved = [x for x in saved if x["id"] != body["delete"]]
+        if o or body.get("set") or body.get("delete"):
+            write(OFFERS, saved)
+    return saved
 
 
 def api(path, q, body):
@@ -155,6 +188,8 @@ def api(path, q, body):
         return lg.state(punt)
     if path == "/api/chats":
         return chats(body)
+    if path == "/api/offers":  # Trades' Offers sent: what you copied for Yahoo and the answers
+        return offers(body, punt)
     if path == "/api/chat":
         if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
             if not shutil.which("claude"):
@@ -205,7 +240,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/compare", "/api/move", "/api/schedule", "/api/news",
-       "/api/players", "/api/me", "/api/week", "/api/refresh", "/api/chat", "/api/chats"}
+       "/api/players", "/api/me", "/api/week", "/api/refresh", "/api/chat", "/api/chats", "/api/offers"}
 
 if __name__ == "__main__":
     # ponytail: localhost-only, single user; no auth because it never listens on the network

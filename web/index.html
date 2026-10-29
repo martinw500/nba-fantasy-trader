@@ -374,6 +374,7 @@ const S = {
   move: { add: "", drop: "", result: null, busy: false },  // Waivers' add/drop evaluator (Q7); result is dropped on punt / team / refresh
   compare: { names: store.get("compare", []), line: "ros" },  // + data, busy, error; data is dropped on punt / team / refresh
   pool: null,  // every rostered player and free agent, for Compare's search
+  offers: null,  // Trades' Offers sent (data/offers.json), loaded on first view
   chat: store.get("chat", []), chatBusy: false, chatSession: store.get("chatSession", null),
   chatId: store.get("chatId", null), chats: null,  // the open conversation's id in data/chats.json, and the History list
   gmSet: { model: "claude-opus-5-5", effort: "medium", web: true, ...store.get("gmSet", {}) },  // AI GM tab's Model / Effort / Web search
@@ -894,7 +895,8 @@ function viewTrades() {
       ${ready ? `<button class="btn ghost" data-act="clear-trade">Clear</button>` : ""}</div>
     ${findPanel()}
     ${T.result ? tradeResult(T.result) : ""}
-    ${savedPanel()}`;
+    ${savedPanel()}
+    ${offersPanel()}`;
 }
 const resultDeal = r => ({ team: r.other_team, give: r.give.map(p => p.name), get: r.get.map(p => p.name) });
 const saveBtn = r => isSaved(resultDeal(r)) ? `<button class="btn" disabled>Saved</button>` : `<button class="btn" data-act="save-result">Save trade</button>`;
@@ -906,7 +908,7 @@ function tradeResult(r) {
       <dl class="side-by"><div><dt>You</dt><dd class="${tone(r.net)}">${sign(r.net)}</dd></div>
         <div><dt>${esc(r.other_team || "Them")}${r.their_build?.length ? ` (weak ${r.their_build.map(lab).join("/")})` : ""}</dt><dd class="${tone(r.their_net)}">${sign(r.their_net)}</dd></div>
         <div><dt title="How it looks to them on this season's numbers">How it looks to them</dt><dd class="${tone(r.their_view)}">${sign(r.their_view)}</dd></div></dl></div>
-      <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div></div>
+      <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="copy-offer" title="Copies the offer and a short pitch to paste into Yahoo's trade note, and logs it under Offers sent">Copy offer</button><button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div></div>
     ${isPoints() ? "" : `<div class="cats" style="--n:${cats.length}">${cats.map(([c, v]) => `<div class="cat ${punted(c) ? "punted" : ""}"><span class="lbl">${lab(c)}</span><span class="rk ${tone(v)}" style="font-size:17px">${sign(v)}</span>
       <div class="bar"><i style="width:${Math.min(Math.abs(v) / 3, 1) * 100}%;background:${v >= 0 ? "var(--pos)" : "var(--neg)"}"></i></div></div>`).join("")}</div>`}
     <div class="panel-b small muted" style="border-top:1px solid var(--line)">Uneven trades include the cost of dropping (or the gain of picking up) a waiver-level player. ${r.their_view > 0.3 && r.their_net < 0 ? "They'd likely see this as a win on hype alone." : ""}</div></div>`;
@@ -945,7 +947,7 @@ function tradeResultOdds(r) {
         <div><dt title="${MKT_TIP}">Market</dt><dd><span class="${mktTone(r.market.diff_pct)}">${cap(r.market.verdict)}</span> <span class="muted small">give ${Math.round(r.market.give)} · get ${Math.round(r.market.get)}</span></dd></div>
         <div><dt>Projected finish</dt><dd>${ord(r.rank)} → ${ord(r.rank_after)}</dd></div>
         <div><dt title="Mostly the market, a little how it really helps them">Will they say yes</dt><dd>${acceptPill(r.accept)}</dd></div></dl></div>
-      <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div></div>
+      <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="copy-offer" title="Copies the offer and a short pitch to paste into Yahoo's trade note, and logs it under Offers sent">Copy offer</button><button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div></div>
     ${base}${cats}
     <div class="panel-b small muted" style="border-top:1px solid var(--line)">${WIN().h} = ${WIN().def}, with both rosters updated. ${moves}
       On this season's hot and cold starts alone it looks ${r.their_view > 0.3 ? "good" : r.their_view < -0.3 ? "bad" : "even"} to them (${sign(r.their_view)}).
@@ -1061,6 +1063,54 @@ function savedPanel() {
       ${S.state.cats.map(c => row(lab(c), r => { const d = (r.unit === "win%" ? r.odds : r.cats)[c]; return `<span class="${tone(d)}">${delta(d, r.unit)}</span>`; }, punted(c) ? "punted-col" : "")).join("")}
       <tr><td></td>${L.map((s, i) => `<td><button class="btn ghost" data-act="load-saved" data-i="${i}">Load</button><button class="btn ghost" data-act="unsave" data-i="${i}">Remove</button></td>`).join("")}</tr>
     </tbody></table></div></div>`;
+}
+function offersPanel() {
+  if (!S.offers) { loadOffers(); return ""; }
+  const L = S.offers.filter(o => o.me === S.state.me);
+  if (!L.length) return "";
+  const ans = (o, v, h) => `<button data-act="offer-set" data-id="${o.id}" data-v="${v}" aria-pressed="${o.outcome === v}">${h}</button>`;
+  return `<div class="panel"><div class="panel-h"><div><h2>Offers sent</h2><p>Every offer you copied, with what the app predicted then. Mark their answer: it's the only real data for tuning “Will they say yes”.</p></div></div>
+    <div class="tw"><table><thead><tr><th>Sent</th><th>Team</th><th>You give</th><th>You get</th><th class="n" title="${MKT_TIP}">Market</th><th title="What the app predicted when you copied it">Predicted</th><th>Their answer</th><th></th></tr></thead><tbody>
+    ${L.map(o => `<tr><td class="muted">${new Date(o.sent).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</td><td>${esc(o.team || "")}</td>
+      <td class="names">${o.give.map(esc).join(", ")}</td><td class="names">${o.get.map(esc).join(", ")}</td>
+      <td class="n">${o.market ? mktDeal(o.market) : "—"}</td><td>${o.accept ? acceptPill(o.accept) : "—"}</td>
+      <td><div class="seg" role="group" aria-label="Their answer">${ans(o, "yes", "Accepted")}${ans(o, "no", "Declined")}</div></td>
+      <td class="n"><button class="btn ghost" data-act="offer-del" data-id="${o.id}">Remove</button></td></tr>`).join("")}</tbody></table></div></div>`;
+}
+async function loadOffers() {
+  S.offers = [];  // so a render while it loads doesn't ask again
+  try { S.offers = await api("/api/offers", {}); } catch (e) { toast(e.message); }
+  if (S.view === "trades") render();
+}
+async function offersCall(body) {
+  try { S.offers = await api("/api/offers", body); } catch (e) { toast(e.message); }
+  render();
+}
+// Q8: the offer and a short pitch for Yahoo's trade note. It only claims what the numbers back: categories where
+// their odds rise 3+ points (their weak spots first), the market when they come out 5%+ ahead, the spots they free.
+const WORD = { "FG%": "field-goal %", "FT%": "free-throw %", FG3M: "threes", PTS: "scoring", REB: "rebounds", AST: "assists", STL: "steals", BLK: "blocks", TOV: "ball security" };
+function pitchText(r) {
+  const names = ps => and(ps.map(p => p.name)), words = cs => and(cs.map(c => WORD[c] || c));
+  const out = [`Trade idea: my ${names(r.give)} for your ${names(r.get)}.`];
+  if (r.cats_detail) {
+    const up = Object.entries(r.cats_detail).map(([c, d]) => [c, d.them.odds[1] - d.them.odds[0]]).filter(([, g]) => g >= 3)
+      .sort((a, b) => b[1] - a[1]).slice(0, 2).map(([c]) => c);
+    const weak = up.filter(c => r.their_build.includes(c)), more = up.filter(c => !weak.includes(c));
+    if (weak.length) out.push(`It shores up your ${words(weak)}${more.length ? ` and adds ${words(more)}` : ""}.`);
+    else if (more.length) out.push(`It adds ${words(more)} for you.`);
+  }
+  if (r.market?.diff_pct <= -5) out.push("On Yahoo's rankings you get the better end of it.");
+  const n = r.get.length - r.give.length;
+  if (n > 0) out.push(`You also free up ${n > 1 ? n + " roster spots" : "a roster spot"} for the waiver wire.`);
+  out.push("Happy to tweak it if you'd rather keep someone.");
+  return out.join(" ");
+}
+async function copyOffer(r) {
+  const text = pitchText(r);
+  try { await navigator.clipboard.writeText(text); } catch { return toast("The browser blocked the clipboard, so nothing was copied."); }
+  const keep = ["net", "unit", "their_net", "their_view", "win", "win_after", "market", "accept", "verdict"];
+  await offersCall({ log: { ...Object.fromEntries(keep.map(k => [k, r[k]])), me: S.state.me, team: r.other_team, give: r.give.map(p => p.name), get: r.get.map(p => p.name), text } });
+  toast("Copied. Paste it into the note on Yahoo's trade offer. It's logged under Offers sent, at the bottom.");
 }
 
 async function evaluate() {
@@ -1510,6 +1560,9 @@ document.addEventListener("click", async e => {
   if (act === "save-result") return saveDeal(resultDeal(S.trade.result));
   if (act === "load-saved") return loadDeal(S.saved.list[+t.dataset.i]);
   if (act === "unsave") { S.saved.list.splice(+t.dataset.i, 1); store.set("saved", S.saved.list); return render(); }
+  if (act === "copy-offer") return copyOffer(S.trade.result);
+  if (act === "offer-set") { const o = S.offers.find(x => x.id === t.dataset.id); return offersCall({ set: o.id, outcome: o.outcome === t.dataset.v ? null : t.dataset.v }); }
+  if (act === "offer-del") return offersCall({ delete: t.dataset.id });
   if (act === "pitch") {
     const r = S.trade.result;
     setView("gm");
