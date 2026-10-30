@@ -282,6 +282,17 @@ def test_all():
         x = [y for y in op.search(*deal, size=2, tier="hard", free=False, limit=500)
              if sorted(y["give"]) == sorted(deal[0]) and sorted(y["get"]) == sorted(deal[1])]
         assert [(x[0]["net"], x[0]["their_net"], x[0]["market"])] == [(r["net"], r["their_net"], r["market"])], (x, r)
+    # with a punt, a spot your trade opens gets your build's best free agent (as free_moves() picks), and search agrees
+    blk = model.keyed(pd.DataFrame([line("Block Guy", 130, BLK=3.0)]))  # the best free agent, until BLK is punted
+    bl = model.League({**lg.snap, "free_agents": lg.snap["free_agents"] + [{"name": "Block Guy", "pos": "", "status": ""}]},
+                      pd.concat([base, blk]), pd.concat([cur, blk.assign(GP=5)]))
+    P, deal = ["BLK"], (["Player 194", "Player 190"], ["Player 151"])
+    assert bl.names(bl.best_fa(1)) == ["Block Guy"] != bl.names(bl.best_fa(1, punt=P))
+    r = bl.trade(*deal, punt=P, free=False)
+    assert r["you_add"] == bl.names(bl.best_fa(1, punt=P)) and bl.trade(*deal, free=False)["you_add"] == ["Block Guy"]
+    x = [y for y in bl.search(*deal, size=2, tier="hard", punt=P, free=False, limit=500)
+         if sorted(y["give"]) == sorted(deal[0]) and y["get"] == deal[1]]
+    assert (x[0]["net"], x[0]["their_net"], x[0]["market"]) == (r["net"], r["their_net"], r["market"]), (x, r)
     # a deal never has a player the side taking him would cut on arrival: it's the same deal without him, plus a
     # roster spot for the side sending him. trade() says so
     xs = lg.search(get=["Player 195"], size=3, tier="hard", free=False, limit=5000)

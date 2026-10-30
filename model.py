@@ -972,12 +972,14 @@ class League:
         """Perceived cost of the m players `team` would drop to make room: its weakest active ones by perceived value."""
         return float(pv.reindex(self._playing(self.rosters[team])).nsmallest(m).sum()) if m > 0 else 0.0
 
-    def best_fa(self, n, skip=()):
+    def best_fa(self, n, skip=(), punt=()):
         """The n free agents a team would pick up for open spots: per-game value times share of games played, so an
-        injured name on waivers isn't who fills the spot."""
+        injured name on waivers isn't who fills the spot. punt: yours only, as in free_moves() (Oct 29: punting FG% and
+        TO, a spot your trade opened got Gafford, a shot-blocker, not Wagler: 0.4 win % on average over 18 deals, 1.1 at
+        most, and about 11 points of BLK odds)."""
         if not self.fa:
             return []
-        v = self.effective().reindex(self.fa)
+        v = self.effective(punt).reindex(self.fa)
         return v[~v.index.isin(list(skip))].nlargest(n).index.tolist()
 
     def _waiver_level(self, v):
@@ -1091,7 +1093,7 @@ class League:
                 ks, dropped, added, il = self._after(self.me, mine, [k], punt)
                 if set(added) & set(keys):  # another compared free agent never fills the open spot
                     ks = [x for x in ks if x not in added]
-                    added = self.best_fa(len(added), skip=ks + keys)
+                    added = self.best_fa(len(added), skip=ks + keys, punt=punt)
                     ks += added
                 win = self.outlook(self.me, {self.me: self.vec(ks, il)}, punt)["win"]
                 c["slot"] = {"win": round(100 * win, 1), "delta": round(100 * (win - w0), 1) + 0.0, "cut": k in dropped,
@@ -1273,7 +1275,7 @@ class League:
             dropped = sorted(c, key=c.get)[:n]
             keys = [k for k in keys if k not in dropped]
         elif n < 0 and self.fa:
-            added = self.best_fa(-n, skip=keys)
+            added = self.best_fa(-n, skip=keys, punt=punt)
             keys += added
         return keys, dropped, added, il
 
@@ -1583,9 +1585,12 @@ class League:
             new = on & np.isfinite(np.take_along_axis(vals, pick, 2)) & ((pick >= size) == (inn == "B"))
             return (on[..., None] * cut).sum(2), (on * mk).sum(2), new.any(-1)
 
-        fa, fam = np.zeros((size + 1, len(RAW))), np.arange(size + 1) * self.spot  # the best 0..size free agents
-        for i, k in enumerate(self.best_fa(size)):  # (vectors; market: open spots), for whoever ends up with open spots
-            fa[i + 1:] += self.rows[k]
+        def fills(p):  # the best 0..size free agents' vectors summed, for open spots: yours on your build, theirs real
+            f = np.zeros((size + 1, len(RAW)))
+            for i, k in enumerate(self.best_fa(size, punt=p)):
+                f[i + 1:] += self.rows[k]
+            return f
+        fa, fa_me, fam = fills(()), fills(punt), np.arange(size + 1) * self.spot  # fam: their market, any free agent
 
         roster, il_me = self.rosters[me], self.il[me]
         mine = combos(roster, give, vm)
@@ -1620,7 +1625,7 @@ class League:
             my_drop, my_drop_m, my_cut = drops(my_rest, low(healthy(theirs), c_in), n_me, "B")
             their_drop, their_drop_m, their_cut = drops(low(healthy(mine), c_t),
                                                         low([[k for k in keys if k not in c and k not in il_t] for c in theirs], c_t), n_t, "A")
-            me_after = self.vecs[me] - GH[:, None] + RV[None] - r_cut[J, to_me] - my_drop + fa[np.clip(-n_me, 0, size)]
+            me_after = self.vecs[me] - GH[:, None] + RV[None] - r_cut[J, to_me] - my_drop + fa_me[np.clip(-n_me, 0, size)]
             them_after = self.vecs[t] - RH[None] + GV[:, None] - g_cut[I, to_t] - their_drop + fa[np.clip(-n_t, 0, size)]
             give_m = gmk[:, None] - their_drop_m + fam[np.clip(-n_t, 0, size)]  # market value each side ends up with
             get_m = rmk[None] - my_drop_m + fam[np.clip(-n_me, 0, size)]
