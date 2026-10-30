@@ -731,18 +731,47 @@ function viewWeek() {
       ${w.adds && !w.adds.left ? `<div class="empty"><b>No adds left this week</b>You've used all ${w.adds.max}. They reset ${esc(dayName(w.adds.resets))}. Waivers' moves still count for the season.</div>`
         : playerTable(w.streams, { extra: streamCols, empty: "<b>No stream helps this week</b>Nobody on waivers raises your odds by 0.1% or more over your weakest players." })}</div>`;
 }
-// start/sit: who starts on a full day for the most category wins this week, against starting the best per-game values
+// start/sit (Q18): who starts each day left for the most category wins this week (or for the categories picked), every
+// sit, start and swap tested on the matchup odds; the picked day lists the lineup in slot order and what changing each call does
 function lineupPanel(w) {
-  const X = w.lineups;
+  const W = S.week, X = W.sit || w.lineups, goal = W.goal || [];
   if (!X) return "";
-  const head = `<div class="panel-h"><div><h2>Start / sit</h2><p>On days more of your players have a game than you can start, start the ones who add most to this week's odds: a close category counts, a safe, lost or punted one doesn't.</p></div></div>`;
-  if (!X.days.length) return `<div class="panel">${head}<div class="empty"><b>Everyone starts</b>No day left this week has more of your players playing than starting spots.</div></div>`;
-  const moved = Object.entries(X.cats).map(([c, v]) => `${lab(c)} <span class="${tone(v)}">${sign1(v)}%</span>`);
-  const sum = X.days.some(x => x.in.length) ? `Against starting your best per-game values: <span class="${tone(X.gain)}">${delta(X.gain, "win%")}</span> this week${moved.length ? ` (odds: ${moved.join(", ")})` : ""}.`
-    : "Same as starting your best per-game values: nobody on your bench helps this matchup more.";
-  return `<div class="panel">${head}<div class="panel-b small" style="border-bottom:1px solid var(--line)">${sum}</div>
-    <div class="tw"><table><thead><tr><th>Day</th><th>Sit</th><th title="Who starts here but would sit if you started your best per-game values">Change</th></tr></thead><tbody>
-    ${X.days.map(x => `<tr><td>${x.date === w.today ? "Today" : esc(dayName(x.date))}</td><td class="names">${and(x.sit.map(esc))}</td><td class="names">${x.in.length ? `Start <b>${and(x.in.map(esc))}</b> over ${and(x.out.map(esc))}` : `<span class="muted">—</span>`}</td></tr>`).join("")}</tbody></table></div></div>`;
+  const head = `<div class="panel-h"><div><h2>Start / sit</h2><p>Every sit, start and swap tested against this week's odds: a close category counts, a safe, lost or punted one doesn't, and a FG%, FT% or TO lead can be worth sitting someone for even with a spot open.</p></div></div>`;
+  if (!X.days.length) return `<div class="panel">${head}<div class="empty"><b>No games left</b>None of your active players has a game left this week.</div></div>`;
+  const odds = v => chance(v / 100), moves = cs => Object.entries(cs).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const chips = `<span class="sugs" role="group" aria-label="Categories to play for"><span class="field">Play for</span>
+    <button class="chip pick" data-sitcat="" aria-pressed="${!goal.length}">All categories</button>
+    ${S.state.cats.map(c => `<button class="chip pick ${punted(c) ? "punted-col" : ""}" data-sitcat="${c}" aria-pressed="${goal.includes(c)}"${punted(c) ? ` disabled title="You're punting ${lab(c)}"` : ""}>${lab(c)}</button>`).join("")}</span>`;
+  const moved = Object.entries(X.cats).map(([c, [a, b]]) => `${lab(c)} <span class="muted">${odds(a)} →</span> <span class="${tone(b - a)}">${odds(b)}</span>`).join(", ");
+  const changed = X.days.some(x => x.in.length || x.out.length), gl = and(goal.map(lab));
+  const sum = W.sitBusy ? `<span class="muted">Testing lineups for ${gl || "every category"}…</span>`
+    : X.goal ? `Playing for ${gl} only: ${X.goal_gain > 0 ? `<span class="pos">${delta(X.goal_gain, "win%")}</span> on ${goal.length > 1 ? "their average odds" : "its odds"}` : "nothing you can change helps it"}.
+        ${changed ? `Against your best per-game lineups that's <span class="${tone(X.gain)}">${delta(X.gain, "win%")}</span> this week overall${moved ? `: ${moved}` : ""}.` : ""}`
+    : changed ? `Against starting your best per-game values: <span class="${tone(X.gain)}">${delta(X.gain, "win%")}</span> this week${moved ? `. Odds: ${moved}` : ""}.`
+    : `Same as starting your best per-game values: no sit, start or swap raises your odds against ${esc(w.opponent)}.`;
+  const change = x => { const swap = x.out.filter(n => !x.bench.includes(n));
+    return [x.in.length && `Start <b>${and(x.in.map(esc))}</b>${swap.length ? ` over ${and(swap.map(esc))}` : ""}`,
+      x.bench.length && `Sit <b>${and(x.bench.map(esc))}</b> with a spot open`].filter(Boolean).join("; ") || `<span class="muted">—</span>`; };
+  const why = x => moves(x.why).slice(0, 4).map(([c, v]) => `${lab(c)} <span class="${tone(v)}">${sign1(v)}%</span>`).join(", ") || `<span class="muted">—</span>`;
+  if (!X.days.some(x => x.date === W.day)) W.day = (X.days.find(x => x.in.length || x.out.length) || X.days[0]).date;
+  const day = d => d === w.today ? "Today" : esc(dayName(d));
+  const rows = X.days.map(x => `<tr${x.date === W.day ? ` class="sel"` : ""}><td><button class="rowbtn" data-act="sit-day" data-date="${x.date}" aria-pressed="${x.date === W.day}" title="Show this day's lineup and every option">${day(x.date)}</button></td>
+    <td class="names">${x.sit.length ? and(x.sit.map(esc)) : `<span class="muted">Everyone starts</span>`}</td><td class="names">${change(x)}</td><td class="names">${why(x)}</td></tr>`).join("");
+  return `<div class="panel" id="start-sit">${head}<div class="panel-b" style="border-bottom:1px solid var(--line)">${chips}<p class="small" style="margin:10px 0 0">${sum}</p></div>
+    <div class="tw"${W.sitBusy ? ` style="opacity:.5"` : ""}><table><thead><tr><th>Day</th><th>Sit</th><th title="What this plan does differently from starting your best per-game values">Change</th>
+      <th title="Your odds in each category from that day's changes">Moves</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${sitDay(X.days.find(x => x.date === W.day), w, goal)}</div>`;
+}
+// a picked day: the lineup in Yahoo's slot order, then who sits, each with what changing his call does to the odds
+function sitDay(x, w, goal) {
+  const by = Object.fromEntries(x.options.map(o => [o.name, o]));
+  const rows = [...(x.slots.length ? x.slots : x.start.map(n => ["Start", n])), ...x.sit.map(n => ["BN", n])];
+  const alt = o => o.flip == null ? `<span class="muted">No open slot fits him</span>`
+    : `<span class="val ${tone(o.flip)}">${delta(o.flip, "win%")}</span> <span class="muted small">${o.start ? `sit him${o.with ? `, start ${esc(o.with)}` : ""}` : `start him${o.with ? ` over ${esc(o.with)}` : ""}`}</span>`;
+  const unit = goal.length ? `your ${and(goal.map(lab))} odds` : oneWin() ? "your chance to win this week" : "your share of this week's categories";
+  return `<div class="panel-b small" style="border-top:1px solid var(--line)"><b>${x.date === w.today ? "Today" : esc(dayName(x.date))}</b>: ${plural(x.start.length + x.sit.length, "player")} with a game, ${x.start.length} start. In your lineup's slot order, so you can set it on Yahoo top to bottom.</div>
+    <div class="tw"><table><thead><tr><th>Slot</th><th>Player</th><th title="Change in ${unit} if you flip his call, with the best swap for it">If you change it</th></tr></thead><tbody>
+    ${rows.map(([s, n]) => `<tr><td class="muted">${esc(s)}</td><td class="pname">${esc(n)}${x.bench.includes(n) ? `<span class="tag out" title="A starting spot fits him, but his game costs your odds more than it adds">spot open</span>` : ""}</td><td>${alt(by[n])}</td></tr>`).join("")}</tbody></table></div>`;
 }
 // adds left this week (Q11) and the best way to spend them: one line for the last add, else the moves in order
 function streamPlan(w) {
@@ -764,6 +793,16 @@ async function loadWeek(opponent) {
   const W = S.week; W.loading = true;
   try { W.data = await api("/api/week", opponent ? { opponent } : {}); } catch (e) { W.data = { error: e.message }; }
   W.loading = false;
+  if (S.week === W && S.view === "week") render();
+}
+// Start / sit for the categories picked (none: the week's own lineups, already loaded)
+async function loadSit(W) {
+  const goal = W.goal;
+  if (!goal.length) { W.sit = null; W.sitBusy = false; return render(); }
+  W.sitBusy = true; render();
+  try { const r = await api("/api/lineup", { cats: goal }); if (W.goal === goal) W.sit = r; }
+  catch (e) { toast(`Couldn't test lineups: ${e.message}`); if (W.goal === goal) W.goal = W.sit?.goal || []; }
+  if (W.goal === goal) W.sitBusy = false;
   if (S.week === W && S.view === "week") render();
 }
 
@@ -1553,6 +1592,11 @@ document.addEventListener("click", async e => {
     const F = S.find, c = t.dataset.goalcat;
     F.cats = F.cats.includes(c) ? F.cats.filter(x => x !== c) : [...F.cats, c]; F.list = null; S.improve = { kind: null, list: null }; return render();
   }
+  if (t.dataset.sitcat != null) {  // Start / sit's Play for: all categories, or toggle one
+    const W = S.week, c = t.dataset.sitcat, g = W.goal || [];
+    W.goal = !c ? [] : g.includes(c) ? g.filter(x => x !== c) : [...g, c];
+    return loadSit(W);
+  }
   if (t.dataset.sort) {
     const b = S[t.dataset.src], k = t.dataset.sort;
     b.sort = b.sort?.k === k ? { k, dir: -b.sort.dir } : { k, dir: k === "team" ? 1 : -1 }; return render();
@@ -1596,6 +1640,7 @@ document.addEventListener("click", async e => {
     return;
   }
   if (act === "week-retry") { S.week = {}; return render(); }
+  if (act === "sit-day") { S.week.day = t.dataset.date; return render(); }
   if (act === "sched-retry") { S.sched = {}; return render(); }
   if (act === "sched-day") { S.plan.day = t.dataset.date; return render(); }
   if (act === "sched-open") { S.plan.open = t.dataset.open === "1"; return render(); }

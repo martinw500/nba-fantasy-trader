@@ -180,6 +180,8 @@ def api(path, q, body):
             lg.snap["matchup"] = lg.matchup = {**lg.matchup, "opponent": opp, "week_end": lg.week_end}
             remember(matchup=lg.matchup)
         return lg.this_week(punt=punt)
+    if path == "/api/lineup":  # This week's Start / sit, playing for some categories only
+        return lg.start_sit(punt=punt, cats=body.get("cats", []))
     if path == "/api/refresh":
         refetch = ()
         if os.environ.get("YAHOO_LEAGUE_ID"):
@@ -253,7 +255,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/compare", "/api/move", "/api/schedule", "/api/news",
-       "/api/players", "/api/me", "/api/week", "/api/refresh", "/api/chat", "/api/chats", "/api/offers"}
+       "/api/players", "/api/me", "/api/week", "/api/lineup", "/api/refresh", "/api/chat", "/api/chats", "/api/offers"}
 
 if __name__ == "__main__":
     # ponytail: localhost-only, single user; no auth because it never listens on the network

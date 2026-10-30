@@ -764,13 +764,25 @@ def test_all():
     # values. Player 150, your worst, blocks 6 a game this week only: he starts over a better player every day and
     # BLK and the week go up; with BLK punted his blocks count for nothing and per-game value's lineups stand
     ss = sl.start_sit("Them")
-    assert len(ss["days"]) == 4 and all(len(d["start"]) == 10 for d in ss["days"]) and ss["gain"] >= 0
+    assert len(ss["days"]) == 4 and all(len(d["start"]) <= 10 for d in ss["days"]) and ss["gain"] >= 0
     sl.p_week.at["player 150", "BLK"] = 6
     ss = sl.start_sit("Them")
-    assert all(d["in"] == ["Player 150"] and len(d["out"]) == 1 for d in ss["days"]) and ss["gain"] > 0 and ss["cats"]["BLK"] > 0
+    assert all(d["in"] == ["Player 150"] and len(d["out"]) == 1 for d in ss["days"]) and ss["gain"] > 0
+    assert ss["cats"]["BLK"][1] > ss["cats"]["BLK"][0] and all(d["why"]["BLK"] > 0 for d in ss["days"])
     assert not any(d["in"] for d in sl.start_sit("Them", punt=["BLK"])["days"])
     assert sl.this_week("Them")["lineups"] == ss and sl.start_sit() is None  # no opponent saved
+    # ... at the best plan no one change helps (options: what flipping each player's call does), and playing for AST
+    # alone can only raise AST's odds over playing for every category
+    assert all(o["flip"] <= 0 for d in ss["days"] for o in d["options"] if "flip" in o)
+    ast = sl.start_sit("Them", cats=["AST"])
+    assert ast["goal"] == ["AST"] and ast["goal_gain"] >= 0 and sl.start_sit("Them", cats=["BLK"], punt=["BLK"]) == sl.start_sit("Them", punt=["BLK"])
     sl.p_week.at["player 150", "BLK"] = sl.p.at["player 150", "BLK"]
+    # ... and a player who only turns it over sits even with a slot open (a 15-man lineup): he's on the bench every day
+    sl.lineup, tov = 15, sl.p_week.loc["player 150"].copy()
+    sl.p_week.loc["player 150", model.RAW] = 0.0
+    sl.p_week.at["player 150", "TOV"] = 10
+    assert all(d["bench"] == ["Player 150"] for d in sl.start_sit("Them")["days"] if "Player 150" in d["sit"] + d["start"])
+    sl.lineup, sl.p_week.loc["player 150"] = 10, tov
 
     # weekly add limit (Q11). No cap in the settings: nothing counted, and the plan chains streams (a later one can
     # replace an earlier streamer) in day order (Q13: gains recounted in that order); its first pick is the top
