@@ -40,6 +40,8 @@ so no markdown (no tables, headers, bold or backticks). Keep answers short.
 WEB = """You can also search the web (WebSearch) for news model.py can't see: injuries, minutes and role changes, trades.
 Search when the question needs fresh news, name the site you got it from, and still take every number from model.py.
 """
+# the Python the AI GM runs model.py with: SKILL.md says .venv/bin/python (Mac), Windows venvs keep it in Scripts
+PY = next((p for p in (".venv/bin/python", ".venv/Scripts/python.exe") if (ROOT / p).exists()), "python")
 # the chat settings the AI GM tab can pick (the first of each is the default). Fable needs usage credits on a Pro plan.
 MODELS, EFFORTS = ("claude-opus-5-5", "claude-fable-5-1"), ("medium", "low", "high", "xhigh", "max")
 
@@ -56,8 +58,8 @@ def claude_chat(message, punt, session=None, model=None, effort=None, web=True, 
     web = ["WebSearch"] if web else []
     cmd = [shutil.which("claude"), "-p", "--output-format", "json", "--safe-mode",
            "--model", model if model in MODELS else MODELS[0], "--effort", effort if effort in EFFORTS else EFFORTS[0],
-           "--system-prompt", GM_PROMPT + (WEB if web else "") + skill, "--tools", "Bash", *web,
-           "--allowedTools", "Bash(.venv/bin/python model.py:*)", *web, "--permission-mode", "dontAsk"]
+           "--system-prompt", (GM_PROMPT + (WEB if web else "") + skill).replace(".venv/bin/python", PY),
+           "--tools", "Bash", *web, "--allowedTools", f"Bash({PY} model.py:*)", *web, "--permission-mode", "dontAsk"]
     if session:
         cmd += ["--resume", session]
     # the message goes in on stdin, so one starting with "-" can't be read as a flag
