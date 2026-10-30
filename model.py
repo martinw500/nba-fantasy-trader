@@ -103,6 +103,7 @@ WEEK_K = 0.45
 # sitter alone) until M4 (Oct 28): with everyone out at once spread together and the preseason projection's part taken
 # out (priced_in()), next week's stats are best at 0.5 in 2025-26 and out of sample in 2024-25, minutes better still
 REGULAR, SHARE, ROOM, ROLE, USAGE = 25, 0.5, 36, 0.5, 0.25
+TERM_DAYS = (7, 30)  # a teammate's absence that lifts a player: short-term if he's back within a week, medium within a month
 USAGE_STATS = ["FGM", "FGA", "FTM", "FTA", "PTS", "AST", "TOV"]  # rebounds, steals, blocks and threes barely move
 
 # Playoff odds (season_sim()): how far a team's real weeks land from its projected odds, as logit shifts on every
@@ -804,7 +805,7 @@ class League:
         lift = priced_in(lifts(takers, self.nba, [s for _, _, s in spans]), cur.index[cur.GP > 0], cur.GP, self.proj.index)
         self.lift = lift.set_axis(pd.MultiIndex.from_tuples([(k, j, *spans[s][:2]) for k, j, s in lift.index],
                                                             names=["key", "by", "from", "until"]))
-        ahead = self._boost("9999")
+        self.ahead = ahead = self._boost("9999")  # each player's lift averaged over the rest of the season
         line.loc[ahead.index, ahead.columns] += ahead
         self.p = line[cols].copy()
         self.z = zscores(line, pool)[self.cats]                      # ROS value
@@ -1058,17 +1059,24 @@ class League:
 
     @functools.cached_property
     def lifted(self):
-        """{player: [each injured teammate whose minutes he takes (self.lift), back when, how many of the player's
-        games come before that (game_days(), so after his own return), and his per-game lift in them, averaged over the
-        stretches with whoever else is out]}, for lifts of half a minute or more in at least one game."""
+        """{player: [each injured teammate whose minutes he takes (self.lift), back when (days from today, and term:
+        short / medium / long by TERM_DAYS), how many of the player's games come before that (game_days(), so after his
+        own return), and his per-game lift in them, averaged over the stretches with whoever else is out]}, for lifts of
+        half a minute or more in at least one game."""
         out = {}
         for (k, j), rows in self.lift.groupby(level=["key", "by"]):
             n = [sum(a <= x < b for x in self.game_days(k)) for _, _, a, b in rows.index]  # his games in each stretch
             d = rows.mul(n, axis=0).sum() / max(sum(n), 1)  # the lift over all of them
             if d.MIN >= 0.5 and sum(n):
                 out.setdefault(k, []).append({"by": self.p.at[j, "PLAYER_NAME"], "return": self.inj[j]["return"],
-                                              "games": sum(n), **{c: round(float(d[c]), 1) for c in ["MIN"] + COUNTING}})
+                                              "games": sum(n), **self._term(j),
+                                              **{c: round(float(d[c]), 1) for c in ["MIN"] + COUNTING}})
         return out
+
+    def _term(self, j):
+        """How long injured player j is out from today: days, and term (short / medium / long by TERM_DAYS)."""
+        days = (date.fromisoformat(self.inj[j]["return"]) - date.fromisoformat(self.today)).days
+        return {"days": days, "term": "short" if days <= TERM_DAYS[0] else "medium" if days <= TERM_DAYS[1] else "long"}
 
     def weeks(self, n=3):
         """The n matchup weeks after this one, (start, end): the season schedule's (some run 14 days), else
@@ -2163,8 +2171,10 @@ class League:
         Schedule's lineups). cats: play for those categories only (the share of them won). span: a later matchup week
         (start, end) vs the team the season schedule pairs you with, on rest-of-season lines and no score yet.
         -> {opp, day: {date: players with a game, best first}, base / plan: {date: starters} on per-game value / here,
-        one: {player: a game's line}, fits, odds, goal, v0 / v: your rest of the week on each, now: goal of v, moves:
-        the last round's changes [(date, sits, starts)], g: their goal}, None with no opponent or schedule.
+        one: {(date, player): that game's expected line, with the lift from teammates out that day, not the week's
+        average}, bump: {player: [(from, until, teammate out, MIN + RAW lift)]}, rate, fits, odds, goal, v0 / v: your
+        rest of the week on each, now: goal of v, moves: the last round's changes [(date, sits, starts)], g: their
+        goal}, None with no opponent or schedule.
         ponytail: lineups set before tip-off (a bench player never swaps in for a starter who sits), and one change at
         a time finds a local best, not every lineup's."""
         if self.mode == "points" or not self.sched:
@@ -2180,15 +2190,24 @@ class League:
             if not (opp := self._opponent(opp)):
                 return None
             rate, line, days = self.rate_week, self.p_week, lambda ks: self._days(ks, self.week_end)
-        game = lambda ks: dict(zip(ks, rate.reindex(ks).to_numpy()[:, None] * line.loc[ks, RAW].to_numpy()))  # a game each
-        total = lambda one, plan: sum((one[k] for ks in plan.values() for k in ks), np.zeros(len(RAW)))
+        total = lambda one, plan: sum((one[d, k] for d, ks in plan.items() for k in ks), np.zeros(len(RAW)))
         if span:
-            theirs = total(game(play(opp)), {d: self._lineup(ks) for d, ks in days(play(opp)).items()})
+            ks = play(opp)  # their lines with the lift averaged over the season (they set their own lineups)
+            g = dict(zip(ks, rate.reindex(ks).to_numpy()[:, None] * line.loc[ks, RAW].to_numpy()))
+            theirs = total({(d, k): g[k] for d, x in days(ks).items() for k in x}, {d: self._lineup(x) for d, x in days(ks).items()})
             odds = lambda v: self._concede(cat_probs(v, theirs, self.cats), punt)
         else:
             _, _, odds = self._matchup(opp, punt)
+        # a game each, with the lift from teammates out that day (self.lift) in place of the one `line` averages in
         mine = play(self.me)
-        one, day = game(mine), days(mine)
+        day, avg = days(mine), self.ahead if span else self._boost(self.week_end)
+        flat = dict(zip(mine, (line.loc[mine, RAW] - avg.reindex(mine, fill_value=0)[RAW]).to_numpy(float)))
+        bump = collections.defaultdict(list)  # {player: [(from, until, who's out, MIN + RAW)]}
+        for (k, j, a, b), x in zip(self.lift.index, self.lift[["MIN"] + RAW].to_numpy(float)):
+            if k in flat:
+                bump[k].append((a, b, j, x))
+        one = {(d, k): float(rate[k]) * (flat[k] + sum((x[1:] for a, b, _, x in bump[k] if a <= d < b), np.zeros(len(RAW))))
+               for d, ks in day.items() for k in ks}
         idx = [self.cats.index(c) for c in cats if c in self.cats and c not in punt]
         goal = (lambda p: p[..., idx].mean(-1)) if idx else self._score
         fit = {}
@@ -2204,22 +2223,23 @@ class League:
             moves = [(d, j, None) for d, on in plan.items() for j in on] if bench else []
             moves += [(d, j, k) for d, ks in day.items() for k in ks if k not in plan[d]
                       for j in [None, *plan[d]] if fits([x for x in plan[d] if x != j] + [k])]
-            D = np.array([(one[k] if k else 0) - (one[j] if j else 0) for _, j, k in moves]).reshape(-1, len(RAW))
+            D = np.array([(one[d, k] if k else 0) - (one[d, j] if j else 0) for d, j, k in moves]).reshape(-1, len(RAW))
             g = goal(odds(v + D)) if moves else np.zeros(0)
             if not moves or g.max() <= now + 1e-6:
                 break
             d, j, k = moves[i := int(g.argmax())]
             plan[d] = [x for x in day[d] if x == k or (x != j and x in plan[d])]
             v, now = v + D[i], float(g[i])
-        return {"opp": opp, "day": day, "base": base, "plan": plan, "one": one, "fits": fits, "odds": odds, "goal": goal,
-                "v0": v0, "v": v, "now": now, "moves": moves, "g": g}
+        return {"opp": opp, "day": day, "base": base, "plan": plan, "one": one, "bump": bump, "rate": rate, "fits": fits,
+                "odds": odds, "goal": goal, "v0": v0, "v": v, "now": now, "moves": moves, "g": g}
 
     def start_sit(self, opp=None, punt=(), cats=()):
         """This week's lineups (Q18): each day left with a game for you, who starts for the most category wins vs opp
         (_week_plan; cats: playing for those categories only) and who sits. in / out = who starts or sits only on this
         plan, against starting the best per-game values; bench = sits with a slot open he fits; why = the category odds
-        that day's changes move; slots = [slot, starter]; options = each player with a game and what changing his call
-        does (flip: points of the goal, with = who he'd swap with). gain: win-% points over per-game value's lineups;
+        that day's changes move; slots = [slot, starter]; options = each player with a game, the chance he plays (plays,
+        %), what he gets from teammates out that day (lift: MIN, PTS, out: who, back when, term), and what changing his call does (flip:
+        points of the goal, with = who he'd swap with). gain: win-% points over per-game value's lineups;
         cats: {category: [odds on per-game value's lineups, on these]} that move; goal / goal_gain: the categories
         played for and theirs. None with no opponent or schedule."""
         if not (r := self._week_plan(opp, punt, cats=cats)):
@@ -2228,6 +2248,11 @@ class League:
         name = lambda k: self.p.at[k, "PLAYER_NAME"]
         names = lambda ks: [name(k) for k in ks]
         p, p0, zero = odds(r["v"]), odds(r["v0"]), np.zeros(len(RAW))
+        def lift(d, k):  # what he gets that day from teammates out (minutes, or shots without them): half a minute or point
+            x = [(j, m) for a, b, j, m in r["bump"][k] if a <= d < b]
+            t = sum((m for _, m in x), np.zeros(len(RAW) + 1))[[0, 1 + RAW.index("PTS")]]
+            out = [{"name": name(j), "return": self.inj[j]["return"], **self._term(j)} for j, _ in x]
+            return {"lift": {"MIN": round(float(t[0]), 1), "PTS": round(float(t[1]), 1), "out": out}} if t.max() >= 0.5 else {}
         flip = {}  # (date, player): the best change of his call, (its goal, who it swaps him with)
         for (d, j, k), x in zip(r["moves"], r["g"]):
             for a, b in ((j, k), (k, j)):
@@ -2237,14 +2262,14 @@ class League:
         for d, ks in sorted(r["day"].items()):
             on, was = plan[d], base[d]
             sit = [k for k in ks if k not in on]
-            why = 100 * (p - odds(r["v"] - sum((one[k] for k in on), zero) + sum((one[k] for k in was), zero)))
+            why = 100 * (p - odds(r["v"] - sum((one[d, k] for k in on), zero) + sum((one[d, k] for k in was), zero)))
             held = lineup(self.slots, [self._pos(k) for k in on]) if self.slots else {}
             days.append({"date": d, "start": names(on), "sit": names(sit), "in": names(k for k in on if k not in was),
                          "out": names(k for k in was if k not in on), "bench": names(k for k in sit if fits(on + [k])),
                          "why": {c: round(float(x), 1) for c, x in zip(self.cats, why) if abs(x) >= 0.5},
                          "slots": [[self.slots[i], name(on[j])] for i, j in sorted(held.items())],
-                         "options": [{"name": name(k), "start": k in on,
-                                      **({"flip": round(100 * (flip[d, k][0] - r["now"]), 1),
+                         "options": [{"name": name(k), "start": k in on, "plays": round(100 * float(r["rate"][k])),
+                                      **lift(d, k), **({"flip": round(100 * (flip[d, k][0] - r["now"]), 1),
                                           "with": flip[d, k][1] and name(flip[d, k][1])} if (d, k) in flip else {})}
                                      for k in ks]})
         goal = [c for c in cats if c in self.cats and c not in punt]

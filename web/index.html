@@ -451,10 +451,12 @@ const mdy = d => new Date(d + "T12:00").toLocaleDateString(undefined, { month: "
 const statusTag = p => p.status || p.injury ? `<span class="tag ${OUT.has(p.status) ? "out" : ""}"${p.injury ? ` title="${esc(p.injury)}"` : ""}>${esc(p.status || "News")}${p.return && p.return >= new Date().toISOString().slice(0, 10) ? ` · back ${mdy(p.return)}` : ""}</span>` : "";
 const gpNote = p => p.gp < 3 ? ` title="Only ${p.gp} games this season"` : "";
 // teammates' injuries: the minutes and shots he picks up while they sit, counted in his lines for those games only.
-// Tables tag a lift of a minute or more (most are smaller, spread over a whole rotation); the card lists every one
+// Tables tag a lift of a minute or more (most are smaller, spread over a whole rotation) with how long the biggest one
+// lasts (short-term: the teammate's back within a week; medium: within a month); the card lists every one
+const TERM = { short: "short-term", medium: "medium-term", long: "long-term" };
 const liftMin = p => (p.lift || []).reduce((s, l) => s + l.MIN, 0);
-const liftWhen = l => `${esc(l.by)} is out (back ${mdy(l.return)}, ${l.games} game${l.games === 1 ? "" : "s"})`;
-const liftTag = p => liftMin(p) >= 1 ? `<span class="tag" title="${p.lift.map(l => `+${l.MIN.toFixed(1)} min a game while ${liftWhen(l)}`).join("; ")}. Counted in his lines for those games">+${liftMin(p).toFixed(1)} min</span>` : "";
+const liftWhen = l => `${esc(l.by)} is out (back ${mdy(l.return)}, ${l.games} game${l.games === 1 ? "" : "s"}, ${TERM[l.term]})`;
+const liftTag = p => liftMin(p) >= 1 ? `<span class="tag" title="${p.lift.map(l => `+${l.MIN.toFixed(1)} min${l.PTS >= 0.1 ? `, +${l.PTS.toFixed(1)} pts` : ""} a game while ${liftWhen(l)}`).join("; ")}. Counted in his lines for those games">+${liftMin(p).toFixed(1)} min ${TERM[p.lift.reduce((a, b) => b.MIN > a.MIN ? b : a).term]}</span>` : "";
 // recent form: his value over the last 14 days (this season without box scores). The model arrows it when it's far
 // (about one 14-day standard deviation) from his rest-of-season value
 const formWin = () => S.state.movers?.window || "the last 14 days";
@@ -742,7 +744,7 @@ function lineupPanel(w) {
   const chips = `<span class="sugs" role="group" aria-label="Categories to play for"><span class="field">Play for</span>
     <button class="chip pick" data-sitcat="" aria-pressed="${!goal.length}">All categories</button>
     ${S.state.cats.map(c => `<button class="chip pick ${punted(c) ? "punted-col" : ""}" data-sitcat="${c}" aria-pressed="${goal.includes(c)}"${punted(c) ? ` disabled title="You're punting ${lab(c)}"` : ""}>${lab(c)}</button>`).join("")}</span>`;
-  const moved = Object.entries(X.cats).map(([c, [a, b]]) => `${lab(c)} <span class="muted">${odds(a)} →</span> <span class="${tone(b - a)}">${odds(b)}</span>`).join(", ");
+  const moved = Object.entries(X.cats).map(([c, [a, b]]) => `<span style="white-space:nowrap">${lab(c)} <span class="muted">${odds(a)} →</span> <span class="${tone(b - a)}">${odds(b)}</span></span>`).join(", ");
   const changed = X.days.some(x => x.in.length || x.out.length), gl = and(goal.map(lab));
   const sum = W.sitBusy ? `<span class="muted">Testing lineups for ${gl || "every category"}…</span>`
     : X.goal ? `Playing for ${gl} only: ${X.goal_gain > 0 ? `<span class="pos">${delta(X.goal_gain, "win%")}</span> on ${goal.length > 1 ? "their average odds" : "its odds"}` : "nothing you can change helps it"}.
@@ -750,8 +752,8 @@ function lineupPanel(w) {
     : changed ? `Against starting your best per-game values: <span class="${tone(X.gain)}">${delta(X.gain, "win%")}</span> this week${moved ? `. Odds: ${moved}` : ""}.`
     : `Same as starting your best per-game values: no sit, start or swap raises your odds against ${esc(w.opponent)}.`;
   const change = x => { const swap = x.out.filter(n => !x.bench.includes(n));
-    return [x.in.length && `Start <b>${and(x.in.map(esc))}</b>${swap.length ? ` over ${and(swap.map(esc))}` : ""}`,
-      x.bench.length && `Sit <b>${and(x.bench.map(esc))}</b> with a spot open`].filter(Boolean).join("; ") || `<span class="muted">—</span>`; };
+    return cap([x.in.length && `start <b>${and(x.in.map(esc))}</b>${swap.length ? ` over ${and(swap.map(esc))}` : ""}`,
+      x.bench.length && `sit <b>${and(x.bench.map(esc))}</b> with a spot open`].filter(Boolean).join("; ") || `<span class="muted">—</span>`); };
   const why = x => moves(x.why).slice(0, 4).map(([c, v]) => `${lab(c)} <span class="${tone(v)}">${sign1(v)}%</span>`).join(", ") || `<span class="muted">—</span>`;
   if (!X.days.some(x => x.date === W.day)) W.day = (X.days.find(x => x.in.length || x.out.length) || X.days[0]).date;
   const day = d => d === w.today ? "Today" : esc(dayName(d));
@@ -769,9 +771,13 @@ function sitDay(x, w, goal) {
   const alt = o => o.flip == null ? `<span class="muted">No open slot fits him</span>`
     : `<span class="val ${tone(o.flip)}">${delta(o.flip, "win%")}</span> <span class="muted small">${o.start ? `sit him${o.with ? `, start ${esc(o.with)}` : ""}` : `start him${o.with ? ` over ${esc(o.with)}` : ""}`}</span>`;
   const unit = goal.length ? `your ${and(goal.map(lab))} odds` : oneWin() ? "your chance to win this week" : "your share of this week's categories";
+  const boost = l => !l ? `<span class="muted">—</span>` : `<span title="+${l.MIN.toFixed(1)} min, +${l.PTS.toFixed(1)} pts this game">+${l.MIN.toFixed(1)} min</span> <span class="muted">while ${and(l.out.map(o => `<span title="Back ${mdy(o.return)}, in ${plural(o.days, "day")}">${esc(o.name)}</span>`))} ${l.out.length > 1 ? "are" : "is"} out (${and([...new Set(l.out.map(o => TERM[o.term]))])})</span>`;
   return `<div class="panel-b small" style="border-top:1px solid var(--line)"><b>${x.date === w.today ? "Today" : esc(dayName(x.date))}</b>: ${plural(x.start.length + x.sit.length, "player")} with a game, ${x.start.length} start. In your lineup's slot order, so you can set it on Yahoo top to bottom.</div>
-    <div class="tw"><table><thead><tr><th>Slot</th><th>Player</th><th title="Change in ${unit} if you flip his call, with the best swap for it">If you change it</th></tr></thead><tbody>
-    ${rows.map(([s, n]) => `<tr><td class="muted">${esc(s)}</td><td class="pname">${esc(n)}${x.bench.includes(n) ? `<span class="tag out" title="A starting spot fits him, but his game costs your odds more than it adds">spot open</span>` : ""}</td><td>${alt(by[n])}</td></tr>`).join("")}</tbody></table></div>`;
+    <div class="tw"><table><thead><tr><th>Slot</th><th>Player</th><th class="n" title="Chance he plays this game: how often he suits up, cut by an injury tag if he sat his team's last game. His line counts this share of a game">Plays</th>
+      <th title="Teammates out that day whose minutes and shots he takes: counted in his line for the games before they're back">Boost</th>
+      <th title="Change in ${unit} if you flip his call, with the best swap for it">If you change it${goal.length ? ` <span class="muted">(${and(goal.map(lab))} odds)</span>` : ""}</th></tr></thead><tbody>
+    ${rows.map(([s, n]) => `<tr><td class="muted">${esc(s)}</td><td class="pname">${esc(n)}${x.bench.includes(n) ? `<span class="tag out" title="A starting spot fits him, but his game costs your odds more than it adds">spot open</span>` : ""}</td>
+      <td class="n ${by[n].plays < 70 ? "neg" : by[n].plays < 85 ? "" : "muted"}">${by[n].plays}%</td><td class="small">${boost(by[n].lift)}</td><td>${alt(by[n])}</td></tr>`).join("")}</tbody></table></div>`;
 }
 // adds left this week (Q11) and the best way to spend them: one line for the last add, else the moves in order
 function streamPlan(w) {

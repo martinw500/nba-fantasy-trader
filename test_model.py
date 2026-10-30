@@ -657,7 +657,7 @@ def test_all():
     assert np.allclose(gap(sl.p, no.p, "twin a"), 4 / 6 * up[model.RAW]) and np.allclose(gap(sl.p_week, no.p, "twin a"), up[model.RAW])
     assert not gap(sl.p_week, no.p, "twin b").any() and sl.value(["twin a"]).iloc[0] > no.value(["twin a"]).iloc[0]
     assert sl.week_vec(["twin a"])[model.RAW.index("PTS")] > no.week_vec(["twin a"])[model.RAW.index("PTS")]
-    assert sl.player("twin a")["lift"] == [{"by": "Twin C", "return": "2026-11-03", "games": 4,
+    assert sl.player("twin a")["lift"] == [{"by": "Twin C", "return": "2026-11-03", "games": 4, "days": 8, "term": "medium",
                                            **{c: round(float(up[c]), 1) for c in ["MIN"] + model.COUNTING}}]
     assert "lift" not in no.player("twin a") and "lift" not in sl.player("twin c") and "lift" in sl.card("Twin D")
     # no games before his return (Twin C back Oct 27, no AAA game on the 26th): no lift, and none listed
@@ -679,6 +679,15 @@ def test_all():
     assert np.allclose(gap(two.p_week, no.p, "twin a"), (ta[model.RAW].iloc[0] + ta[model.RAW].iloc[1]) / 2)
     assert [(x["by"], x["games"]) for x in two.player("twin a")["lift"]] == [("Twin C", 4)]  # Twin D's: no minutes
     assert "twin d" not in two.lift.xs("2026-10-26", level="from").index.get_level_values("key")  # out: takes nothing
+    # ... and Start / sit plays each game on its own day's lift, not the week's average: Twin A's Oct 26 game gets the
+    # first stretch's, his Oct 30 game the second's, and his four games together are This week's line. On Oct 26 the
+    # lineup lists both teammates (Twin D's shots without minutes count too)
+    wp, r = two._week_plan("Them"), two.rate_week["twin a"]
+    one, flat = [wp["one"][d, "twin a"] for d in week[:4]], no.p.loc["twin a", model.RAW].to_numpy(float)
+    assert np.allclose(one[0], r * (flat + ta[model.RAW].iloc[0])) and np.allclose(one[2], r * (flat + ta[model.RAW].iloc[1]))
+    assert np.allclose(sum(one) / 4, r * two.p_week.loc["twin a", model.RAW].to_numpy(float))
+    mon = next(o for o in two.start_sit("Them")["days"][0]["options"] if o["name"] == "Twin A")
+    assert sorted((x["name"], x["term"]) for x in mon["lift"]["out"]) == [("Twin C", "medium"), ("Twin D", "short")] and mon["lift"]["MIN"] > 0.5 and 0 < mon["plays"] <= 100
     # ... and the box scores are read net of the lifts players had: Twin C sat 2 of Twin A's 4 games, so Twin A's line
     # drops (back to what it'd be with everyone playing); Twin D, with no games, keeps his
     bx = pd.DataFrame([{**line(f"Twin {t}", 180), "TEAM_ABBREVIATION": "AAA", "GAME_ID": g,
