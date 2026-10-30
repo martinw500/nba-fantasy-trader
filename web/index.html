@@ -464,7 +464,7 @@ const trendTag = p => p.trend ? `<svg class="i trend ${p.trend} ${p.trend === "u
 const mktCell = p => `${Math.round(p.mkt)} <span class="muted small"${p.mkt_model ? ` title="Yahoo hasn't ranked him: the model's own rank"` : ""}>#${p.mkt_rank}${p.mkt_model ? "*" : ""}</span>`;
 const mktTone = d => Math.abs(d) < 5 ? "" : tone(d);
 const mktDeal = m => `<span class="muted small">${Math.round(m.give)} → ${Math.round(m.get)}</span> <span class="${mktTone(m.diff_pct)}">${(m.diff_pct > 0 ? "+" : "") + Math.round(m.diff_pct)}%</span>`;
-const MKT_TIP = "Market value you send → get (100 = the market's top player, from Yahoo's preseason and current ranks), roster spots included. % = what you gain on market, as a share of the bigger side";
+const MKT_TIP = "Market value you send → get (100 = the market's top player, from Yahoo's preseason and current ranks), roster spots included. Players traded together count as a package: the best in full, each next one at 70% of the one before, so consolidating costs extra. % = what you gain on market, as a share of the bigger side";
 
 let TBL = 0;  // player tables drawn so far in this render: S.card.t says which one holds the open card
 function playerTable(players, { extra = [], empty = "No players.", dim = [] } = {}) {  // dim: grey these columns too (a build's punt); an extra's cls replaces the numeric "n" (text columns)
@@ -1119,7 +1119,12 @@ function pitchText(r) {
     if (weak.length) out.push(`It shores up your ${words(weak)}${more.length ? ` and adds ${words(more)}` : ""}.`);
     else if (more.length) out.push(`It adds ${words(more)} for you.`);
   }
-  if (r.market?.diff_pct <= -5) out.push("On Yahoo's rankings you get the better end of it.");
+  if (r.market?.diff_pct <= -5) {  // a package counts less than its sum (PACKAGE), so when they send more players the
+    // plain sum of Yahoo's ranks can favour them: say what holds either way, they get the deal's best player
+    const best = [...r.give, ...r.get].reduce((a, b) => (b.mkt > a.mkt ? b : a));
+    out.push(r.get.length > r.give.length && r.give.includes(best) ? `You'd get the best player in the deal, ${best.name}.`
+      : "On Yahoo's rankings you get the better end of it.");
+  }
   const n = r.get.length - r.give.length;
   if (n > 0) out.push(`You also free up ${n > 1 ? n + " roster spots" : "a roster spot"} for the waiver wire.`);
   out.push("Happy to tweak it if you'd rather keep someone.");

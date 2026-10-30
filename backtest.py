@@ -61,11 +61,15 @@ def season_setup():
 
 def projections(g, base, pre, keys, w):
     """What the model knew on the Monday of week w: per-game ROS line (from the prior) and availability (from the
-    baseline's games, as League does)."""
-    cur = per_game(g[g.week < w])
+    baseline's games and this season's, of his team's games so far, as League does)."""
+    past = g[g.week < w]
+    cur = per_game(past)
     line = model.ros(pre, cur).reindex(keys)
     line[model.RAW] = line[model.RAW].fillna(0)
-    avail = model.availability(base.GP.reindex(keys), cur.GP.reindex(keys).fillna(0), cur.GP.max() if len(cur) else 0)
+    team = past.sort_values("GAME_DATE").groupby("key").TEAM_ABBREVIATION.last()
+    games = (team.map(past.groupby("TEAM_ABBREVIATION").GAME_DATE.nunique()).reindex(keys).astype(float)
+             .fillna(cur.GP.max() if len(cur) else 0))
+    avail = model.availability(base.GP.reindex(keys), cur.GP.reindex(keys).fillna(0), games)
     return line, avail.to_numpy()
 
 
@@ -141,6 +145,11 @@ def team_weeks(games="fixed", leagues=LEAGUES):
             if games != "fixed":
                 left = left[left < monday + pd.Timedelta(weeks=1)]
             n[idx[k]] *= (left >= back).mean() if len(left) else 0
+        if games != "fixed":  # this week, players who played their team's last game (week 0: everyone) play more of
+            past = g[g.week < w]  # it than all season (League.rate_week, WEEK_K)
+            last, played = past.groupby("TEAM_ABBREVIATION").GAME_DATE.max(), set(zip(past.key, past.GAME_DATE))
+            fresh = np.array([(k, last.get(team[k])) in played for k in keys]) if len(past) else np.ones(len(keys), bool)
+            avail = np.where(fresh, 1 - model.WEEK_K * (1 - avail), avail)
         yield w, R @ ((n * avail)[:, None] * line[model.RAW].to_numpy()), R @ actual[w]
 
 
@@ -194,7 +203,7 @@ def replay(weights=(0, 0.25, 0.5, 0.6, 0.75, 1)):
         pre, err = model.prior(base, proj, x), []
         for w in range(int(g.week.max()) - 3):
             left = per_game(g[g.week >= w]).query("GP >= 10")
-            line = model.ros(pre, per_game(g[g.week < w])).reindex(left.index).fillna(0)
+            line = model.ros(pre, per_game(g[g.week < w])).reindex(left.index)[model.RAW].fillna(0)
             err.append(float(((line[model.RAW] - left[model.RAW]).abs() / left[model.RAW].mean()).mean(axis=1).mean()))
         print(f"  weight {x:<5} week 0 {err[0]:.4f}   weeks 1-6 {np.mean(err[1:7]):.4f}   season {np.mean(err):.4f}")
 
@@ -276,8 +285,8 @@ def teammates(grid=((0.37, 0.25),)):
 
 def mondays_played(season):
     """Each Monday from week 1 to 4 weeks from the end, the 200 best players on that Monday's line: games in his better
-    past season (best, of 82) and each of the last three, games so far (played, of `games`: the most anyone has played,
-    as League does), how many of his team's games in a row he's sat (out: 0 if he played the last one) and the share of
+    past season (best, of 82) and each of the last three, games so far (played, of `games`: his team's, as League
+    does), how many of his team's games in a row he's sat (out: 0 if he played the last one) and the share of
     his team's games left (y) and this week's (wk) he played."""
     prev, prev2, prev3 = (f"{int(season[:4]) - n}-{int(season[2:4]) - n + 1:02d}" for n in (1, 2, 3))
     g, last, older, T = logs(season), model.fetch(prev), model.fetch(prev2), "TEAM_ABBREVIATION"
@@ -294,7 +303,8 @@ def mondays_played(season):
                                / team[on].map(games.groupby(T).GAME_ID.nunique())).clip(upper=1)
         rows.append(pd.DataFrame({"season": season, "week": w, "best": base.GP.reindex(on), "last": last.GP.reindex(on),
                                   "older": older.GP.reindex(on), "third": third.reindex(on),
-                                  "played": cur.GP.reindex(on).fillna(0), "games": cur.GP.max(),
+                                  "played": cur.GP.reindex(on).fillna(0),
+                                  "games": team[on].map(past.groupby(T).GAME_DATE.nunique()),
                                   "out": [(days[team[k]] > seen.get(k, pd.Timestamp.min)).sum() for k in on],
                                   "left": team[on].map(fut.groupby(T).GAME_ID.nunique()), "y": share(fut),
                                   "wk": share(nxt).fillna(0), "wk_n": team[on].map(nxt.groupby(T).GAME_ID.nunique())}))

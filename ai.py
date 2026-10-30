@@ -28,7 +28,8 @@ Quote them as "93% to make the playoffs" rather than a projected rank. A trade's
 before -> after for the user ("you") and the partner ("them"), in percent. A category the
 user can't win or already dominates barely moves their odds, so explain punts from that. "market" prices a deal the
 way managers do, from Yahoo's ranks (give / get in market value, diff_pct = what the user gains on market, verdict
-like "you overpay 35%"); "accept" is how likely they say yes, mostly on that. "their_view" is only how it reads on
+like "you overpay 35%"; players traded together count as a package, the best in full and each next one at 70% of the
+one before, so a 3-for-1 for a star needs more than the market sum); "accept" is how likely they say yes, mostly on that. "their_view" is only how it reads on
 this season's hot and cold starts.
 evaluate_trade also returns cats_detail (both teams' category totals and odds, before -> after), vs (user's odds
 against each team), standings (flag "rival": partner or a top-4 team gaining more than the user), flags (injury,

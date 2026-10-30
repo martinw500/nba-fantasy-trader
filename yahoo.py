@@ -280,7 +280,8 @@ def _pool():
     import model
     base, cur = model.baseline(model.fetch(model.LAST), model.fetch(model.OLDER)), model.fetch(model.CUR, max_age_hours=12)
     line = model.ros(base, cur)
-    line = line[line.index.isin(cur.index)]
+    # this season's team: ros() keeps the baseline's, which put 22 free agents on last season's team (Oct 30)
+    line = line[line.index.isin(cur.index)].assign(TEAM_ABBREVIATION=cur.TEAM_ABBREVIATION)
     return line, model.zscores(line, 156).sum(axis=1)
 
 
