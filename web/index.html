@@ -725,10 +725,24 @@ function viewWeek() {
         <td><span class="tag ${d.call === "safe" ? "safe" : d.call === "lost" ? "out" : d.call}" title="${CALL_TIP[d.call]}">${CALL[d.call]}</span></td></tr>`).join("")}</tbody></table></div>
       <div class="panel-b small muted" style="border-top:1px solid var(--line)">${advice} ${yg ? `Games played so far: ${yg.you.played} vs ${yg.them.played}.` : ""} Projected = ${w.live ? "the score so far plus " : ""}each player's games left × his per-game line × his chance of playing. Players in IL slots sit.
         ${w.live ? "" : "No live score yet, so this assumes nothing has been played, which is right on Monday. A new snapshot adds the real score."}</div></div>
+    ${lineupPanel(w)}
     <div class="panel"><div class="panel-h"><div><h2>Streaming adds</h2><p>Free agents who most raise your odds this week, each swapped for whichever of your three cheapest healthy players helps most, on his best day: your drop plays until then. Season shows what keeping him does long-term.</p></div></div>
       ${streamPlan(w)}
       ${w.adds && !w.adds.left ? `<div class="empty"><b>No adds left this week</b>You've used all ${w.adds.max}. They reset ${esc(dayName(w.adds.resets))}. Waivers' moves still count for the season.</div>`
         : playerTable(w.streams, { extra: streamCols, empty: "<b>No stream helps this week</b>Nobody on waivers raises your odds by 0.1% or more over your weakest players." })}</div>`;
+}
+// start/sit: who starts on a full day for the most category wins this week, against starting the best per-game values
+function lineupPanel(w) {
+  const X = w.lineups;
+  if (!X) return "";
+  const head = `<div class="panel-h"><div><h2>Start / sit</h2><p>On days more of your players have a game than you can start, start the ones who add most to this week's odds: a close category counts, a safe, lost or punted one doesn't.</p></div></div>`;
+  if (!X.days.length) return `<div class="panel">${head}<div class="empty"><b>Everyone starts</b>No day left this week has more of your players playing than starting spots.</div></div>`;
+  const moved = Object.entries(X.cats).map(([c, v]) => `${lab(c)} <span class="${tone(v)}">${sign1(v)}%</span>`);
+  const sum = X.days.some(x => x.in.length) ? `Against starting your best per-game values: <span class="${tone(X.gain)}">${delta(X.gain, "win%")}</span> this week${moved.length ? ` (odds: ${moved.join(", ")})` : ""}.`
+    : "Same as starting your best per-game values: nobody on your bench helps this matchup more.";
+  return `<div class="panel">${head}<div class="panel-b small" style="border-bottom:1px solid var(--line)">${sum}</div>
+    <div class="tw"><table><thead><tr><th>Day</th><th>Sit</th><th title="Who starts here but would sit if you started your best per-game values">Change</th></tr></thead><tbody>
+    ${X.days.map(x => `<tr><td>${x.date === w.today ? "Today" : esc(dayName(x.date))}</td><td class="names">${and(x.sit.map(esc))}</td><td class="names">${x.in.length ? `Start <b>${and(x.in.map(esc))}</b> over ${and(x.out.map(esc))}` : `<span class="muted">—</span>`}</td></tr>`).join("")}</tbody></table></div></div>`;
 }
 // adds left this week (Q11) and the best way to spend them: one line for the last add, else the moves in order
 function streamPlan(w) {
@@ -788,10 +802,10 @@ function calendarPanel(d) {
     const sum = `<td class="n"${rs}>${w.starts}</td><td class="n ${w.sit ? "neg" : "muted"}"${rs}>${w.sit}</td><td class="n ${w.open ? "pos" : "muted"}"${rs}>${w.open}</td>`;
     return lines.map((cells, j) => `<tr>${j ? "" : lbl}${cells.map(cell).join("")}${j ? "" : sum}</tr>`).join("");
   }).join("");
-  const x = all.find(x => x.date === T.day);
+  const x = all.find(x => x.date === T.day), vs = d.weeks.find(w => w.days.includes(x))?.vs;
   const detail = !x ? "" : !x.nba ? `<b>${dayName(x.date)}</b>: no NBA games.`
     : `<b>${dayName(x.date)}</b>: ${x.players.length + x.sit.length} of your players have a game (${x.nba} NBA teams play). ${x.players.length ? `Starting: ${and(x.players.map(esc))}.` : ""}
-      ${x.sit.length ? ` <span class="neg">Sitting: ${and(x.sit.map(esc))}</span>, ${x.open ? "no open spot fits their positions" : `your lowest-valued players with a game${S.punt.length ? " on your build" : ""}. A stream adds nothing today`}.` : ""}
+      ${x.sit.length ? ` <span class="neg">Sitting: ${and(x.sit.map(esc))}</span>, ${x.open ? "no open spot fits their positions" : `${vs ? `the ones who add least to your odds against ${esc(vs)}` : `your lowest-valued players with a game${S.punt.length ? " on your build" : ""}`}. A stream adds nothing today`}.` : ""}
       ${x.open ? ` <span class="pos">${plural(x.open, "starting spot")} open</span>: ${x.fill && x.fill.length < 5 ? `a ${x.fill.join(" or ")}` : "a free agent"} who plays today would start${A && !A.left && d.weeks[0].days.includes(x) ? `, but you have no adds left this week` : ""}.` : ""}`;
   return `<div class="panel"><div class="panel-h"><div><h2>Games per day</h2><p>How many of your active players have a game each day. Only ${L} start: red days have more (the rest sit), green days have open spots a streamer would fill. Pick a day to see who starts.</p></div></div>
     <div class="tw"><table class="cal"><thead><tr><th>Week</th>${WD.map(w => `<th class="d">${w}</th>`).join("")}

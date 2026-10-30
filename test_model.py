@@ -760,6 +760,17 @@ def test_all():
     assert f["claim"] == "2026-11-01" and f["games"]["add"] == 1 and sl.add_drop("Twin D", "Player 150")["week"] is None
     pp = up.add_drop("Twin D", "Player 150", punt=["PTS"])
     assert pp["week"]["opponent"] == "Them" and pp["cats"]["PTS"] == {"season": [0, 0], "week": [0, 0]}
+    # start/sit (Oct 30): on a full day the players who add most to this week's matchup start, not the best per-game
+    # values. Player 150, your worst, blocks 6 a game this week only: he starts over a better player every day and
+    # BLK and the week go up; with BLK punted his blocks count for nothing and per-game value's lineups stand
+    ss = sl.start_sit("Them")
+    assert len(ss["days"]) == 4 and all(len(d["start"]) == 10 for d in ss["days"]) and ss["gain"] >= 0
+    sl.p_week.at["player 150", "BLK"] = 6
+    ss = sl.start_sit("Them")
+    assert all(d["in"] == ["Player 150"] and len(d["out"]) == 1 for d in ss["days"]) and ss["gain"] > 0 and ss["cats"]["BLK"] > 0
+    assert not any(d["in"] for d in sl.start_sit("Them", punt=["BLK"])["days"])
+    assert sl.this_week("Them")["lineups"] == ss and sl.start_sit() is None  # no opponent saved
+    sl.p_week.at["player 150", "BLK"] = sl.p.at["player 150", "BLK"]
 
     # weekly add limit (Q11). No cap in the settings: nothing counted, and the plan chains streams (a later one can
     # replace an earlier streamer) in day order (Q13: gains recounted in that order); its first pick is the top

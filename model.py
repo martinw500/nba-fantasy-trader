@@ -866,12 +866,12 @@ class League:
                     self.inj.get(k, {}).get("return") or "")
         return [d for d in self.sched.get(self.nba.get(k), ()) if start <= d <= end]
 
-    def starts(self, keys, start=None, until=None):
+    def starts(self, keys, start=None, until=None, by=None):
         """{player: games he starts the rest of this week}. Yahoo only scores starters, so each day the best `lineup`
         players with a game count and bench games fill in on light days. start: {player: first day}, for claims and
-        timed adds; until: {player: last day}, for a drop made later in the week (Q11).
+        timed adds; until: {player: last day}, for a drop made later in the week (Q11); by: the ranking (_days).
         ponytail: best = per-game value, each in a slot his positions fit (_lineup); a lineup set by hand can count fewer."""
-        day = self._days(keys, self.week_end, start or {}, until)
+        day = self._days(keys, self.week_end, start or {}, until, by)
         return collections.Counter(k for ks in day.values() for k in self._lineup(ks))
 
     def _pos(self, k):
@@ -1176,12 +1176,12 @@ class League:
     def _parked(self):
         return set().union(*self.il.values())
 
-    def week_vec(self, keys, start=None, until=None):
+    def week_vec(self, keys, start=None, until=None, by=None):
         """This week's expected totals: per-game line x games he starts the rest of this week (starts(), start /
-        until as there) x this week's availability (rate_week). Without a schedule it's the season-average week, vec()."""
+        until / by as there) x this week's availability (rate_week). Without a schedule it's the season-average week, vec()."""
         if not self.sched:
             return self.vec(keys)
-        g = pd.Series(self.starts([k for k in keys if k in self.p.index], start, until), dtype=float)
+        g = pd.Series(self.starts([k for k in keys if k in self.p.index], start, until, by), dtype=float)
         return (g * self.rate_week.reindex(g.index)).to_numpy() @ self.p_week.loc[g.index, RAW].to_numpy()
 
     @functools.cached_property
@@ -2121,6 +2121,7 @@ class League:
                 **({"yahoo_games": {"you": m["games"][me], "them": m["games"][opp]}}  # Yahoo's played / left, as set
                    if m.get("opponent") == opp and all(t in m.get("games", {}) for t in (me, opp)) else {}),
                 "win": round(100 * win, 1), "score": [round(float(p.sum()), 1), round(len(self.cats) - float(p.sum()), 1)],
+                "lineups": self.start_sit(opp, punt),
                 **({"games": {"you": sum(self.starts(play(me)).values()),
                               "them": sum(self.starts(play(opp)).values())}} if self.sched else {}),
                 "cats": {c: {"you": [total(so_far[me], c), total(so_far[me] + left[me], c)],
@@ -2153,6 +2154,69 @@ class League:
         so_far = {t: np.array([float(tot.get(t, {}).get(s, 0)) for s in RAW]) for t in (me, opp)}
         left = {t: self.week_vec(self._playing(self.rosters[t])) for t in (me, opp)}
         return so_far, left, lambda v: self._concede(cat_probs(v, left[opp], self.cats, so_far[me], so_far[opp]), punt)
+
+    def _week_rank(self, opp=None, punt=(), span=None):
+        """Who to start this week vs opp: your active players ranked by what one more game of each adds to this week's
+        score (_matchup's odds), so a close category counts and a decided or punted one doesn't, per-game value
+        breaking ties. Re-ranked on the lineups that gives while the score rises (3 passes; per-game value first).
+        span: a later matchup week (start, end) vs the team the season schedule pairs you with, on rest-of-season lines
+        and no score yet. -> (ranking, the score with it, with per-game value's lineups, odds, your vector), None with
+        no opponent or schedule. ponytail: one ranking per week, set before tip-off (a bench player never swaps in for
+        a starter who sits)."""
+        if self.mode == "points" or not self.sched:
+            return None
+        play = lambda t: [k for k in self._playing(self.rosters[t]) if k in self.p.index]
+        if span:
+            s, e = span
+            wk = next((w for w in self.snap.get("schedule", ()) if w["start"] == s), {})
+            if not (opp := next((t for pr in wk.get("matchups", ()) if self.me in pr for t in pr if t != self.me), None)):
+                return None
+            rate, line = self.rate, self.p
+
+            def vec(ks, by=None):
+                g = pd.Series(collections.Counter(k for x in self._days(ks, e, s, by=by).values() for k in self._lineup(x)),
+                              dtype=float)
+                return (g * rate.reindex(g.index)).to_numpy() @ line.loc[g.index, RAW].to_numpy()
+            theirs = vec(play(opp))
+            odds = lambda v: self._concede(cat_probs(v, theirs, self.cats), punt)
+        else:
+            if not (opp := self._opponent(opp)):
+                return None
+            _, _, odds = self._matchup(opp, punt)
+            rate, line, vec = self.rate_week, self.p_week, lambda ks, by=None: self.week_vec(ks, by=by)
+        mine = play(self.me)
+        one = rate.reindex(mine).to_numpy()[:, None] * line.loc[mine, RAW].to_numpy()  # a game each
+        rank, best, s0 = self._value, None, None
+        for _ in range(3):
+            v = vec(mine, rank)
+            sc = float(self._score(odds(v)))
+            s0 = sc if s0 is None else s0
+            if best and sc <= best[1]:
+                break
+            best = (rank, sc, v)
+            rank = pd.Series(self._score(odds(v + one)), index=mine) + 1e-9 * self._value.reindex(mine, fill_value=0)
+        return best[0], best[1], s0, odds, best[2], opp, vec(mine)
+
+    def start_sit(self, opp=None, punt=()):
+        """This week's lineups (Oct 30): each day with more of your players playing than start, who starts for the most
+        category wins vs opp (_week_rank) and who sits. gain: win-% points over starting the best per-game values; cats:
+        the category odds that moves (points); days: start / sit, and in / out = who starts or sits only on this
+        ranking. None with no opponent or schedule."""
+        if not (r := self._week_rank(opp, punt)):
+            return None
+        rank, s, s0, odds, v, _, v0 = r
+        play = [k for k in self._playing(self.rosters[self.me]) if k in self.p.index]
+        mine, base = self._days(play, self.week_end, by=rank), self._days(play, self.week_end)
+        name = lambda ks: [self.p.at[k, "PLAYER_NAME"] for k in ks]
+        days = []
+        for d, ks in sorted(mine.items()):
+            on, was = self._lineup(ks), self._lineup(base[d])
+            if len(on) < len(ks):
+                days.append({"date": d, "start": name(on), "sit": name(k for k in ks if k not in on),
+                             "in": name(k for k in on if k not in was), "out": name(k for k in was if k not in on)})
+        dp = 100 * (odds(v) - odds(v0))
+        return {"gain": round(100 * (s - s0), 1), "days": days,
+                "cats": {c: round(float(x), 1) for c, x in zip(self.cats, dp) if abs(x) >= 0.5}}
 
     def _clears(self, k):
         """{k: the day his waiver claim clears} ("Jan 2" read on Dec 30 is next year), {} when he isn't on waivers:
@@ -2256,8 +2320,8 @@ class League:
     def planner(self, punt=(), n=3):
         """Schedule planner (Q4): your active players' NBA games per day for the rest of this matchup week and the
         next n (weeks()), each day's starters (the best `lineup` with a game, as starts() picks them but on the build's
-        value, Q13), who sits on an overflow day, and open slots (fewer than `lineup` of yours play while the NBA does:
-        room to stream). Players in IL slots sit, injured players count from their return date. teams: every NBA
+        value, Q13; for the most category wins vs the week's opponent, `vs`, when one is known: _week_rank), who sits on an overflow
+        day, and open slots (fewer than `lineup` of yours play while the NBA does: room to stream). Players in IL slots sit, injured players count from their return date. teams: every NBA
         team's games in those weeks, on your open days (games a streamer from there would start), and in the fantasy playoff weeks, with your
         players there and the best healthy free agent on your build (effective()). Starters fill the league's slots by
         position (_lineup), so a player can sit with a spot open (fill: the positions that could take it).
@@ -2273,8 +2337,9 @@ class League:
         busy = collections.Counter(d for ds in nba.values() for d in ds)  # NBA teams playing each day
         weeks, opened, starts = [], [], collections.defaultdict(list)
         eff, val = self.effective(punt), self.value(punt=punt)
-        for s, e in spans:
-            day, days = self._days(play, e, s, by=val), []
+        for i, (s, e) in enumerate(spans):  # starters for the most category wins vs each week's opponent (_week_rank)
+            wr = self._week_rank(punt=punt, span=(s, e) if i else None)
+            day, days = self._days(play, e, s, by=wr[0] if wr else val), []
             d = date.fromisoformat(s)
             while d.isoformat() <= e:
                 x, ks = d.isoformat(), day.get(d.isoformat(), [])
@@ -2288,6 +2353,7 @@ class League:
                 starts[k].append(c[k])
             opened.append({x["date"] for x in days if x["open"]})
             weeks.append({"start": s, "end": e, "week": next((w["week"] for w in sched if w["start"] <= s <= w["end"]), None),
+                          **({"vs": wr[5]} if wr else {}),
                           "games": sum(len(x["players"]) + len(x["sit"]) for x in days),
                           "starts": sum(len(x["players"]) for x in days), "sit": sum(len(x["sit"]) for x in days),
                           "open": sum(x["open"] for x in days), "days": days})
@@ -2407,7 +2473,7 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster", "week",
-                                    "strategy", "news", "compare", "schedule", "move", "sources", "wants"])
+                                    "strategy", "news", "compare", "schedule", "move", "sources", "wants", "lineup"])
     ap.add_argument("--give", default="")
     ap.add_argument("--get", default="")
     ap.add_argument("--mode", default="fair", choices=["fair", "finesse"])
@@ -2417,7 +2483,7 @@ def main():
     ap.add_argument("--tier", default="fair", choices=list(TIERS), help="search: how likely they say yes")
     ap.add_argument("--goal", default="win", choices=["win", "cats", "team"])
     ap.add_argument("--cats", default="", help='search --goal cats: e.g. "STL,AST"')
-    ap.add_argument("--vs", help="search --goal team: the team to beat. week, move: this week's opponent")
+    ap.add_argument("--vs", help="search --goal team: the team to beat. week, move, lineup: this week's opponent")
     ap.add_argument("--size", type=int, default=3, help="search: max players per side")
     ap.add_argument("--healthy", action="store_true", help="search: skip injured players you'd get")
     ap.add_argument("--shape", choices=["consolidate", "depth"])
@@ -2447,6 +2513,7 @@ def main():
            "news": lg.roster_news,
            "compare": lambda: lg.compare(split(a.players), punt),
            "schedule": lambda: lg.planner(punt),
+           "lineup": lambda: lg.start_sit(a.vs, punt),
            "move": lambda: lg.add_drop(a.add, a.drop or None, punt, a.vs, a.day),
            "sources": lg.sources,
            "roster": lambda: lg.team_roster(a.team or lg.me, punt),
