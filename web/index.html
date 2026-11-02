@@ -1064,15 +1064,16 @@ function findPanel() {
   const F = S.find, T = S.trade, st = S.state, title = findTitle(), n = F.size, pinned = T.get.size > 0;
   const others = st.teams.filter(t => t !== st.me), team = pinned ? T.team : F.team;
   const desc = isPoints() ? "1-for-1 up to 2-for-2 with your top 10 and theirs."
-    : title === "Open search" ? `Every team, up to ${n}-for-${n}, your top 10 against theirs.`
+    : title === "Open search" ? (team ? `${esc(team)} only, up to ${n}-for-${n}, any of your players for any of theirs.` : `Every team, up to ${n}-for-${n}, your top 10 against theirs. Pick a team to search both whole rosters.`)
     : title === "Complete this trade" ? `Deals that keep everyone checked, up to ${n}-for-${n}.`
-    : pinned ? `What ${esc(T.team)} might take for ${T.get.size > 1 ? "them" : "him"}, from your whole roster.` : "Every team that might bite, and what they'd send back.";
+    : pinned ? `What ${esc(T.team)} might take for ${T.get.size > 1 ? "them" : "him"}, from your whole roster.` : team ? `What ${esc(team)} might send back, from its whole roster.` : "Every team that might bite, and what they'd send back.";
   const locks = (S.locks.size && !isPoints() ? ` ${S.locks.size} locked player${S.locks.size > 1 ? "s" : ""} left out.` : "")
     + (F.outside && !isPoints() ? ` Role players only: nobody in the market's top ${F.outside}${T.give.size + T.get.size ? " except the players you checked" : ""}.` : "");
   const fr = isPoints() || !F.mine ? [] : st.waivers.free || [];
   const free = !isPoints() && !F.mine ? ` Scored on your roster as it is today, without waiver pickups first${F.theirs ? " (each partner's still count)" : ""}.` : fr.length ? ` Scored as if you'd already added ${and(fr.map(m => esc(m.add)))} off waivers${F.theirs ? ", and each partner had made its own best waiver moves" : ""}.` : "";
   const tiers = isPoints() ? ["fair", "finesse"] : Object.keys(TIER);
   const controls = `<div class="seg" role="group" aria-label="Difficulty">${tiers.map(k => `<button data-tier="${k}" aria-pressed="${F.tier === k}" title="${(isPoints() ? TIER_PTS : TIER)[k]}">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div>
+    <label class="field">Team <select id="f-team" ${pinned ? `disabled title="Set by the player you're asking for"` : ""}>${opt("", "All teams", team)}${others.map(t => opt(t, t, team)).join("")}</select></label>
     ${isPoints() ? "" : `<label class="field">Optimize for <select id="f-goal">${opt("win", "Win %", F.goal)}${opt("cats", "Categories…", F.goal)}${opt("team", "Beat a team…", F.goal)}</select></label>
       ${F.goal === "cats" ? `<span class="sugs" role="group" aria-label="Categories to improve">${st.cats.map(c => `<button class="chip pick ${punted(c) ? "punted-col" : ""}" data-goalcat="${c}" aria-pressed="${F.cats.includes(c)}">${lab(c)}</button>`).join("")}</span>` : ""}
       ${F.goal === "team" ? `<select id="f-vs" aria-label="Team to beat">${others.map(t => opt(t, t, F.vs)).join("")}</select>` : ""}
@@ -1082,8 +1083,7 @@ function findPanel() {
       <label class="field" title="Keep the market's top players out of it on both sides, for deals between role players. Players you check stay in.">Players <select id="f-outside">${opt("", "Any", F.outside)}${["60", "100"].map(k => opt(k, `Outside the top ${k}`, F.outside)).join("")}</select></label>
       <label class="field"><input type="checkbox" id="f-healthy" ${F.healthy ? "checked" : ""}>Healthy only</label>
       <label class="field" title="On: your gain is measured against the waiver moves you could make without a trade (listed below), so a deal gets no credit for a pickup. Off: on your roster as it is today, as if you make no pickups."><input type="checkbox" id="f-mine" ${F.mine ? "checked" : ""}>Count my waiver moves</label>
-      <label class="field" title="On: the other team is measured against the waiver moves it could make instead. Off: it's judged on the trade alone, the way most managers look at an offer."><input type="checkbox" id="f-theirs" ${F.theirs ? "checked" : ""}>Count their waiver moves</label>`}
-    <select id="f-team" aria-label="Limit to team" ${pinned ? `disabled title="Set by the player you're asking for"` : ""}>${opt("", "All teams", team)}${others.map(t => opt(t, t, team)).join("")}</select>`;
+      <label class="field" title="On: the other team is measured against the waiver moves it could make instead. Off: it's judged on the trade alone, the way most managers look at an offer."><input type="checkbox" id="f-theirs" ${F.theirs ? "checked" : ""}>Count their waiver moves</label>`}`;
   const can = !F.busy && !(F.goal === "cats" && !F.cats.length && !isPoints());
   const body = F.busy ? SKEL : !F.list ? `<div class="empty"><b>${isPoints() ? "Search every roster" : "Aim the search with checkboxes"}</b>${isPoints()
       ? "Fair finds deals that help both teams. Finesse finds deals where they look like the winner on hot starts but you gain more."
@@ -1378,14 +1378,17 @@ function pickMove(q, exact) {
 function viewMovers() {
   const m = S.state.movers, gap = { h: "Gap", v: p => `<span class="${tone(p.gap)} val">${sign(p.gap)}</span>` };
   const owner = { h: "Team", v: p => esc(p.team) };
+  const price = { h: `<span title="The market's price for him (Mkt) against what he's worth to you: his rank on your build, priced on the same scale">Price</span>`,
+    v: p => `<span class="pos val">${p.edge > 0 ? "+" : "−"}${Math.abs(p.edge).toFixed(0)}%</span>` };
+  const added = { h: "If added", v: p => `<span class="${tone(p.gain)} val">${delta(p.gain, m.unit)}</span>` };
   const offers = { h: "", v: p => `<button class="btn ghost" data-act="offers" data-name="${esc(p.name)}" data-team="${esc(p.team)}">${isPoints() ? "Trade for him" : "Find offers"}</button>` };
-  return `<div class="head"><div><h1>Hot &amp; cold</h1><p class="sub">Gap = value on your build over ${esc(m.window)} minus rest-of-season value. ${esc(m.note || "")}</p></div></div>
-    <div class="panel"><div class="panel-h"><div><h2>Sell high</h2><p>Your players running well above their real value. Other managers see the hot run.</p></div></div>
-      ${playerTable(m.sell_high, { extra: [gap], empty: "<b>Nobody's running hot</b>None of your players are far above their real value lately." })}</div>
-    <div class="panel"><div class="panel-h"><div><h2>Buy low</h2><p>Players on other teams running cold, at any rank, as long as they're still worth more than the best free agents.</p></div></div>
-      ${playerTable(m.buy_low, { extra: [owner, gap, offers], empty: "<b>Nobody's slumping</b>Check back after a few more games." })}</div>
-    <div class="panel"><div class="panel-h"><div><h2>Hot pickups</h2><p>Free agents running well above their real value, playing better lately than the best free agents are worth. Value is what they should do from here.</p></div></div>
-      ${playerTable(m.pickups || [], { extra: [gap], empty: "<b>Nobody on waivers is running hot</b>No free agent is far above his real value lately." })}</div>`;
+  return `<div class="head"><div><h1>Hot &amp; cold</h1><p class="sub">Gap = value on your build over ${esc(m.window)} minus rest-of-season value. ${esc(m.note || "")} A run only makes the list when there's something in it for you.</p></div></div>
+    <div class="panel"><div class="panel-h"><div><h2>Sell high</h2><p>Your players running hot that the market prices at least 15% above what they're worth to you (Price).</p></div></div>
+      ${playerTable(m.sell_high, { extra: [gap, price], empty: "<b>Nobody to sell high</b>None of your hot players is priced above what he's worth to you. Early in the season the market still runs mostly on preseason ranks, so a hot run barely moves it." })}</div>
+    <div class="panel"><div class="panel-h"><div><h2>Buy low</h2><p>Players on other teams running cold, still worth more than the best free agents, that the market prices at least 15% below what they're worth to you (Price).</p></div></div>
+      ${playerTable(m.buy_low, { extra: [owner, gap, price, offers], empty: "<b>Nobody to buy low</b>No cold player is priced well under what he's worth to you." })}</div>
+    <div class="panel"><div class="panel-h"><div><h2>Hot pickups</h2><p>Free agents running hot who'd raise your ${WIN().of}, added for the player you'd miss least (as Waivers scores it). Value is what they should do from here.</p></div></div>
+      ${playerTable(m.pickups || [], { extra: [gap, added], empty: `<b>No hot pickup would help</b>Free agents running hot are below what your roster already has, by what they should do from here.` })}</div>`;
 }
 
 // ---------- compare: 2 to 4 players side by side ----------

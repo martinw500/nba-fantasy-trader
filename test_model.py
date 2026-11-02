@@ -33,6 +33,24 @@ def test_all():
     assert lg.find("nikola jokic") == "nikola jokic" and lg.p.at["nikola jokic", "PLAYER_NAME"] == "Nikola Jokić"
     assert lg.find("Player 19 jr") == "player 19"
     assert lg.find("Jokic") == "nikola jokic"
+    # a name that could be two players matches neither (Oct 31: "Jaylen Williams" got Jalen, out till March, and
+    # "Cam Johnson" got AJ Johnson), so a trade never quietly gets the wrong one
+    ks = ["aj johnson", "cameron johnson", "jalen williams", "jaylin williams", "nikola jokic"]
+    assert model.match("Johnson", ks) is None and model.match("Jaylen Williams", ks) is None
+    assert model.match("Cam Johnson", ks) is None and model.match("Jalen Wiliams", ks) == "jalen williams"
+    # punts from the app, the CLI and the AI GM: any case and Yahoo's labels; a typo raises, never scores unpunted
+    assert model.punts("ft%, TO,3ptm") == ["FT%", "TOV", "FG3M"] and model.punts(None) == [] == model.punts("")
+    try:
+        model.punts(["FT"])
+        raise AssertionError("punted a category that doesn't exist")
+    except KeyError:
+        pass
+    # recent(): each game weighs 0.5^(days ago / RECENT), GP the real count; hl None: the plain mean
+    g2 = pd.DataFrame([{**line("Twin", 180, PTS=p), "GAME_DATE": pd.Timestamp(d)}
+                       for p, d in ((10, "2026-09-16"), (30, "2026-10-31"))]).assign(key="twin")
+    r = model.recent(g2, "2026-10-31")
+    assert r.at["twin", "GP"] == 2 and abs(r.at["twin", "PTS"] - (0.5 * 10 + 30) / 1.5) < 1e-9
+    assert model.recent(g2, "2026-10-31", None).at["twin", "PTS"] == 20
 
     # ROS: 5 games of 40 PTS barely moves a 20-PTS baseline (k=20 -> 20% weight); rookies start near fringe level
     ros = model.ros(base, cur)
@@ -79,23 +97,35 @@ def test_all():
     full, punted = lg.value(["player 190"]).iloc[0], lg.value(["player 190"], punt=["PTS"]).iloc[0]
     assert abs((full - punted) - lg.z.at["player 190", "PTS"]) < 1e-9
 
-    # hot start shows up as sell-high for the owner; perceived value is above ROS value
-    sells = [p["name"] for p in lg.movers()["sell_high"]]
-    assert "Player 150" in sells and all(p["gap"] >= model.TREND for p in lg.movers()["sell_high"])
+    # hot start: sell high only when the market prices him well above his worth to you (Nov 1: Paul George ran +3.5
+    # with the market 28% under him). Without Yahoo ranks the market is perceived value, which half believes a 5-game
+    # run (14% over: no); with Yahoo's current rank chasing it, 60% over
     assert lg.player("player 150")["trend"] == "up" and lg.movers()["window"] == "this season"  # no box scores here
-    # buy low: any rank above the waiver level on other teams; pickups: hot free agents
+    assert lg.movers()["sell_high"] == []
+    rk = lambda team, name, pre, now: [{**p, "rank": {"pre": pre, "cur": now}} if p["name"] == name else p
+                                       for p in lg.snap["teams"][team]]
+    hyped = model.League({**lg.snap, "teams": {**lg.snap["teams"], "Me": rk("Me", "Player 150", 30, 1)}}, base, cur)
+    assert [(p["name"], p["edge"] >= 15) for p in hyped.movers()["sell_high"]] == [("Player 150", True)]
+    # buy low: cold on other teams, above the waiver level, priced well under his worth to you (Yahoo's rank sank).
+    # Pickups: hot free agents who'd raise your win %, not a hot scrub (Nov 1: Mo Bamba, below the waiver level)
     cur2 = cur.copy()
-    cur2.loc["player 151", "PTS"], cur2.loc["player 139", "PTS"] = 0, 40  # Them's worst player cold, a free agent hot
-    lg2 = model.League(lg.snap, base, cur2)
+    cur2.loc["player 159", "PTS"], cur2.loc["player 139", "PTS"] = 0, 40  # one of Them's cold, a scrub hot
+    snap2 = {**lg.snap, "teams": {**lg.snap["teams"], "Them": rk("Them", "Player 159", 60, 400)},
+             "free_agents": lg.snap["free_agents"] + [{"name": "Hot FA", "pos": "", "status": ""}]}
+    base2 = pd.concat([base, model.keyed(pd.DataFrame([line("Hot FA", 185)]))])
+    cur2 = pd.concat([cur2, model.keyed(pd.DataFrame([line("Hot FA", 185, gp=5, PTS=40)]))])
+    lg2 = model.League(snap2, base2, cur2)
     mv, floor = lg2.movers(), lg2.replacement()[0]
-    assert "Player 151" in [p["name"] for p in mv["buy_low"]] and "Player 139" in [p["name"] for p in mv["pickups"]]
-    assert all(p["team"] not in (lg2.me, "FA") and p["value"] > floor and p["gap"] <= -model.TREND for p in mv["buy_low"])
-    assert all(p["team"] == "FA" and p["form"] > floor and p["gap"] >= model.TREND for p in mv["pickups"])
+    assert "Player 159" in [p["name"] for p in mv["buy_low"]] and [p["name"] for p in mv["pickups"]] == ["Hot FA"]
+    assert lg2.player("player 139")["trend"] == "up"
+    assert all(p["team"] not in (lg2.me, "FA") and p["value"] > floor and p["gap"] <= -model.TREND and p["edge"] <= -15
+               for p in mv["buy_low"])
+    assert all(p["team"] == "FA" and p["gap"] >= model.TREND and p["gain"] >= model.MOVE * lg2.s for p in mv["pickups"])
     # ... unless he's out for over a tenth of the games left (Oct 30: Champagnie, out till Feb 25, was listed)
     days = [str(model.date(2026, 10, 26) + model.timedelta(3 * i)) for i in range(55)]
-    hurt = lambda back: model.League(lg.snap, base, cur2, today=model.date(2026, 10, 26), sched={"XXX": days},
-                                     inj={"Player 139": {"status": "O", "note": "", "return": back}}).movers()["pickups"]
-    assert "Player 139" not in [p["name"] for p in hurt("2027-02-25")] and "Player 139" in [p["name"] for p in hurt("2026-10-27")]
+    hurt = lambda back: model.League(snap2, base2, cur2, today=model.date(2026, 10, 26), sched={"XXX": days},
+                                     inj={"Hot FA": {"status": "O", "note": "", "return": back}}).movers()["pickups"]
+    assert "Hot FA" not in [p["name"] for p in hurt("2027-02-25")] and "Hot FA" in [p["name"] for p in hurt("2026-10-27")]
 
     # matchup math: symmetric, identical teams are a coin flip, better players raise your odds
     A, B = lg.vecs["Me"], lg.vecs["Them"]
@@ -312,7 +342,10 @@ def test_all():
     assert [m["drop"] for m in short.trade(["Player 198"], ["Player 151"], their_free=True)["their_free"]] == [None]
     assert [m["drop"] for m in short.trade(["Player 198"], ["Player 151"], free=False, their_free=True)["their_free"]] == [None]
     assert short.search(tier="hard", their_free=True, limit=200) == short.search(team="Them", tier="hard",
-                                                                                 their_free=True, limit=200)[:3]
+                                                                                 their_free=True, limit=200, depth=10)[:3]
+    # one team picked: both whole rosters, not each side's top 10 (Martin, Nov 1)
+    wide = short.search(team="Them", tier="hard", free=False, limit=5000)
+    assert {g for x in wide for g in x["give"]} - set(short.names(short.value(short.rosters["Me"]).nlargest(10).index))
 
     # an open active spot takes an extra player without a drop (Birds had one on Oct 27, when they took Chet Holmgren +
     # Paul Reed for Tatum); a spot the trade opens gets a pickup, one it already had stays open; search agrees
@@ -361,7 +394,18 @@ def test_all():
         "Them": lg.snap["teams"]["Them"] + [{"name": "Sore Guy", "pos": "", "status": "O", "slot": "BN"}]}},
         pd.concat([base, hurt]), pd.concat([cur, hurt.assign(GP=5)]))
     pts = model.RAW.index("PTS")
-    assert ill.il == {"Me": {"hurt guy"}, "Them": set()} and ill.rows_il["hurt guy"][pts] < ill.rows["hurt guy"][pts]
+    assert ill.il == {"Me": {"hurt guy"}, "Them": set()}
+    assert ill.vecs["Me"][pts] < ill.vec(ill.rosters["Me"], il=())[pts]
+    # from his return he takes the spot of the team's weakest active player (effective value), whoever that is: here
+    # better than the waiver level (a waiver-level drop flattered him), on Martin's league worse (Nov 1). A parked
+    # player who wouldn't beat him adds nothing (he'd be the one cut); the best one back pushes out the weakest
+    on = ill._playing(ill.rosters["Me"])
+    weak = sorted(on, key=ill.effective().get)
+    assert ill.effective()[weak[0]] > ill.effective()[ill._waiver_level(ill.value())].mean()
+    assert np.allclose(ill.vecs["Me"], ill.week.loc[on].sum() + ill.week_il.loc["hurt guy"] - ill.week.loc[weak[0]])
+    assert np.allclose(ill.vec([*on, "player 100"], ["player 100"]), ill.week.loc[on].sum())  # a scrub: cut on return
+    two = ill.vec([*on, "hurt guy", "sore guy"], ["hurt guy", "sore guy"]) - ill.week.loc[on].sum()
+    assert np.allclose(two, ill.week_il.loc[["hurt guy", "sore guy"]].sum() - ill.week.loc[weak[:2]].sum())
     sent, got = ill.trade(["Hurt Guy"], ["Player 195"], free=False), ill.trade(["Player 150"], ["Sore Guy"], free=False)
     assert len(sent["you_drop"]) == 1 and sent["you_drop"] != ["Player 195"] and sent["you_add"] == [] and len(sent["they_add"]) == 1
     assert got["you_drop"] == [] and len(got["you_add"]) == 1
@@ -370,6 +414,14 @@ def test_all():
         x = ill.search([p["name"] for p in r["give"]], [p["name"] for p in r["get"]], size=1, tier="hard", free=False)
         assert [(x[0]["net"], x[0]["their_net"], x[0]["market"], x[0]["their_view"])] == [
             (r["net"], r["their_net"], r["market"], r["their_view"])], (x, r)
+    # ... and when the deal moves who Hurt Guy would push out (Player 154, your weakest): sent, dropped for an extra
+    # player, or a weaker one coming in
+    for deal in ((["Player 154"], ["Player 195"]), (["Player 194"], ["Player 195", "Player 191"]),
+                 (["Player 194", "Player 154"], ["Player 195"]), (["Player 194"], ["Player 151"])):
+        r = ill.trade(*deal, free=False)
+        x = [y for y in ill.search(*deal, size=2, tier="hard", free=False, limit=500)
+             if sorted(y["give"]) == sorted(deal[0]) and sorted(y["get"]) == sorted(deal[1])]
+        assert [(x[0]["net"], x[0]["their_net"], x[0]["market"])] == [(r["net"], r["their_net"], r["market"])], (deal, x, r)
     # both sides open a spot (each parks the injured player it gets): one free agent can't fill both, so you pick
     # first and they take the next (Oct 30: both got Tobias Harris, and after_trade put him on two rosters)
     both = model.League({**ill.snap, "teams": {**ill.snap["teams"], "Me": lg.snap["teams"]["Me"] + [
@@ -449,7 +501,7 @@ def test_all():
     assert len(freed["drop"]) == 2 and freed["drop"][1]["auto"] and not freed["drop"][1]["parked"]
     park = ilf.add_drop("Sore FA")
     assert park["add"]["parks"] and park["drop"] == [] and park["open"] == 0
-    assert abs(park["win_after"] - 100 * ilf.outlook("Me", {"Me": ilf.vecs["Me"] + ilf.rows_il["sore fa"]})["win"]) < 0.06
+    assert abs(park["win_after"] - 100 * ilf.outlook("Me", {"Me": ilf.vec([*ilf.rosters["Me"], "sore fa"], [*ilf.il["Me"], "sore fa"])})["win"]) < 0.06
     both = ilf.add_drop("Sore FA", "Player 150")
     assert both["open"] == 1 and both["net"] < park["net"]
     pl = model.League({**lg.snap, "settings": {**lg.snap["settings"], "mode": "points"}}, base, cur).add_drop("Player 139", "Player 150")
@@ -753,6 +805,15 @@ def test_all():
                         pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
                         sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week})
     assert late.games_week["twin a"] == 3 and late.games_week["twin b"] == 1
+    # ... and a snapshot from an earlier day: the days since its `from` come from the box scores (Twin A's Monday 30
+    # points), not lost, and the rest of the week still starts today (Oct 31: an Oct 30 snapshot dropped 18 games)
+    box = pd.DataFrame([{**line("Twin A", 180, PTS=30), "TEAM_ABBREVIATION": "AAA", "GAME_ID": 1,
+                         "GAME_DATE": pd.Timestamp(2026, 10, 26)}]).assign(key="twin a")
+    gap = model.League({**snap, "matchup": {"opponent": "Them", "week_end": "2026-11-01", "from": "2026-10-26",
+                                            "totals": {"Me": {"PTS": 100}, "Them": {"PTS": 50}}}},
+                       pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 27),
+                       sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week}, logs=box)
+    assert gap._so_far()["Me"]["PTS"] == 130 and gap._so_far()["Them"]["PTS"] == 50 and gap.games_week["twin a"] == 3
     # a "Jan 2" claim read on Dec 30 clears next year: Twin F gets 2 of the 4 games left, not all 4
     ny = ["2026-12-30", "2027-01-01", "2027-01-02", "2027-01-03"]
     nl = model.League({**snap, "free_agents": [f for f in snap["free_agents"] if f["name"] != "Twin F"]
@@ -1056,6 +1117,16 @@ Sharks has an open SF slot.""")
     assert yahoo.parse_text("Pulled Saturday, October 31, 2026, 10:00 AM MST (UTC-7)")["from"] == "2026-10-31"
     assert yahoo.parse_text("Pulled Tuesday, October 27, 2026, 12:55 PM MST (UTC-7) from Yahoo Fantasy. No Oct 27 games "
                             "had started at pull time; all earlier games were final.")["from"] == "2026-10-27"
+    assert yahoo.parse_text("Pulled Sunday, November 1, 2026, 9:34 AM MST (America/Creston, UTC-7) from Yahoo Fantasy. No "
+                            "games were in progress at pull time (morning pull; the first Nov 1 game tips off 11:30 AM "
+                            "MST). All Oct 31 games were final.")["from"] == "2026-11-01"  # Oct 31's final, not today's
+    # a schedule with a team twice in a week (Nov 1's: your pairing 6 times) or a team not in the league isn't kept
+    two = {"A": [], "B": [], "C": [], "D": []}
+    assert yahoo.schedule_ok([{"matchups": [["A", "B"], ["C", "D"]]}, {"matchups": []}], two)
+    assert not yahoo.schedule_ok([{"matchups": [["A", "B"], ["A", "B"]]}], two)
+    assert not yahoo.schedule_ok([{"matchups": [["A", "B"], ["C", "Old name"]]}], two)
+    assert yahoo.parse_text("Pulled Sunday, November 1, 2026, 2:00 PM MST (UTC-7). Nov 1 early games in progress.")["from"] \
+        == "2026-11-02"
 
     # punt planner: each build's free moves and best fair trades, re-scored on true odds. Bricks (stars everywhere but
     # 1 for 12 at the line) sink FT% from 50% to nothing, more than the first one adds, so staying balanced never takes

@@ -131,8 +131,7 @@ def offers(body, punt):
 
 def api(path, q, body):
     global lg, gm
-    punt = body.get("punt", q.get("punt", [""])[0].split(",") if q.get("punt") else [])
-    punt = [c for c in punt if c]
+    punt = model.punts(body.get("punt", q.get("punt", [""])[0]))
     # Waivers' "Healthy only": injured free agents off waivers for its suggestions and every trade's free moves
     fl = lg.healthy_fa() if body.get("healthy_fa", q.get("healthy_fa", [""])[0]) else lg
     if path == "/api/state":
@@ -193,7 +192,7 @@ def api(path, q, body):
             newest = max(ROOT.glob("*snapshot*.txt"), key=lambda p: (day(p), p.stat().st_mtime),
                          default=lg.snap["text"])
             yahoo.from_text(newest, lg.me)
-            refetch = ("injuries",)  # offline, the old copy stays (the sidebar says so)
+            refetch = ("injuries", "stats")  # offline, the old copies stay (the sidebar says so)
         else:
             yahoo.demo()
         lg, gm = model.load(refetch=refetch), None

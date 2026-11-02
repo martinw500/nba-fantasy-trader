@@ -3,6 +3,8 @@ python backtest.py replay [2025-26]: rest-of-season error by expert-projection w
 python backtest.py teammates [2025-26]: next week's error with and without teammates' injuries (fits SHARE, USAGE).
 python backtest.py availability: each Monday's games-played guess vs the real share, 2024-25 and 2025-26 (fits AVAIL_*).
 python backtest.py playoffs [2025-26]: each Monday's playoff and title odds vs what happened (fits SEASON_SD, WEEK_SD).
+python backtest.py recency: replay's error by minutes shrink and recent games' weight, 2022-23 to 2025-26 (fits
+MIN_SHRINK, RECENT).
 
 Drafts 20 simulated 12-team leagues from preseason projections. Each week the model predicts every matchup from what
 it would have known that Monday (last season blended with games so far, availability from games played, regulars who
@@ -20,7 +22,7 @@ import pandas as pd
 
 import model
 
-ARGS = [a for a in sys.argv[1:] if a not in ("replay", "teammates", "availability", "playoffs")]
+ARGS = [a for a in sys.argv[1:] if a not in ("replay", "teammates", "availability", "playoffs", "recency")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
@@ -34,6 +36,11 @@ def logs(season):
     start = g.GAME_DATE.min() - pd.Timedelta(days=g.GAME_DATE.min().weekday())  # Monday of week 1
     g["week"] = (g.GAME_DATE - start).dt.days // 7
     return g
+
+
+def monday(g, w):
+    """The Monday week w starts (logs()' weeks)."""
+    return g.GAME_DATE.min() - pd.Timedelta(days=g.GAME_DATE.min().weekday() - 7 * w)
 
 
 def per_game(games):
@@ -63,7 +70,7 @@ def projections(g, base, pre, keys, w):
     """What the model knew on the Monday of week w: per-game ROS line (from the prior) and availability (from the
     baseline's games and this season's, of his team's games so far, as League does)."""
     past = g[g.week < w]
-    cur = per_game(past)
+    cur = model.recent(past, monday(g, w))
     line = model.ros(pre, cur).reindex(keys)
     line[model.RAW] = line[model.RAW].fillna(0)
     team = past.sort_values("GAME_DATE").groupby("key").TEAM_ABBREVIATION.last()
@@ -203,9 +210,31 @@ def replay(weights=(0, 0.25, 0.5, 0.6, 0.75, 1)):
         pre, err = model.prior(base, proj, x), []
         for w in range(int(g.week.max()) - 3):
             left = per_game(g[g.week >= w]).query("GP >= 10")
-            line = model.ros(pre, per_game(g[g.week < w])).reindex(left.index)[model.RAW].fillna(0)
+            line = model.ros(pre, model.recent(g[g.week < w], monday(g, w))).reindex(left.index)[model.RAW].fillna(0)
             err.append(float(((line[model.RAW] - left[model.RAW]).abs() / left[model.RAW].mean()).mean(axis=1).mean()))
         print(f"  weight {x:<5} week 0 {err[0]:.4f}   weeks 1-6 {np.mean(err[1:7]):.4f}   season {np.mean(err):.4f}")
+
+
+def recency(seasons=("2022-23", "2023-24", "2024-25", "2025-26"),
+            grid=((6, None), (3, None), (6, 45), (2, 45), (3, 30), (3, 45), (3, 60), (4, 45))):
+    """replay() from week 1 at each minutes shrink (k_min) and recency half-life (days; None: every game alike), each
+    season on its own ESPN preseason projection: error vs the old line (k_min 6, every game alike), weeks 1-6 and
+    season. Fitted MIN_SHRINK 3 and RECENT 45 on all four (Oct 30)."""
+    for season in seasons:
+        prev, prev2 = (f"{int(season[:4]) - n}-{int(season[2:4]) - n + 1:02d}" for n in (1, 2))
+        g, base = logs(season), model.baseline(model.fetch(prev), model.fetch(prev2))
+        pre, err = model.prior(base, model.experts({}, model.espn(season), base, base.index.union(g.key.unique()))), {x: [] for x in grid}
+        for w in range(1, int(g.week.max()) - 3):
+            past, left = g[g.week < w], per_game(g[g.week >= w]).query("GP >= 10")
+            for km, hl in grid:
+                line = model.ros(pre, model.recent(past, monday(g, w), hl), k_min=km).reindex(left.index)[model.RAW].fillna(0)
+                err[km, hl].append(float(((line - left[model.RAW]).abs() / left[model.RAW].mean()).mean(axis=1).mean()))
+        e0 = np.array(err[grid[0]])
+        print(f"\n== {season}: rest-of-season error by minutes shrink and half-life, vs k_min 6 with every game alike ==")
+        for (km, hl), e in err.items():
+            e = np.array(e)
+            print(f"  k_min {km}, half-life {hl or '-':<3} weeks 1-6 {e[:6].mean():.4f} ({100 * (e[:6].mean() / e0[:6].mean() - 1):+.1f}%)"
+                  f"   season {e.mean():.4f} ({100 * (e.mean() / e0.mean() - 1):+.1f}%)")
 
 
 def mondays():
@@ -218,12 +247,12 @@ def mondays():
     first = g.sort_values("GAME_DATE").groupby("key")[T].first()
     for w in range(1, int(g.week.max()) + 1):
         past, nxt = g[g.week < w], g[g.week == w]
-        cur = per_game(past)
+        cur = model.recent(past, monday(g, w))
         line = model.ros(pre, cur)
         team = past.sort_values("GAME_DATE").groupby("key")[T].last().combine_first(first)
         regs, out = line.index[line.MIN >= model.REGULAR], sat(g, line, team, w)
         yield {"pre": pre, "past": past, "cur": cur, "line": line, "team": team, "regs": regs, "out": out, "nxt": nxt,
-               "expert": ex.index}
+               "expert": ex.index, "monday": monday(g, w)}
 
 
 def lifted(m, deboost=True):
@@ -234,7 +263,7 @@ def lifted(m, deboost=True):
     pool = m["line"][m["line"].index.isin(m["cur"].index) | m["line"].index.isin(m["regs"])]
     line = m["line"]
     if deboost:
-        h = model.had(m["past"], m["team"], pool, m["regs"]).reindex(m["cur"].index).dropna()
+        h = model.had(m["past"], m["team"], pool, m["regs"], m["monday"]).reindex(m["cur"].index).dropna()
         full = m["cur"].copy()
         full.loc[h.index, h.columns] = (full.loc[h.index, h.columns] - h).clip(lower=0)
         line = model.ros(m["pre"], full)
@@ -247,7 +276,7 @@ def lifted(m, deboost=True):
     return line, boost[boost.MIN > 0]
 
 
-def teammates(grid=((0.37, 0.25),)):
+def teammates(grid=((model.SHARE, model.USAGE),)):
     """Next week's per-game lines without teammates' injuries (off), with them (on: model.lifts net of model.had) and
     with lifts but no had() correction (fwd), vs what players did that week, as in replay(), plus the minutes bias
     (actual - line). Scored on players who played every one of their team's games that week: one who missed some (hurt
@@ -418,6 +447,8 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     if "replay" in sys.argv:
         replay()
+    elif "recency" in sys.argv:
+        recency()
     elif "availability" in sys.argv:
         availability()
     elif "playoffs" in sys.argv:

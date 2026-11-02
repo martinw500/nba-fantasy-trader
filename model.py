@@ -55,7 +55,11 @@ COUNTING = CATS[2:]
 RAW = ["FGM", "FGA", "FTM", "FTA"] + COUNTING
 POINTS = {"PTS": 1, "REB": 1.2, "AST": 1.5, "STL": 3, "BLK": 3, "TOV": -1}  # Yahoo default
 SHRINK = 20  # production per minute: games of baseline minutes that count as much as this season's minutes played
-MIN_SHRINK = 6  # minutes per game: games of baseline that count as much as this season's (a new role shows at once)
+MIN_SHRINK = 3  # minutes per game: games of baseline that count as much as this season's (a new role shows at once)
+RECENT = 45  # days: this season's games weigh 0.5^(days ago / RECENT) in its per-game line (recent()). With MIN_SHRINK
+             # 3 (was 6, every game alike): rest-of-season error -2.0% in weeks 1-6 and over the season, minutes -2.7%,
+             # better in each of 2022-23 to 2025-26 (python backtest.py recency, Oct 30). A 7-day half-life is +5.5%:
+             # streaks don't last. Slower minutes for established players' early dips gained nothing
 OLDER_W, REGRESS = 0.5, 25  # baseline: a game two seasons ago counts half; 25 games of a fringe line pull small samples in
 PROJ_W = 0.6  # expert projections' weight in the pre-season line (prior()); fitted by python backtest.py replay
 HYPE = 10    # same, for how other managers see players (hot starts count more: 3 games = 23%, 10 games = half)
@@ -180,6 +184,16 @@ def priced(give, get):
             "verdict": "even" if abs(d) < EVEN else f"you overpay {-d:.0f}%" if d < 0 else f"they overpay {d:.0f}%"}
 
 
+def punts(p):
+    """Punted categories from the app, the CLI or the AI GM: a list or "FT%,TOV" text, any case, Yahoo's TO / 3PTM
+    for TOV / FG3M. KeyError for anything else, so a typo never quietly scores unpunted."""
+    p = [{"TO": "TOV", "3PTM": "FG3M", "3PM": "FG3M"}.get(c.strip().upper(), c.strip().upper())
+         for c in (p.split(",") if isinstance(p, str) else p or []) if c.strip()]
+    if bad := [c for c in p if c not in CATS]:
+        raise KeyError(f"Can't punt {', '.join(bad)}: pick from {', '.join(CATS)}")
+    return list(dict.fromkeys(p))
+
+
 def norm(name):
     name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
     name = re.sub(r"[^a-z0-9 ]", "", name)
@@ -188,13 +202,17 @@ def norm(name):
 
 def match(name, keys):
     """The stats key a name means (League.find): the same name once accents and Jr/III are dropped, a unique last name
-    ("Jokic", "Gilgeous-Alexander"), or a close spelling. None when nothing fits."""
+    ("Jokic", "Gilgeous-Alexander"), or a close spelling. None when nothing fits, or when it could be more than one
+    player: a shared last name ("Johnson") or two spellings about as close ("Jaylen Williams": Jalen or Jaylin), so a
+    trade never quietly gets the wrong one."""
     k = norm(name)
     if k in keys:
         return k
-    if len(last := [x for x in keys if x.endswith(" " + k)]) == 1:
-        return last[0]
-    return next(iter(difflib.get_close_matches(k, keys, n=1, cutoff=0.8)), None)
+    if last := [x for x in keys if x.endswith(" " + k)]:
+        return last[0] if len(last) == 1 else None
+    close = difflib.get_close_matches(k, keys, n=2, cutoff=0.8)
+    score = [difflib.SequenceMatcher(None, k, x).ratio() for x in close]
+    return close[0] if len(close) == 1 or len(close) == 2 and score[0] - score[1] > 0.05 else None
 
 
 # Freshness (Q9): the caches load() reads, as (key, label, file in data/, refresh window in hours, what's lost without it)
@@ -379,6 +397,7 @@ def gamelogs(season=CUR, max_age_hours=None):
     if not cache.exists():
         return None
     g = pd.read_csv(cache, parse_dates=["GAME_DATE"])
+    g = g[g.WL.notna()]  # a game still being played has no result yet (Oct 31: CHA-PHI at halftime, Maxey 17 min)
     return g.assign(key=g.PLAYER_NAME.map(norm))
 
 
@@ -565,11 +584,24 @@ def priced_in(lift, played, gp, expert):
     return lift.mul(np.where(j.isin(list(played)), 1.0, keep), axis=0)
 
 
-def had(logs, team, line, regs):
+def recent(logs, today, hl=RECENT):
+    """This season's per-game line from box scores (MIN + RAW; GP = games played), each game weighted 0.5^(days before
+    `today` / hl), so later games say more about the rest of the season (hl None: every game alike)."""
+    cols, wt = ["MIN"] + RAW, age_wt(logs.GAME_DATE, today, hl)
+    s = logs[cols].mul(wt, axis=0).assign(key=logs.key, wt=wt).groupby("key").sum()
+    return s[cols].div(s.wt, axis=0).assign(GP=logs.groupby("key").size())
+
+
+def age_wt(dates, today, hl=RECENT):
+    """recent()'s weight for games on these dates: 0.5^(days before today / hl); 1 with hl None."""
+    return 0.5 ** ((pd.Timestamp(today) - dates).dt.days / hl) if hl else pd.Series(1.0, index=dates.index)
+
+
+def had(logs, team, line, regs, today=None):
     """The lift (lifts()) each player had per game in these box scores: every game some of the regulars `regs` sat out
     (one of their team's games from their first for it, or all of them if they're yet to play) adds what those players
-    out together handed him, averaged over the player's games. ros() reads this season net of it, as if everyone
-    played. line: as lifts()'."""
+    out together handed him, averaged over the player's games (each weighted as recent() weighs it, from `today`; None:
+    alike). ros() reads this season net of it, as if everyone played. line: as lifts()'."""
     T, cols = "TEAM_ABBREVIATION", ["MIN"] + RAW
     games, sat = logs.drop_duplicates([T, "GAME_ID"]), []
     for j in regs:
@@ -583,10 +615,11 @@ def had(logs, team, line, regs):
     sets = list(out.sit.unique())
     lift = lifts(line, team, sets).groupby(level=["key", "set"]).sum()  # each player's lift per set, all sitters
     out["set"] = out.sit.map({s: i for i, s in enumerate(sets)})
-    pg = logs[[T, "GAME_ID", "key"]].merge(out[[T, "GAME_ID", "set"]], on=[T, "GAME_ID"])  # games played while some sat
+    wt = logs[[T, "GAME_ID", "key"]].assign(wt=age_wt(logs.GAME_DATE, today) if today else 1.0)
+    pg = wt.merge(out[[T, "GAME_ID", "set"]], on=[T, "GAME_ID"])  # games played while some sat
     pg = pg[pd.MultiIndex.from_frame(pg[["key", "set"]]).isin(lift.index)]
-    n = pg.groupby(["key", "set"]).size()
-    return lift.loc[n.index].mul(n, axis=0).groupby(level="key").sum().div(logs.key.value_counts(), axis=0).dropna()
+    n = pg.groupby(["key", "set"]).wt.sum()
+    return lift.loc[n.index].mul(n, axis=0).groupby(level="key").sum().div(wt.groupby("key").wt.sum(), axis=0).dropna()
 
 
 def zscores(df, pool_size, ref=None):
@@ -623,7 +656,7 @@ def cat_probs(A, B, cats, A0=None, B0=None, ties=False):
         if c in ("FG%", "FT%"):
             m, a = RAW.index(c[:2] + "M"), RAW.index(c[:2] + "A")
             na, nb = np.maximum(TA[..., a], 1e-9), np.maximum(TB[..., a], 1e-9)  # no shots at all: 0%, not NaN
-            pa, pb = TA[..., m] / na, TB[..., m] / nb
+            pa, pb = np.clip(TA[..., m] / na, 0, 1), np.clip(TB[..., m] / nb, 0, 1)  # IL rows can net makes > tries
             var = PCT_NOISE * (pa * (1 - pa) * A[..., a] / na ** 2 + pb * (1 - pb) * B[..., a] / nb ** 2)
             diff = pa - pb
             tie.append(np.zeros_like(diff))
@@ -750,10 +783,18 @@ class League:
         self.news = news  # news() from load(), for card() and roster_news(); never moves a number
         self.loaded = None  # {cache file: mtime or None} this copy was built from (load()), for freshness()
         pool = self.teams_n * self.roster_n
+        self.today = (today or date.today()).isoformat()
         # expert projections: the snapshot's (Yahoo), and ESPN's (proj, from load()) for players Yahoo doesn't list
         self.proj = experts(snap.get("projections", {}), proj or {}, base, base.index.union(cur.index))
         pre = prior(base, self.proj)
-        line = ros(pre, cur)
+        # this season from the box scores, recent games weighing more (recent()), where they hold the games fetch()
+        # counts (a stale cache either side: fetch()'s line). Regulars come from it too, as in backtest.py's mondays()
+        wcur = cur.copy()
+        if logs is not None:
+            r = recent(logs, self.today).reindex(cur.index).dropna()
+            r = r[r.GP == cur.GP.reindex(r.index)]
+            wcur.loc[r.index, ["MIN"] + RAW] = r[["MIN"] + RAW]
+        line = ros(pre, wcur)
         cols = ["PLAYER_NAME", "MIN", "GP_CUR"] + RAW
         self.p = line[cols].copy()  # find() works from here; teammates' injuries adjust the numbers below
         self.meta, self.rosters = {}, {}
@@ -762,7 +803,6 @@ class League:
         self.fa = self._keys(snap.get("free_agents", []))
         # NBA schedule + injury news: games left this week, and return dates for availability
         self.sched, self.inj = sched or {}, {}
-        self.today = (today or date.today()).isoformat()
         sunday = (date.fromisoformat(self.today) + timedelta(6 - date.fromisoformat(self.today).weekday())).isoformat()
         nba = cur.TEAM_ABBREVIATION.combine_first(base.TEAM_ABBREVIATION).to_dict()
         nba.update({k: m["nba"] for k, m in self.meta.items() if m.get("nba")})  # the league's view is more current
@@ -795,9 +835,9 @@ class League:
         self.here = line.index[line.index.isin(played) | line.index.isin(list(self.inj)) | (len(played) == 0)]
         regs = line.index[(line.MIN >= REGULAR) & line.index.isin(self.here)]
         takers = line[line.index.isin(cur.index) | line.index.isin(regs)]  # who can take minutes, and the regulars
-        if logs is not None:
-            h = had(logs, self.nba, takers, regs).reindex(cur.index).dropna()
-            full = cur.copy()
+        if logs is not None:  # net of the lifts they had
+            h = had(logs, self.nba, takers, regs, self.today).reindex(cur.index).dropna()
+            full = wcur.copy()
             full.loc[h.index, h.columns] = (full.loc[h.index, h.columns] - h).clip(lower=0)
             line = ros(pre, full)
         out = {k: i["return"] for k, i in self.inj.items() if (i.get("return") or "") > self.today}
@@ -838,15 +878,20 @@ class League:
         a = self.avail.to_numpy()[:, None]
         self.week = GAMES_WEEK * (a * self.p[RAW] + (1 - a) * FILL * fill.to_numpy())
         # parked in an IL slot (IL, IL+, NA): he holds no active spot, so nobody covers his missed games, and from his
-        # return (the share `back` of games left) he takes the spot of a waiver-level player. Nothing if even then he
-        # wouldn't beat one (effective value): he'd be dropped. ponytail: he bumps the waiver level, not the team's worst
+        # return (the share `back` of games left) he takes the spot of his team's weakest active player (_return())
         self.il = {t: {k for k in ks if self.meta[k].get("slot") in ("IL", "IL+", "NA")} for t, ks in self.rosters.items()}
         self.il_n = s.get("il", max(map(len, self.il.values()), default=0))  # IL slots per team (yahoo.py reads them)
         w, r = self._waiver_level(self.value()), self.rate.to_numpy()[:, None]
         healthy = GAMES_WEEK * (r * self.p[RAW] + (1 - r) * FILL * fill.to_numpy())  # his week once he's back
-        il = (healthy - self.week.loc[w].mean()).mul(self.back, axis=0)
+        self.week_il = healthy.mul(self.back, axis=0)  # from his return, before the player he pushes out
         floor = float(self.zfill["ros"].sum())
-        self.week_il = il.where(floor + self.rate * (self.value() - floor) > self.effective()[w].mean(), 0.0, axis=0)
+        # _return()'s arrays, one row per player (_ix) plus nobody at the end: value as he is (effective) and back
+        # healthy, share of games after his return, week and week from his return
+        self._ix = dict(zip(self.p.index, range(len(self.p))))
+        hv = (floor + self.rate * (self.value() - floor)).where(self.back > 0, -np.inf)  # out for good: never back
+        self._ev, self._hv = np.append(self.effective().to_numpy(), np.inf), np.append(hv.to_numpy(), -np.inf)
+        self._bk = np.append(self.back.to_numpy(), 0.0)
+        self._wk, self._cr = (np.vstack([x.to_numpy(), np.zeros(len(RAW))]) for x in (self.week, self.week_il))
         # an open roster spot on the trade market: the waiver level's market value, fixed now so a player dropped on a
         # copy (free moves) never prices a pickup at his own rank
         self.spot = float(self.market["value"].reindex(w).mean())
@@ -1175,10 +1220,27 @@ class League:
 
     # --- matchup model (9-cat) -----------------------------------------------
     def vec(self, keys, il=None):
-        """Weekly totals: each player's week, or his IL-slot week (week_il) if he's in `il` (default: parked here)."""
+        """Weekly totals: each active player's week, plus what the ones in `il` (default: parked here) add when they
+        return (_return())."""
         il = self._parked if il is None else set(il)
-        return (self.week.reindex([k for k in keys if k not in il]).fillna(0).sum()
-                + self.week_il.reindex([k for k in keys if k in il]).fillna(0).sum()).to_numpy()
+        on, off = [k for k in keys if k not in il], [k for k in keys if k in il]
+        return self.week.reindex(on).fillna(0).sum().to_numpy() + self._return(self._ids(on), self._ids(off))
+
+    def _ids(self, keys):
+        """Players' rows in _return()'s arrays (anyone unknown, or None: nobody)."""
+        return np.array([self._ix.get(k, len(self._ix)) for k in keys], dtype=int)
+
+    def _return(self, S, Q, n=None):
+        """What players parked in IL slots add, back from injury: each takes the spot of the weakest active player left
+        (effective value) from his return (`back`), the best one first, while he beats him (else he's the one cut).
+        S / Q: active and parked players (_ids), padded with nobody, any leading dims; n: at most that many parked.
+        -> weekly totals per leading index. ponytail: punt-free values pick who goes, and the best one back pushes
+        out the weakest, whoever returns first"""
+        n = min(S.shape[-1], Q.shape[-1], n if n is not None else Q.shape[-1])
+        S = np.take_along_axis(S, np.argsort(self._ev[S], -1)[..., :n], -1)
+        Q = np.take_along_axis(Q, np.argsort(-self._hv[Q], -1)[..., :n], -1)
+        on = np.cumprod(self._hv[Q] > self._ev[S], -1).astype(bool)[..., None]
+        return (on * (self._cr[Q] - self._bk[Q][..., None] * self._wk[S])).sum(-2)
 
     @property
     def _parked(self):
@@ -1204,11 +1266,6 @@ class League:
     def rows(self):
         """Weekly vector per player, as a dict of arrays for fast summing in loops."""
         return dict(zip(self.week.index, self.week.to_numpy()))
-
-    @functools.cached_property
-    def rows_il(self):
-        """Same, parked in an IL slot (week_il)."""
-        return dict(zip(self.week_il.index, self.week_il.to_numpy()))
 
     def _contrib(self, team, keys, punt=()):
         """Each player's worth to `team` in win %, for ranking drops: what its current roster loses without his line,
@@ -1549,12 +1606,12 @@ class League:
         return self._top_ideas(out, mode, limit, "value", 2)
 
     def search(self, give=(), get=(), lock=(), team=None, size=3, tier="fair", goal="win", goal_cats=(),
-               goal_team=None, healthy_only=False, shape=None, punt=(), limit=20, depth=10, free=True,
+               goal_team=None, healthy_only=False, shape=None, punt=(), limit=20, depth=None, free=True,
                their_free=False, max_overpay=None, outside=0):
         """9-cat trade search scored by the matchup model, vectorized over every give/get combo per team.
 
         give / get: players every deal must include. Pinning a get fixes the team and searches both whole rosters,
-               otherwise it's your top `depth` vs theirs.
+               otherwise it's your top `depth` vs theirs: 10, or everyone when you pick a team.
         lock:  players never offered or asked for. outside: also every player in the market's top `outside`
                (League.market rank), both sides: a role-player search (Q14). Pinned give / get stay in.
         tier:  how likely they say yes (TIERS: your gain, theirs, and the market gap). easy: they win on market, you
@@ -1577,6 +1634,7 @@ class League:
             raise KeyError(f"Goal 'team' needs another team: {', '.join(t for t in self.rosters if t != self.me)}")
         give, get = self._check(give, get)
         team = team or (self.owner(get[0]) if get else None)  # a pinned get fixes the team (and lifts _rank's cap)
+        depth = depth or (max(map(len, self.rosters.values())) if team else 10)
         if free or their_free:
             lg, out = self.after_free(punt, keep=give) if free else self, []
             each = their_free and not team  # one search per partner, each on top of its own free moves
@@ -1605,32 +1663,56 @@ class League:
                     for c in itertools.combinations(free, s - len(pins))]
 
         injured = lambda k: self.meta.get(k, {}).get("status", "") in OUT
+        healthy = lambda cs: [[k for k in c if not injured(k)] for c in cs]  # an injured player coming in stays
+        # IL slots: who a side's parked players push out on their return moves with the deal (_return())
+        nobody, L, ev = len(self._ix), max([self.il_n, *map(len, self.il.values())]), lambda k: self._ev[self._ix[k]]
+        pad = lambda ls, w: np.array([[*self._ids(x), *[nobody] * (w - len(x))] for x in ls], dtype=int).reshape(len(ls), w)
 
-        def stack(cs, il):  # summed weekly vectors (active, and as held: parked ones at week_il), players, active
-            # players, parked ones, summed perceived value and market value as a package
+        def stack(cs, il):  # summed weekly vectors (active, and as held: parked ones count in _return()), players,
+            # active players, parked ones, summed perceived value and market value as a package
             return (np.stack([sum(self.rows[k] for k in c) for c in cs]),
-                    np.stack([sum(self.rows_il[k] if k in il else self.rows[k] for k in c) for c in cs]),
+                    np.stack([sum((self.rows[k] for k in c if k not in il), np.zeros(len(RAW))) for c in cs]),
                     np.array([len(c) for c in cs]), np.array([sum(k not in il for k in c) for c in cs]),
                     np.array([sum(k in il for k in c) for c in cs]),
                     np.array([sum(vc[k] for k in c) for c in cs]), np.array([package(mv[k] for k in c) for c in cs]))
 
-        def parked(cs):  # per combo: injured players (they take the receiver's free IL slots, as in _after), and what
-            cut = np.zeros((len(cs), size + 1, len(RAW)))  # parking the first 0..size of them takes off its week
-            for i, c in enumerate(cs):
-                for j, k in enumerate(sorted(filter(injured, c), key=lambda k: (self.back[k], k))):
-                    cut[i, j + 1:] += self.rows[k] - self.rows_il[k]
-            return np.array([sum(map(injured, c)) for c in cs]), cut
+        def parked(cs):  # per combo: injured players (they take the receiver's free IL slots, as in _after), what
+            # parking the first 0..size of them takes off its active week, and who they are in that order (_ids)
+            cut, hurt = np.zeros((len(cs), size + 1, len(RAW))), [sorted(filter(injured, c), key=lambda k: (self.back[k], k)) for c in cs]
+            for i, h in enumerate(hurt):
+                for j, k in enumerate(h):
+                    cut[i, j + 1:] += self.rows[k]
+            return np.array(list(map(len, hurt))), cut, pad(hurt, size)
 
-        def low(groups, c):  # per group: the `size` players the team would miss least (padded with inf), vectors, market
+        def side(team, cs):  # per combo, for _return(): the team's weakest active players left (enough to cut `size`
+            # and still push out L) and its parked ones left
+            il = self.il[team]
+            return (pad([sorted((k for k in self.rosters[team] if k not in c and k not in il), key=ev)[:L + size] for c in cs], L + size),
+                    pad([[k for k in il if k not in c] for c in cs], len(il)))
+
+        def returns(rest, park, ok, hurt, n_park, drop, fa_ids, n_fa):  # what a side's parked players add after the
+            # deal: its active players are `rest` less `drop`, plus the healthy ones coming in (ok), the injured ones
+            # past the first n_park (those park, next to `park`) and n_fa free agents
+            if not park.shape[-1] and not n_park.any():  # nobody parked, before or after
+                return 0.0
+            j, b = np.arange(size), lambda x: np.broadcast_to(x, n_park.shape + x.shape[-1:])
+            S = np.concatenate([b(rest), b(ok), np.where(j >= n_park[..., None], b(hurt), nobody),
+                                np.where(j < n_fa[..., None], b(fa_ids), nobody)], -1)
+            S = np.where((S[..., None] == drop[..., None, :]).any(-1), nobody, S)
+            return self._return(S, np.concatenate([b(park), np.where(j < n_park[..., None], b(hurt), nobody)], -1), L)
+
+        def low(groups, c):  # per group: the `size` players the team would miss least (padded with inf), vectors,
+            # market, _ids
             vals, vecs, mk = (np.full((len(groups), size), np.inf), np.zeros((len(groups), size, len(RAW))),
                               np.zeros((len(groups), size)))
-            for i, g in enumerate(groups):
-                for j, k in enumerate(sorted(g, key=c.get)[:size]):
+            low = [sorted(g, key=c.get)[:size] for g in groups]
+            for i, g in enumerate(low):
+                for j, k in enumerate(g):
                     vals[i, j], vecs[i, j], mk[i, j] = c[k], self.rows[k], mv[k]
-            return vals, vecs, mk
+            return vals, vecs, mk, pad(low, size)
 
         def drops(A, B, n, inn):  # vector and market value of the n cheapest of A's (per give combo) and B's (per get
-            # combo), and whether one of them is a player coming in (inn: "A" or "B"), cut as soon as he arrives
+            # combo), whether one of them is a player coming in (inn: "A" or "B"), cut as soon as he arrives, and who
             a, b = len(A[0]), len(B[0])
             pair = lambda x, y: np.concatenate([np.broadcast_to(x[:, None], (a, b) + x.shape[1:]),
                                                 np.broadcast_to(y[None], (a, b) + y.shape[1:])], 2)
@@ -1639,17 +1721,19 @@ class League:
             cut, mk = np.take_along_axis(pair(A[1], B[1]), pick[..., None], 2), np.take_along_axis(pair(A[2], B[2]), pick, 2)
             on = np.arange(size) < n[..., None]
             new = on & np.isfinite(np.take_along_axis(vals, pick, 2)) & ((pick >= size) == (inn == "B"))
-            return (on[..., None] * cut).sum(2), (on * mk).sum(2), new.any(-1)
+            who = np.where(on, np.take_along_axis(pair(A[3], B[3]), pick, 2), nobody)
+            return (on[..., None] * cut).sum(2), (on * mk).sum(2), new.any(-1), who
 
         def fills(p, skip=()):  # the best 0..size free agents' vectors summed, for open spots: yours on your build,
-            f = np.zeros((size + 1, len(RAW)))  # theirs real
-            for i, k in enumerate(self.best_fa(size, skip=skip, punt=p)):
+            f, ks = np.zeros((size + 1, len(RAW))), self.best_fa(size, skip=skip, punt=p)  # theirs real; and who
+            for i, k in enumerate(ks):
                 f[i + 1:] += self.rows[k]
-            return f
+            return f, pad([ks], size)[0]
         # you pick first (as in trade()): theirs after your first j pickups, [j, theirs]. Market: any free agent is worth
         # spot, as many as there are
         mine_fa, j = self.best_fa(size, punt=punt), np.arange(size + 1)
-        fa_me, fa = fills(punt), np.stack([fills((), mine_fa[:i]) for i in j])
+        (fa_me, fa_me_ids), fs = fills(punt), [fills((), mine_fa[:i]) for i in j]
+        fa, fa_ids = np.stack([f for f, _ in fs]), np.stack([x for _, x in fs])
         fam_me, fam = np.minimum(j, len(self.fa)) * self.spot, np.minimum(j[None], np.maximum(len(self.fa) - j[:, None], 0)) * self.spot
 
         roster, il_me = self.rosters[me], self.il[me]
@@ -1657,7 +1741,9 @@ class League:
         if not mine:  # everyone you have is locked (or outside=)
             return []
         GV, GH, gn, ga, gp, gseen, gmk = stack(mine, il_me)
-        g_hurt, g_cut = parked(mine)
+        g_hurt, g_cut, g_ids = parked(mine)
+        (rest_g, park_g), ok_g = side(me, mine), pad(healthy(mine), size)
+        now_me = self._return(self._ids(self._playing(roster)), self._ids(il_me))
         my_rest = low([[k for k in roster if k not in c and k not in il_me] for c in mine], self._contrib(me, roster, punt))
         I = np.arange(len(mine))[:, None]
         before = self.outlook(me, punt=punt)
@@ -1671,7 +1757,8 @@ class League:
                 continue
             il_t, J = self.il[t], np.arange(len(theirs))[None]
             RV, RH, rn, ra, rp, rseen, rmk = stack(theirs, il_t)
-            r_hurt, r_cut = parked(theirs)
+            r_hurt, r_cut, r_ids = parked(theirs)
+            (rest_r, park_r), ok_r = side(t, theirs), pad(healthy(theirs), size)
             c_in = self._contrib(me, {k for c in theirs for k in c}, punt)  # what their players would add for you
             c_t = self._contrib(t, set(keys) | {k for c in mine for k in c})
             # injured players coming in park in free IL slots (the ones a side sends free theirs up); the rest need
@@ -1681,23 +1768,27 @@ class League:
             n_me, n_t = rn[None] - to_me - ga[:, None], gn[:, None] - to_t - ra[None]
             n_me = np.where(n_me > 0, np.maximum(n_me - self._room(me), 0), n_me)  # open active spots take extras
             n_t = np.where(n_t > 0, np.maximum(n_t - self._room(t), 0), n_t)
-            healthy = lambda cs: [[k for k in c if not injured(k)] for c in cs]  # an injured player coming in stays
-            my_drop, my_drop_m, my_cut = drops(my_rest, low(healthy(theirs), c_in), n_me, "B")
-            their_drop, their_drop_m, their_cut = drops(low(healthy(mine), c_t),
-                                                        low([[k for k in keys if k not in c and k not in il_t] for c in theirs], c_t), n_t, "A")
+            my_drop, my_drop_m, my_cut, my_who = drops(my_rest, low(healthy(theirs), c_in), n_me, "B")
+            their_drop, their_drop_m, their_cut, their_who = drops(
+                low(healthy(mine), c_t), low([[k for k in keys if k not in c and k not in il_t] for c in theirs], c_t), n_t, "A")
             adds = np.clip(-n_me, 0, size), np.clip(-n_t, 0, size)  # open spots each side fills
-            me_after = self.vecs[me] - GH[:, None] + RV[None] - r_cut[J, to_me] - my_drop + fa_me[adds[0]]
-            them_after = self.vecs[t] - RH[None] + GV[:, None] - g_cut[I, to_t] - their_drop + fa[adds]
+            back_me = returns(rest_g[:, None], park_g[:, None], ok_r[None], r_ids[None], to_me, my_who, fa_me_ids, adds[0])
+            back_t = returns(rest_r[None], park_r[None], ok_g[:, None], g_ids[:, None], to_t, their_who, fa_ids[adds[0]], adds[1])
+            now_t = self._return(self._ids(self._playing(keys)), self._ids(il_t))
+            me_after = self.vecs[me] - now_me - GH[:, None] + RV[None] - r_cut[J, to_me] - my_drop + fa_me[adds[0]] + back_me
+            them_after = self.vecs[t] - now_t - RH[None] + GV[:, None] - g_cut[I, to_t] - their_drop + fa[adds] + back_t
             give_m = gmk[:, None] - their_drop_m + fam[adds]  # market value each side ends up with
             get_m = rmk[None] - my_drop_m + fam_me[adds[0]]
             mkt = 100 * (get_m - give_m) / np.maximum(np.maximum(give_m, get_m), 1)  # as in priced()
             names, O = self._others(me, t)
             k = len(O) + 1
             p_mt = cat_probs(me_after, them_after, cats)
-            p_o = cat_probs(me_after[:, :, None], O[None, None], cats)  # (give combo, get combo, other team, cat)
-            m_o, m_t = self._score(self._concede(p_o, punt)), self._score(self._concede(p_mt, punt))
+            # f(odds vs each other team), (give combo, get combo, other team, cat), 64 give combos at a time: whole
+            # rosters (one team picked) are ~480k deals, 2 GB at once
+            vs = lambda X, f: np.concatenate([f(cat_probs(X[i:i + 64, :, None], O[None, None], cats)) for i in range(0, len(X), 64)])
+            m_o, m_t = vs(me_after, lambda p: self._score(self._concede(p, punt))), self._score(self._concede(p_mt, punt))
             dme = 100 * ((m_o.sum(-1) + m_t) / k - before["win"])
-            t_o = self._score(cat_probs(them_after[:, :, None], O[None, None], cats)).sum(-1)
+            t_o = vs(them_after, self._score).sum(-1)
             dthem = 100 * ((t_o + self._score(1 - p_mt)) / k - self.outlooks[t]["win"])
             weak = np.concatenate([[0], np.cumsum(np.sort(pv.reindex(self._playing(keys)).to_numpy()))])  # for drops
             seen = gseen[:, None] - rseen[None] + np.where(n_t < 0, -n_t * cv, -weak[np.clip(n_t, 0, len(weak) - 1)])
@@ -1706,7 +1797,7 @@ class League:
                 score = 100 * (h2h - before["vs"][goal_team])
             elif goal == "cats":
                 idx = [cats.index(c) for c in goal_cats]
-                odds = ((p_o.sum(-2) + p_mt) / k)[..., idx].mean(-1)
+                odds = ((vs(me_after, lambda p: p.sum(-2)) + p_mt) / k)[..., idx].mean(-1)
                 # real odds before, as after: a punted goal category read its conceded 0% before (+30 for every deal)
                 score = 100 * (odds - np.mean([self.outlooks[me]["odds"][c] for c in goal_cats]))
             else:
@@ -1936,9 +2027,15 @@ class League:
         """Change in team's win % vs the league from swapping each add in for each drop on `roster`: (adds, drops)."""
         V, D = self.vec(roster), np.stack([self.rows[k] if k else np.zeros(len(RAW)) for k in drops])
         A = np.stack([self.rows[k] for k in adds])
+        # who his parked players push out on their return moves with the swap
+        on, off = self._ids(self._playing(roster)), self._ids([k for k in roster if k in self._parked])
+        S = np.where(on[None] == self._ids(drops)[:, None], len(self._ix), on[None])
+        S = np.concatenate([np.broadcast_to(S, (len(adds), *S.shape)), np.broadcast_to(self._ids(adds)[:, None, None],
+                                                                                       (len(adds), len(drops), 1))], -1)
+        back = self._return(S, np.broadcast_to(off, S.shape[:2] + off.shape)) - self._return(on, off)
         _, O = self._others(team)
         win = lambda X: self._score(self._concede(cat_probs(X[..., None, :], O, self.cats), punt)).mean(-1)
-        return 100 * (win(V - D[None] + A[:, None]) - win(V))
+        return 100 * (win(V - D[None] + A[:, None] + back) - win(V))
 
     def free_moves(self, punt=(), keep=(), team=None):
         """Waiver moves worth making without a trade: the best add/drop (or plain add into an open spot) by win %,
@@ -2102,8 +2199,8 @@ class League:
             gain = 100 * (self._score(odds(V)) - s0)
             cands = [fas[i] for i in np.argsort(-gain.max(1))[:max(limit, 10)]]
             season0 = self.outlook(me, punt=punt)["win"]
-            season = lambda out, inn: round(100 * (self.outlook(me, {me: self.vecs[me] - sum(self.rows[k] for k in out)
-                                                                      + sum(self.rows[k] for k in inn)}, punt)["win"] - season0), 1)
+            season = lambda out, inn: round(100 * (self.outlook(me, {me: self.vec(
+                [k for k in self.rosters[me] if k not in out] + list(inn))}, punt)["win"] - season0), 1)
             timed = sorted(((*self._timed(play(me), a, [d], odds, s0), a, d) for a in cands for d in drops),
                            key=lambda x: -x[0])
             seen = set()
@@ -2147,11 +2244,21 @@ class League:
 
     def _so_far(self):
         """{team: this week's totals so far}, from every pairing in the snapshot (an opponent picked in the app has
-        them too), {} once the snapshot's week is over."""
+        them too), {} once the snapshot's week is over. A snapshot from an earlier day misses the days from its `from`
+        to yesterday: their box scores go on, each day's best active players as starters (_lineup), so the rest of the
+        week can still start today. ponytail: the lineup a manager set by hand may have differed"""
         if self.rolled:
             return {}
-        return {**{t: x for pr in self.snap.get("matchups", ()) for t, x in pr.get("totals", {}).items()},
-                **self.matchup.get("totals", {})}
+        tot = {**{t: x for pr in self.snap.get("matchups", ()) for t, x in pr.get("totals", {}).items()},
+               **self.matchup.get("totals", {})}
+        if self.logs is None or self.matchup.get("from", self.today) >= self.today:
+            return tot
+        g = self.logs[(self.logs.GAME_DATE >= self.matchup["from"]) & (self.logs.GAME_DATE < self.today)]
+        for t in tot:
+            for _, day in g[g.key.isin(self._playing(self.rosters.get(t, ())))].groupby("GAME_DATE"):
+                got = day.set_index("key").loc[self._lineup(sorted(day.key, key=self._value.get, reverse=True)), RAW].sum()
+                tot[t] = {**tot[t], **{s: float(tot[t].get(s, 0)) + float(got[s]) for s in RAW}}
+        return tot
 
     def _matchup(self, opp, punt=()):
         """This week vs opp: ({team: totals so far}, {team: the rest of the week's, week_vec of its active players},
@@ -2446,23 +2553,39 @@ class League:
         return [x for x in POS if len(lineup(self.slots, pos + [{x}])) > len(on)]
 
     def movers(self, punt=(), limit=10):
-        """Sell high: your players beating their rest-of-season value over the last FORM_DAYS (this season without box
-        scores). Buy low: players on other teams below it who are still worth more than the waiver level (not just
-        stars: any rank). Hot pickups: free agents above it whose recent run beats the waiver level, back for 90%+ of
-        the games left. gap = form -
-        value, past TREND."""
+        """Hot and cold runs worth acting on. gap = value on your build over the last FORM_DAYS (this season without
+        box scores) minus rest of season, past TREND. edge = the market's price (League.market) against his worth to
+        you (his rank on your build, effective(), on the same curve), in % as priced(); past fair's 15% either way.
+        Sell high: your players running hot that the market prices above their worth to you. Buy low: players on
+        other teams running cold, still worth more than the waiver level, that the market prices below it. Nov 1 the
+        gap alone listed SGA (market #4) to buy low and Anthony Black (#122) to sell high. Hot pickups: free agents
+        running hot that would raise your win % by MOVE (_gains(), as Waivers; points: value over your weakest
+        healthy player), back for 90%+ of the games left: the gap alone listed Mo Bamba, below the waiver level."""
         form = self.value(punt=punt, frame="form")
         gap = form - self.value(form.index, punt)
         hot, cold = gap[gap >= TREND * self.u], gap[gap <= -TREND * self.u]
         floor, ros = self.replacement(punt)[0], self.value(punt=punt)
+        mk, cut = self.market, TIERS["fair"][3]
+        mine = mk.index.isin(list(self.here)) | mk.index.isin(list(self.meta))  # ranked as the market is
+        worth = 100 * MARKET ** (self.effective(punt).reindex(mk.index[mine]).rank(ascending=False, method="first") - 1)
+        edge = (100 * (mk["value"] - worth) / np.maximum(mk["value"], worth)).reindex(gap.index)
         others = {k for t, ks in self.rosters.items() if t != self.me for k in ks}
-        sell = hot[hot.index.isin(self.rosters[self.me])].nlargest(limit)
-        buy = cold[[k in others and ros.get(k, floor) > floor for k in cold.index]].nsmallest(limit)
+        sell = edge[hot.index[hot.index.isin(self.rosters[self.me])]]
+        sell = sell[sell >= cut].nlargest(limit)
+        buy = edge[[k for k in cold.index if k in others and ros.get(k, floor) > floor]]
+        buy = buy[buy <= -cut].nsmallest(limit)
         # a pickup has to play: not one out past a tenth of the games left (Champagnie, out till Feb 25, was listed)
-        pick = hot[[k in self.fa and form[k] > floor and self.back.get(k, 1.0) >= 0.9 for k in hot.index]].nlargest(limit)
-        fmt = lambda s: [{**self.player(k, punt), "gap": round(float(v), 2)} for k, v in s.items()]
+        adds = [k for k in hot.index if k in self.fa and self.back.get(k, 1.0) >= 0.9]
+        roster, gain = self.rosters[self.me], pd.Series(dtype=float)
+        if adds and self.mode == "points":
+            gain = self.value(adds, punt) - self.value([k for k in self._drops(roster) if k], punt).min()
+        elif adds:
+            gain = pd.Series(self._gains(self.me, roster, adds, self._drops(roster), punt).max(1), adds)
+        pick = gain[gain >= (0.3 * self.u if self.mode == "points" else MOVE * self.s)].nlargest(limit)
+        fmt = lambda s, k2: [{**self.player(k, punt), "gap": round(float(gap[k]), 2), k2: round(float(v), 1)} for k, v in s.items()]
         window = f"the last {FORM_DAYS} days" if self.logs is not None else "this season"
-        return {"sell_high": fmt(sell), "buy_low": fmt(buy), "pickups": fmt(pick),
+        return {"sell_high": fmt(sell, "edge"), "buy_low": fmt(buy, "edge"), "pickups": fmt(pick, "gain"),
+                "unit": "value" if self.mode == "points" else "win%",
                 "window": window, "note": f"Only players with {FORM_GP}+ games in it. Small samples swing hard."}
 
     def dropped(self, punt=(), limit=10):
@@ -2518,13 +2641,16 @@ class League:
 
 
 def load(path=DATA / "league.json", refetch=()):
-    """The league from the snapshot, with every cache refreshed once past its window (refetch=("injuries",): now).
-    It keeps each cache's file time (`loaded`), so sources() shows what this copy was built from."""
+    """The league from the snapshot, with every cache refreshed once past its window. refetch: "injuries" now,
+    "stats" (this season's stats and box scores) once 15 minutes old: Refresh (Nov 1: a 9:57pm Refresh read 1:06pm
+    stats, before the day's games). It keeps each cache's file time (`loaded`), so sources() shows what this copy was
+    built from."""
     if not Path(path).exists() and Path(path) == DATA / "league.json":  # first run: the demo league (yahoo.demo()
         import yahoo                                                    # writes there, never to another path)
         yahoo.demo()
-    lg = League(json.loads(Path(path).read_text(encoding="utf-8")), sched=schedule(), inj=injuries("injuries" in refetch),
-                logs=gamelogs(CUR, 12), proj=espn(), news=news)
+    hours = 0.25 if "stats" in refetch else 12
+    lg = League(json.loads(Path(path).read_text(encoding="utf-8")), cur=fetch(CUR, max_age_hours=hours), sched=schedule(),
+                inj=injuries("injuries" in refetch), logs=gamelogs(CUR, hours), proj=espn(), news=news)
     news_index()  # news() reads it when a card or the News panel asks (My team, at once); fetch it now so its time shows
     lg.loaded = {name: mtime(DATA / name) for _, _, name, _, _ in SOURCES if name != "news_index.json"}
     return lg
@@ -2559,7 +2685,7 @@ def main():
     ap.add_argument("--healthy-fa", action="store_true", help="injured free agents off waivers (Waivers' Healthy only)")
     a = ap.parse_args()
     split = lambda s: [x.strip() for x in s.split(",") if x.strip()]
-    lg, punt = load(), split(a.punt)
+    lg, punt = load(), punts(a.punt)
     lg = lg.healthy_fa() if a.healthy_fa else lg
     out = {"team": lambda: {**lg.profile(), "roster": lg.team_roster(lg.me, punt)},
            "trade": lambda: lg.trade(split(a.give), split(a.get), punt, not a.no_free, a.their_free),

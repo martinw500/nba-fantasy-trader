@@ -154,10 +154,13 @@ def parse_text(text):
                     tzinfo=timezone(timedelta(hours=int(m[3]))) if m[3] else ET)
                 out["pulled"], y0 = at.isoformat(), at.year - (at.month < 8)
                 # games under way at pull time are in the totals, so the rest of the week starts the next day.
-                # "No Oct 27 games had started ... earlier games were final": today still counts.
+                # "No Oct 27 games had started ... earlier games were final" / "No games were in progress ... All
+                # Oct 31 games were final": today still counts (a "final" only counts for today's games, Nov 1).
                 # ponytail: 7 PM ET is the usual first tip-off; weekend matinees start earlier
-                started = not re.search(r"\bno\b[^.;]*\bstarted", line, re.I) and (
-                    "final" in line or at >= datetime.combine(at.date(), time(19), ET))
+                started = not re.search(r"\bno\b[^.;]*\b(started|in progress|under ?way)", line, re.I) and (
+                    bool(re.search(r"\b(started|in progress|under ?way)\b", line, re.I))
+                    or bool(re.search(rf"\b{at:%b} {at.day}\b[^.;]*\bfinal", line))
+                    or at >= datetime.combine(at.date(), time(19), ET))
                 out["from"] = (at.date() + timedelta(days=1 if started else 0)).isoformat()
             elif m := re.match(r"My team: (.+)", line):
                 out["me"] = m[1]
@@ -265,6 +268,10 @@ def from_text(path, me=None):
                                                  "nba": line.at[k, "TEAM_ABBREVIATION"]} for k in best]
     mine = next((x for x in got["matchups"] if me in x["teams"]), None)
     old = json.loads(OUT.read_text(encoding="utf-8")) if OUT.exists() else {}
+    if not schedule_ok(snap.get("schedule"), teams):  # Nov 1's file had your pairing 6 times a week: playoff odds of
+        snap["schedule"] = old.get("schedule") if schedule_ok(old.get("schedule"), teams) else []  # 12% for the 3rd best
+        print(f"The season schedule in {path} has a team twice in a week (or a team not in the league), so "
+              + ("the last import's is kept." if snap["schedule"] else "it's left out (no playoff odds)."))
     if mine and got.get("week"):
         snap["matchup"] = {"opponent": next(t for t in mine["teams"] if t != me), "week_start": got["week"]["start"],
                            "week_end": got["week"]["end"], "totals": mine["totals"],
@@ -273,6 +280,12 @@ def from_text(path, me=None):
     elif old.get("matchup") and old.get("me") == me:  # the opponent picked in the app survives a re-import
         snap["matchup"] = old["matchup"]
     return save(snap)
+
+
+def schedule_ok(sched, teams):
+    """A season schedule (parse_text's) can be real: each week every team plays at most once, and only the league's."""
+    return all(len(ts := [t for pr in w["matchups"] for t in pr]) == len(set(ts)) and set(ts) <= set(teams)
+               for w in sched or ())
 
 
 def _pool():

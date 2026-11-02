@@ -1,0 +1,1084 @@
+MCHC FANTASY BASKETBALL - FULL LEAGUE SNAPSHOT
+Yahoo league "mchc fantasy" (ID 231900) - 12 teams, head-to-head
+Pulled Saturday, October 31, 2026, 9:38 AM MST (America/Creston, UTC-7) from Yahoo Fantasy. No Oct 31 games had started at pull time; all earlier games were final.
+Week 2: Mon Oct 26 - Sun Nov 1
+My team: fatty zhou
+Injury tags: O = out, Q = questionable, P = probable, D = day-to-day, NA = out indefinitely.
+Pre = Yahoo preseason rank. Cur = Yahoo current season rank (this league's 9-cat H2H scoring). Blend = (Pre + Cur) / 2.
+Ros = % of all Yahoo leagues where the player is rostered.
+
+========================================================================
+LEAGUE SETTINGS
+========================================================================
+
+Scoring type:     Head-to-Head Categories, 9 cats (FG%, FT%, 3PTM, PTS, REB, AST, ST, BLK, TO)
+Roster slots:     PG, SG, G, SF, PF, F, C, C, Util, Util (10 starters) + 3 BN + 3 IL = 16
+Max adds/week:    4 (no season limit on adds or trades)
+Waiver type:      Continual rolling list (waiver priority, not FAAB). Waiver period: 2 days
+Trade deadline:   March 4, 2027 (Yahoo "Trade End Date"). Trade review: league votes, 2-day reject time
+Playoffs:         8 teams, Weeks 21, 22 and 23 (Mon Mar 22 - Sun Apr 11, 2027). Reseeding: yes. Tiebreaker: higher seed wins
+Two-week round:   No. Weeks 21, 22 and 23 are each one week (8 teams = 3 rounds, 1 round per week)
+Regular season:   Weeks 1-20. Weeks 7 and 17 each run 14 days (Nov 30 - Dec 13, Feb 15 - Feb 28) as one matchup
+
+========================================================================
+PART 1 - ALL 12 TEAM ROSTERS
+========================================================================
+
+1. Toronto blue jays  (4-5-0, 7th place)
+----------------------------------------------------
+   PG    Cade Cunningham             DET - PG,SG                 Pre 9    Cur 48   Ros 100%
+   SG    Ausar Thompson              DET - SG,SF,PF              Pre 73   Cur 147  Ros 92%
+   G     Tari Eason                  HOU - SG,SF,PF              Pre 146  Cur 97   Ros 35%
+   SF    Derrick Jones Jr.           LAC - SF,PF                 Pre 214  Cur 64   Ros 23%
+   PF    Bam Adebayo                 MIA - PF,C                  Pre 46   Cur 46   Ros 100%
+   F     Jaden McDaniels             MIN - SF                    Pre 67   Cur 30   Ros 91%
+   C     Moussa Diabaté              CHA - C                     Pre 109  Cur 72   Ros 59%
+   C     Aaron Gordon                DEN - PF,C                  Pre 130  Cur 114  Ros 75%
+   Util  Ayo Dosunmu                 MIN - PG,SG                 Pre 117  Cur 109  Ros 78%
+   Util  Amen Thompson               HOU - PG,SG                 Pre 21   Cur 68   Ros 100%
+   BN    Lauri Markkanen             UTA - SF,PF  [Q: Questionable]  Pre 30   Cur 115  Ros 99%
+   BN    Stephon Castle              SAS - PG,SG                 Pre 77   Cur 60   Ros 97%
+   BN    Jay Huff                    IND - C                     Pre 213  Cur 188  Ros 12%
+   IL    Ivica Zubac                 IND - C  [O: Out]           Pre 52   Cur 211  Ros 93%
+   IL    Jimmy Butler III            GSW - SF,PF  [O: Out]       Pre 135  Cur 706  Ros 51%
+   IL    Empty slot
+
+2. Shanghai Sharks  (6-3-0, 3rd place)
+----------------------------------------------------
+   PG    Tyrese Maxey                PHI - PG                    Pre 6    Cur 14   Ros 100%
+   SG    Jaime Jaquez Jr.            MIL - SG,SF,PF              Pre 111  Cur 140  Ros 78%
+   G     James Harden                CLE - PG,SG                 Pre 34   Cur 134  Ros 99%
+   SF    Dyson Daniels               ATL - SG,SF                 Pre 60   Cur 59   Ros 95%
+   PF    Jalen Johnson               ATL - SF,PF                 Pre 11   Cur 29   Ros 100%
+   F     Derik Queen                 NOP - PF,C                  Pre 91   Cur 116  Ros 85%
+   C     Zach Edey                   MEM - C                     Pre 62   Cur 107  Ros 88%
+   C     Onyeka Okongwu              ATL - C                     Pre 50   Cur 91   Ros 96%
+   Util  Darryn Peterson             UTA - SG                    Pre 121  Cur 143  Ros 77%
+   Util  Dejounte Murray             NOP - PG                    Pre 55   Cur 25   Ros 95%
+   BN    Immanuel Quickley           TOR - PG,SG                 Pre 89   Cur 67   Ros 88%
+   BN    Jayson Tatum                BOS - SF,PF                 Pre 7    Cur 24   Ros 100%
+   BN    Alex Sarr                   WAS - C                     Pre 58   Cur 123  Ros 92%
+   IL    Mark Williams               PHX - C  [O: Out]           Pre 220  Cur 662  Ros 10%
+   IL    Maxime Raynaud              SAC - C  [O: Out]           Pre 175  Cur 518  Ros 15%
+   IL    Empty slot
+
+3. langangsters  (3-6-0, 10th place)
+----------------------------------------------------
+   PG    Tyler Herro                 MIL - PG,SG                 Pre 56   Cur 52   Ros 96%
+   SG    Trey Murphy III             NOP - SG,SF                 Pre 29   Cur 149  Ros 98%
+   G     Dennis Schröder             CHA - PG,SG                 Pre 142  Cur 169  Ros 25%
+   SF    Jaylen Wells                MEM - SG,SF                 Pre 157  Cur 101  Ros 35%
+   PF    Giannis Antetokounmpo       MIA - PF,C                  Pre 5    Cur 32   Ros 100%
+   F     Zach LaVine                 SAC - PG,SG,SF              Pre 105  Cur 43   Ros 89%
+   C     Neemias Queta               BOS - C                     Pre 114  Cur 216  Ros 61%
+   C     Day'Ron Sharpe              BKN - C                     Pre 96   Cur 229  Ros 75%
+   Util  De'Aaron Fox                SAS - PG                    Pre 79   Cur 53   Ros 93%
+   Util  Brook Lopez                 LAC - C                     Pre 144  Cur 102  Ros 37%
+   BN    Duncan Robinson             DET - SG,SF                 Pre 185  Cur 51   Ros 44%
+   BN    Jaylen Brown                PHI - SG,SF,PF  [Q: Questionable]  Pre 40   Cur 84   Ros 100%
+   BN    Kawhi Leonard               TOR - SG,SF,PF  [O: Out]    Pre 57   Cur 10   Ros 99%
+   IL    Empty slot
+   IL    Empty slot
+   IL    Empty slot
+
+4. Wesburn incident  (5-4-0, 4th place)
+----------------------------------------------------
+   PG    Shai Gilgeous-Alexander     OKC - PG                    Pre 4    Cur 17   Ros 100%
+   SG    Andrew Wiggins              MIA - SG,SF,PF              Pre 113  Cur 180  Ros 76%
+   G     Deni Avdija                 POR - SG,SF,PF              Pre 45   Cur 92   Ros 99%
+   SF    Scottie Barnes              TOR - SF,PF,C               Pre 14   Cur 18   Ros 100%
+   PF    Julius Randle               BKN - PF                    Pre 66   Cur 126  Ros 95%
+   F     DeMar DeRozan               DEN - SF,PF                 Pre 132  Cur 227  Ros 53%
+   C     Jarrett Allen               CLE - C                     Pre 81   Cur 34   Ros 92%
+   C     Jakob Poeltl                TOR - C                     Pre 122  Cur 254  Ros 33%
+   Util  Desmond Bane                ORL - SG,SF                 Pre 42   Cur 112  Ros 97%
+   Util  Darius Garland              LAC - PG                    Pre 44   Cur 195  Ros 96%
+   BN    Rui Hachimura               LAC - SF,PF                 Pre 126  Cur 306  Ros 52%
+   BN    Cason Wallace               OKC - PG,SG,SF  [O: Out]    Pre 262  Cur 171  Ros 31%
+   BN    Reed Sheppard               HOU - PG,SG  [Q: Questionable]  Pre 127  Cur 108  Ros 30%
+   IL    Empty slot
+   IL    Empty slot
+   IL    Empty slot
+
+5. fatty zhou  (5-4-0, 5th place)
+----------------------------------------------------
+   PG    Damian Lillard              POR - PG                    Pre 43   Cur 133  Ros 96%
+   SG    VJ Edgecombe                PHI - PG,SG                 Pre 92   Cur 106  Ros 91%
+   G     LaMelo Ball                 MIN - PG                    Pre 17   Cur 129  Ros 100%
+   SF    Anthony Black               ORL - PG,SG,SF              Pre 137  Cur 65   Ros 69%
+   PF    Cameron Boozer              MEM - PF                    Pre 51   Cur 39   Ros 96%
+   F     John Collins                DET - PF,C                  Pre 98   Cur 184  Ros 79%
+   C     Walker Kessler              LAL - C                     Pre 23   Cur 38   Ros 99%
+   C     Nikola Jokić                DEN - C                     Pre 1    Cur 6    Ros 100%
+   Util  P.J. Washington             DAL - PF,C                  Pre 149  Cur 141  Ros 67%
+   Util  Devin Booker                PHX - PG,SG                 Pre 22   Cur 45   Ros 100%
+   BN    Brandin Podziemski          GSW - PG,SG                 Pre 80   Cur 82   Ros 77%
+   BN    Keaton Wagler               LAC - SG                    Pre 207  Cur 163  Ros 33%
+   BN    Paul George                 BOS - SF,PF                 Pre 75   Cur 12   Ros 95%
+   IL    Brandon Ingram              LAC - SG,SF,PF  [O: Out]    Pre 101  Cur 648  Ros 86%
+   IL    Jalen Suggs                 ORL - PG,SG  [O: Out]       Pre 97   Cur 176  Ros 68%
+   IL    Keegan Murray               SAC - SF,PF  [O: Out]       Pre 116  Cur 280  Ros 56%
+
+6. Mathmagicians  (1-7-1, 11th place)
+----------------------------------------------------
+   PG    Jared McCain                OKC - PG,SG                 Pre 155  Cur 249  Ros 46%
+   SG    Collin Gillespie            PHX - PG,SG                 Pre 134  Cur 105  Ros 39%
+   G     Josh Hart                   NYK - SG,SF                 Pre 99   Cur 93   Ros 88%
+   SF    Alex Caruso                 OKC - SG,SF  [O: Out]       Pre 211  Cur 54   Ros 28%
+   PF    Jalen Williams              OKC - SF,PF  [O: Out]       Pre 279  Cur 120  Ros 61%
+   F     Julian Champagnie           SAS - SF,PF                 Pre 167  Cur 33   Ros 32%
+   C     Pascal Siakam               IND - PF,C                  Pre 53   Cur 159  Ros 98%
+   C     Jaylin Williams             OKC - PF,C                  Pre 229  Cur 292  Ros 6%
+   Util  Pat Spencer                 PHX - PG,SG                 Pre 340  Cur 186  Ros 0%
+   Util  Kristaps Porziņģis          GSW - C  [O: Out]           Pre 192  Cur 564  Ros 22%
+   BN    Mikal Bridges               NYK - SF,PF                 Pre 102  Cur 241  Ros 83%
+   BN    Jalen Brunson               NYK - PG                    Pre 26   Cur 118  Ros 100%
+   BN    Karl-Anthony Towns          NYK - PF,C                  Pre 15   Cur 22   Ros 100%
+   IL    Empty slot
+   IL    Empty slot
+   IL    Empty slot
+
+7. Mumbai Meteors  (7-1-1, 2nd place)
+----------------------------------------------------
+   PG    Fred VanVleet               HOU - PG                    Pre 95   Cur 44   Ros 74%
+   SG    Tyrese Haliburton           IND - PG,SG  [O: Out]       Pre 10   Cur 5    Ros 100%
+   G     Jamal Murray                DEN - PG                    Pre 20   Cur 13   Ros 100%
+   SF    Ace Bailey                  UTA - SF,PF                 Pre 140  Cur 62   Ros 70%
+   PF    Domantas Sabonis            SAC - PF,C                  Pre 35   Cur 8    Ros 100%
+   F     Michael Porter Jr.          BKN - SF,PF                 Pre 54   Cur 19   Ros 96%
+   C     Isaiah Hartenstein          OKC - C                     Pre 100  Cur 119  Ros 82%
+   C     Alperen Şengün              HOU - PF,C  [Q: Questionable]  Pre 18   Cur 9    Ros 100%
+   Util  Miles Bridges               PHX - PF                    Pre 125  Cur 49   Ros 81%
+   Util  Jabari Smith Jr.            HOU - PF,C                  Pre 90   Cur 28   Ros 87%
+   BN    Kon Knueppel                CHA - SG,SF  [O: Out]       Pre 71   Cur 497  Ros 94%
+   BN    Andrew Nembhard             IND - PG,SG                 Pre 123  Cur 73   Ros 76%
+   BN    Jaxson Hayes                UTA - C                     Pre 243  Cur 58   Ros 22%
+   IL    Empty slot
+   IL    Empty slot
+   IL    Empty slot
+
+8. kobe colorado  (9-0-0, 1st place)
+----------------------------------------------------
+   PG    Dylan Harper                SAS - PG,SG                 Pre 86   Cur 85   Ros 92%
+   SG    Donovan Mitchell            CLE - PG,SG                 Pre 12   Cur 20   Ros 100%
+   G     Nickeil Alexander-Walker    ATL - PG,SG                 Pre 41   Cur 61   Ros 95%
+   SF    Brandon Miller              CHA - SF,PF                 Pre 27   Cur 75   Ros 99%
+   PF    Cooper Flagg                DAL - SG,SF,PF              Pre 8    Cur 4    Ros 100%
+   F     Naz Reid                    CHA - PF,C                  Pre 59   Cur 146  Ros 95%
+   C     Kel'el Ware                 MIL - C                     Pre 61   Cur 174  Ros 89%
+   C     Evan Mobley                 CLE - PF,C                  Pre 28   Cur 42   Ros 100%
+   Util  Jonathan Kuminga            MIN - SF,PF                 Pre 171  Cur 122  Ros 71%
+   Util  CJ McCollum                 ATL - PG,SG                 Pre 104  Cur 136  Ros 77%
+   BN    Davion Mitchell             MIA - PG                    Pre 107  Cur 80   Ros 78%
+   BN    Jalen Smith                 CHI - PF,C                  Pre 124  Cur 77   Ros 47%
+   BN    Jarace Walker               IND - SF,PF                 Pre 232  Cur 286  Ros 3%
+   IL    Obi Toppin                  IND - SF,PF  [Q: Questionable]  Pre 245  Cur 117  Ros 27%
+   IL    Coby White                  CHA - PG,SG  [O: Out]       Pre 93   Cur 439  Ros 82%
+   IL    Empty slot
+
+9. John Ball  (5-4-0, 6th place)
+----------------------------------------------------
+   PG    Keyonte George              UTA - PG,SG                 Pre 39   Cur 100  Ros 98%
+   SG    Kris Dunn                   LAC - PG,SG                 Pre 112  Cur 66   Ros 45%
+   G     Grayson Allen               CHA - SG,SF                 Pre 160  Cur 162  Ros 35%
+   SF    Cedric Coward               MEM - SG,SF                 Pre 87   Cur 27   Ros 89%
+   PF    Matas Buzelis               CHI - SF,PF                 Pre 76   Cur 209  Ros 92%
+   F     Kyshawn George              WAS - SG,SF,PF              Pre 110  Cur 137  Ros 74%
+   C     Anthony Davis               WAS - PF,C                  Pre 32   Cur 37   Ros 99%
+   C     Victor Wembanyama           SAS - C                     Pre 2    Cur 1    Ros 100%
+   Util  Josh Giddey                 CHI - PG,SG                 Pre 24   Cur 185  Ros 98%
+   Util  Derrick White               BOS - PG,SG                 Pre 37   Cur 110  Ros 98%
+   BN    Payton Pritchard            BOS - PG                    Pre 65   Cur 87   Ros 88%
+   BN    Norman Powell               CHI - SG,SF                 Pre 82   Cur 88   Ros 89%
+   BN    Wendell Carter Jr.          ORL - C                     Pre 94   Cur 35   Ros 73%
+   IL    Nic Claxton                 CHI - C  [O: Out]           Pre 139  Cur 456  Ros 70%
+   IL    Jusuf Nurkić                UTA - C  [O: Out]           Pre 152  Cur 495  Ros 45%
+   IL    Empty slot
+
+10. Big Tuo Plumbing Inc.  (0-9-0, 12th place)
+----------------------------------------------------
+   PG    Darius Acuff Jr.            SAC - PG                    Pre 108  Cur 158  Ros 86%
+   SG    Kevin Durant                HOU - SG,SF,PF              Pre 13   Cur 47   Ros 100%
+   G     Christian Braun             DEN - SG,SF,PF              Pre 151  Cur 41   Ros 45%
+   SF    Aaron Wiggins               ATL - SG,SF                 Pre 235  Cur 71   Ros 39%
+   PF    Yaxel Lendeborg             GSW - PF                    Pre 85   Cur 131  Ros 90%
+   F     Caleb Wilson                CHI - PF                    Pre 72   Cur 69   Ros 93%
+   C     Rudy Gobert                 MIN - C                     Pre 83   Cur 296  Ros 91%
+   C     Myles Turner                MIL - C                     Pre 120  Cur 166  Ros 70%
+   Util  Jalen Green                 PHX - SG,SF                 Pre 138  Cur 253  Ros 75%
+   Util  Dillon Brooks               PHX - SF,PF                 Pre 154  Cur 132  Ros 43%
+   BN    AJ Dybantsa                 WAS - SF                    Pre 103  Cur 111  Ros 90%
+   BN    Collin Murray-Boyles        TOR - PF,C                  Pre 88   Cur 177  Ros 67%
+   BN    Kyrie Irving                DAL - PG                    Pre 36   Cur 11   Ros 98%
+   IL    Anthony Edwards             MIN - PG,SG  [O: Out]       Pre 70   Cur 7    Ros 100%
+   IL    Paolo Banchero              ORL - PF  [O: Out]          Pre 69   Cur 55   Ros 98%
+   IL    Empty slot
+
+11. Birds that I hate  (4-5-0, 8th place)
+----------------------------------------------------
+   PG    Trae Young                  WAS - PG                    Pre 19   Cur 40   Ros 100%
+   SG    Jrue Holiday                POR - PG,SG                 Pre 153  Cur 96   Ros 50%
+   G     Stephen Curry               GSW - PG                    Pre 25   Cur 3    Ros 100%
+   SF    Peyton Watson               CLE - SF,PF                 Pre 131  Cur 157  Ros 65%
+   PF    Paul Reed                   DET - PF,C                  Pre 156  Cur 74   Ros 62%
+   F     OG Anunoby                  NYK - SF,PF                 Pre 68   Cur 124  Ros 95%
+   C     Draymond Green              GSW - PF,C                  Pre 161  Cur 202  Ros 31%
+   C     Khaman Maluach              PHX - C                     Pre 119  Cur 182  Ros 54%
+   Util  Devin Vassell               SAS - SG,SF                 Pre 169  Cur 81   Ros 50%
+   Util  Tre Jones                   CHI - PG,SG                 Pre 129  Cur 172  Ros 19%
+   BN    Toumani Camara              POR - SF,PF                 Pre 115  Cur 26   Ros 73%
+   BN    Zion Williamson             NOP - PF,C                  Pre 84   Cur 16   Ros 94%
+   BN    Noah Clowney                BKN - PF,C                  Pre 257  Cur 233  Ros 3%
+   IL    Chet Holmgren               OKC - PF,C  [O: Out]        Pre 31   Cur 15   Ros 99%
+   IL    Ja Morant                   POR - PG  [O: Out]          Pre 78   Cur 78   Ros 89%
+   IL    Jalen Duren                 DET - C  [O: Out]           Pre 33   Cur 56   Ros 98%
+
+12. Kerala blasters  (4-5-0, 9th place)
+----------------------------------------------------
+   PG    Luka Dončić                 LAL - PG,SG                 Pre 3    Cur 2    Ros 100%
+   SG    Austin Reaves               LAL - PG,SG,SF              Pre 16   Cur 36   Ros 100%
+   G     Ryan Rollins                MIL - PG,SG                 Pre 63   Cur 228  Ros 90%
+   SF    Franz Wagner                ORL - SF,PF                 Pre 38   Cur 156  Ros 98%
+   PF    LeBron James                PHI - SF,PF  [Q: Questionable]  Pre 47   Cur 70   Ros 99%
+   F     Terrence Shannon Jr.        MIN - SG,SF                 Pre 183  Cur 181  Ros 39%
+   C     Joel Embiid                 PHI - C  [D: Day-to-Day]    Pre 64   Cur 79   Ros 98%
+   C     Donovan Clingan             POR - C                     Pre 48   Cur 86   Ros 97%
+   Util  Ajay Mitchell               OKC - PG,SG                 Pre 106  Cur 31   Ros 83%
+   Util  Ty Jerome                   MEM - PG,SG  [Q: Questionable]  Pre 49   Cur 23   Ros 93%
+   BN    RJ Barrett                  TOR - SG,SF,PF              Pre 118  Cur 155  Ros 86%
+   BN    Mitchell Robinson           BOS - C                     Pre 168  Cur 288  Ros 20%
+   BN    Ja'Kobe Walter              TOR - PG,SG                 Pre 179  Cur 50   Ros 38%
+   IL    Jaren Jackson Jr.           UTA - PF,C  [O: Out]        Pre 74   Cur 165  Ros 94%
+   IL    Empty slot
+   IL    Empty slot
+
+========================================================================
+PART 2 - INJURED PLAYERS ON ROSTERS (all 12 teams)
+========================================================================
+
+Questionable  Lauri Markkanen             UTA - SF,PF         (Toronto blue jays, BN)
+Out           Ivica Zubac                 IND - C             (Toronto blue jays, IL)
+Out           Jimmy Butler III            GSW - SF,PF         (Toronto blue jays, IL)
+Out           Mark Williams               PHX - C             (Shanghai Sharks, IL)
+Out           Maxime Raynaud              SAC - C             (Shanghai Sharks, IL)
+Questionable  Jaylen Brown                PHI - SG,SF,PF      (langangsters, BN)
+Out           Kawhi Leonard               TOR - SG,SF,PF      (langangsters, BN)
+Out           Cason Wallace               OKC - PG,SG,SF      (Wesburn incident, BN)
+Questionable  Reed Sheppard               HOU - PG,SG         (Wesburn incident, BN)
+Out           Brandon Ingram              LAC - SG,SF,PF      (fatty zhou, IL)
+Out           Jalen Suggs                 ORL - PG,SG         (fatty zhou, IL)
+Out           Keegan Murray               SAC - SF,PF         (fatty zhou, IL)
+Out           Alex Caruso                 OKC - SG,SF         (Mathmagicians, SF)
+Out           Jalen Williams              OKC - SF,PF         (Mathmagicians, PF)
+Out           Kristaps Porziņģis          GSW - C             (Mathmagicians, Util)
+Out           Tyrese Haliburton           IND - PG,SG         (Mumbai Meteors, SG)
+Questionable  Alperen Şengün              HOU - PF,C          (Mumbai Meteors, C)
+Out           Kon Knueppel                CHA - SG,SF         (Mumbai Meteors, BN)
+Questionable  Obi Toppin                  IND - SF,PF         (kobe colorado, IL)
+Out           Coby White                  CHA - PG,SG         (kobe colorado, IL)
+Out           Nic Claxton                 CHI - C             (John Ball, IL)
+Out           Jusuf Nurkić                UTA - C             (John Ball, IL)
+Out           Anthony Edwards             MIN - PG,SG         (Big Tuo Plumbing Inc., IL)
+Out           Paolo Banchero              ORL - PF            (Big Tuo Plumbing Inc., IL)
+Out           Chet Holmgren               OKC - PF,C          (Birds that I hate, IL)
+Out           Ja Morant                   POR - PG            (Birds that I hate, IL)
+Out           Jalen Duren                 DET - C             (Birds that I hate, IL)
+Questionable  LeBron James                PHI - SF,PF         (Kerala blasters, PF)
+Day-to-Day    Joel Embiid                 PHI - C             (Kerala blasters, C)
+Questionable  Ty Jerome                   MEM - PG,SG         (Kerala blasters, Util)
+Out           Jaren Jackson Jr.           UTA - PF,C          (Kerala blasters, IL)
+
+31 injured players total.
+
+========================================================================
+========================================================================
+PART 3 - TOP 100 FREE AGENTS (blended rank: average of preseason + current)
+========================================================================
+
+Blend = (Pre-Season rank + Current rank) / 2, so early-season hot starts
+don't overrank flukes and preseason studs who started slow don't get buried.
+
+#   Blend  Pre   Cur   Player                         Team - Pos        Inj  %Ros
+1   79     136   21    Yves Missi                     NOP - C           O    36%
+2   126    162   89    Pelle Larsson                  MIA - SG,SF            31%
+3   129    159   99    Isaiah Jackson                 LAC - C                18%
+4   139    201   76    Robert Williams III            POR - C           Q    18%
+5   141    128   153   Sandro Mamukelashvili          LAL - PF,C             39%
+6   145    227   63    Zaccharie Risacher             DAL - SF,PF            32%
+7   146    197   95    Bobby Portis Jr.               MIA - PF,C             35%
+8   153    164   142   Tristan da Silva               ORL - SF,PF            22%
+9   159    172   145   Jake LaRavia                   LAL - SF,PF            6%
+10  159    182   135   Keon Ellis                     BKN - SG,SF            7%
+11  161    184   138   Kyle Kuzma                     MIL - SF,PF            30%
+12  163    133   193   Jeremiah Fears                 NOP - PG,SG            44%
+13  165    247   83    Ziaire Williams                LAL - SG,SF       Q    10%
+14  166    205   127   Bilal Coulibaly                WAS - SG,SF            12%
+15  170    143   197   Quentin Grimes                 LAL - SG,SF            30%
+16  171    187   154   Naji Marshall                  DAL - SG,SF,PF         23%
+17  177    202   151   Isaiah Stewart                 MEM - PF,C             7%
+18  177    255   98    De'Anthony Melton              GSW - PG,SG            8%
+19  180    269   90    Jordan Goodwin                 PHX - PG,SG            2%
+20  182    181   183   Jordan Poole                   NOP - PG,SG       O    5%
+21  183    226   139   Cam Spencer                    MEM - PG,SG            8%
+22  184    163   205   Aaron Nesmith                  IND - SG,SF            16%
+23  184    265   103   Justin Champagnie              WAS - SF,PF       O    4%
+24  189    147   231   Egor Dëmin                     BKN - PG,SG       O    21%
+25  190    177   203   Joan Beringer                  MIN - PF,C             13%
+26  191    212   170   Sam Hauser                     BOS - SF,PF            6%
+27  193    141   244   Gui Santos                     GSW - SF,PF            13%
+28  193    198   187   Anfernee Simons                PHI - PG,SG            13%
+29  198    170   225   Jerami Grant                   MEM - SF,PF            14%
+30  198    203   192   De'Andre Hunter                SAC - SF,PF            27%
+31  199    268   130   Luke Kennard                   PHX - SG,SF            2%
+32  205    250   160   Dean Wade                      PHI - SF,PF            2%
+33  207    252   161   Trevon Brazile                 DEN - PF               13%
+34  208    148   267   Cameron Johnson                DEN - SF,PF            20%
+35  208    248   167   Kobe Sanders                   LAC - SG,SF            2%
+36  209    218   200   Klay Thompson                  MIA - SG,SF            8%
+37  213    191   234   Al Horford                     GSW - PF,C             3%
+38  213    246   179   Kasparas Jakučionis            MIL - PG,SG            6%
+39  214    208   219   Miles McBride                  NYK - PG,SG            4%
+40  214    217   210   Keldon Johnson                 SAS - SF,PF            10%
+41  215    277   152   Sam Merrill                    CLE - SG,SF            5%
+42  215    308   121   Mike Conley                    BOS - PG               0%
+43  216    166   265   Bennedict Mathurin             NOP - SG,SF            10%
+44  216    176   256   Deandre Ayton                  WAS - C                8%
+45  216    328   104   Matisse Thybulle               LAL - SG,SF            17%
+46  217    209   224   Jamal Shead                    TOR - PG               5%
+47  218    186   250   Kelly Oubre Jr.                IND - SF,PF            12%
+48  219    174   264   Herbert Jones                  NOP - SG,SF            11%
+49  219    233   204   Brice Sensabaugh               UTA - SG,SF,PF         4%
+50  219    290   148   Kentavious Caldwell-Pope       PHI - SG,SF            4%
+51  220    241   198   Allen Graves                   TOR - PF               3%
+52  222    193   251   Mikel Brown Jr.                BKN - PG               18%
+53  222    222   221   Marcus Smart                   HOU - PG,SG            2%
+54  222    223   220   Tre Johnson                    WAS - PG,SG,SF         4%
+55  222    266   178   Javonte Green                  DET - SG,SF            1%
+56  225    237   212   Bones Hyland                   MIN - PG,SG            5%
+57  228    195   260   Aday Mara                      OKC - C                28%
+58  231    180   281   Scotty Pippen Jr.              MEM - PG          Q    8%
+59  231    225   236   Jaylon Tyson                   CLE - SG,SF,PF    O    8%
+60  231    238   223   Luguentz Dort                  ATL - SG,SF            4%
+61  232    272   191   Ryan Kalkbrenner               CHA - C                5%
+62  235    256   214   Bub Carrington                 WAS - PG,SG            1%
+63  235    263   207   Max Christie                   DAL - SG,SF            6%
+64  236    296   175   Clint Capela                   HOU - C                4%
+65  237    216   258   Kevin Huerter                  DET - SG,SF            2%
+66  238    230   245   Jase Richardson                ORL - PG,SG            1%
+67  238    244   232   Leonard Miller                 CHI - SF,PF            4%
+68  239    349   128   Trendon Watford                NOP - PF               0%
+69  243    215   270   Royce O'Neale                  CHA - SF,PF            2%
+70  243    234   252   Gradey Dick                    LAC - SG,SF            1%
+71  244    242   246   Andre Drummond                 NYK - C                14%
+72  246    200   291   Baylor Scheierman              BOS - SG,SF            2%
+73  247    271   222   AJ Green                       MIL - PG,SG,SF         2%
+74  248    278   217   Ronald Holland II              DET - SF,PF            2%
+75  249    292   206   Karlo Matković                 NOP - PF,C             3%
+76  249    334   164   Quenton Jackson                IND - PG,SG            2%
+77  251    302   199   Terance Mann                   BKN - SG,SF            0%
+78  253    190   316   Nikola Vučević                 ORL - C                8%
+79  253    239   266   Marvin Bagley III              DEN - PF,C             1%
+80  255    291   218   Brandon Williams               GSW - PG               2%
+81  256    178   334   Hugo González                  BOS - SG,SF            2%
+82  256    281   230   Jose Alvarado                  NYK - PG          O    1%
+83  256    297   215   Jordan Walsh                   BOS - SF,PF            1%
+84  258    320   196   Corey Kispert                  ATL - SG,SF            0%
+85  259    199   318   Tim Hardaway Jr.               MIA - SG,SF            5%
+86  259    240   278   Brayden Burries                MIL - SG               5%
+87  265    219   311   Morez Johnson Jr.              DAL - PF               4%
+88  265    254   276   Kingston Flemings              ATL - PG               8%
+89  265    274   255   Goga Bitadze                   ORL - C                1%
+90  265    294   235   Ryan Dunn                      PHX - SF,PF            0%
+91  267    258   275   Adem Bona                      PHI - C                3%
+92  267    295   238   Quinten Post                   MEM - C           D    1%
+93  267    477   57    Mo Bamba                       UTA - C                14%
+94  269    189   348   Oso Ighodaro                   PHX - C                4%
+95  273    249   297   Collin Sexton                  LAL - PG,SG            11%
+96  273    251   294   Daeqwon Plowden                SAC - SG,SF            0%
+97  273    288   257   Jock Landale                   ATL - C                3%
+98  274    259   289   Nikola Jović                   MIA - PF,C             1%
+99  274    335   213   Danny Wolf                     BKN - PF,C             0%
+100 275    165   385   Isaiah Collier                 UTA - PG,SG            8%
+
+========================================================================
+PART 4 - EVERYTHING 15%+ ROSTERED, SORTED BY ROSTER % (your 15% cutoff)
+========================================================================
+
+Every available player (free agents AND waiver wire) rostered in at least
+15% of Yahoo leagues, sorted straight by roster % like you asked. "In T100"
+means they also make the Part 3 blend list. FA = add now, W = waivers.
+
+#   %Ros  Player                         Team - Pos        Inj  Status    Blend  In T100
+1   44%   Jeremiah Fears                 NOP - PG,SG            FA        163    YES
+2   44%   Precious Achiuwa               SAC - PF,C             W Nov 2   168    no (waivers)
+3   42%   Daniel Gafford                 DAL - C                W Nov 3   120    no (waivers)
+4   39%   Sandro Mamukelashvili          LAL - PF,C             FA        141    YES
+5   36%   Yves Missi                     NOP - C           O    FA        79     YES
+6   35%   Bobby Portis Jr.               MIA - PF,C             FA        146    YES
+7   33%   Saddiq Bey                     NOP - SF,PF            W Nov 2   154    no (waivers)
+8   32%   Zaccharie Risacher             DAL - SF,PF            FA        145    YES
+9   31%   Pelle Larsson                  MIA - SG,SF            FA        126    YES
+10  30%   Kyle Kuzma                     MIL - SF,PF            FA        161    YES
+11  30%   Quentin Grimes                 LAL - SG,SF            FA        170    YES
+12  28%   Aday Mara                      OKC - C                FA        228    YES
+13  27%   De'Andre Hunter                SAC - SF,PF            FA        198    YES
+14  23%   Naji Marshall                  DAL - SG,SF,PF         FA        171    YES
+15  22%   Tristan da Silva               ORL - SF,PF            FA        153    YES
+16  22%   Daniss Jenkins                 DET - PG,SG            W Nov 1   159    no (waivers)
+17  21%   Egor Dëmin                     BKN - PG,SG       O    FA        189    YES
+18  20%   Cameron Johnson                DEN - SF,PF            FA        208    YES
+19  18%   Isaiah Jackson                 LAC - C                FA        129    YES
+20  18%   Robert Williams III            POR - C           Q    FA        139    YES
+21  18%   Mikel Brown Jr.                BKN - PG               FA        222    YES
+22  17%   Matisse Thybulle               LAL - SG,SF            FA        216    YES
+23  16%   Aaron Nesmith                  IND - SG,SF            FA        184    YES
+24  15%   Tobias Harris                  SAS - PF          O    FA        447    no (blend)
+
+How to read it: the guys marked "no (waivers)" are the high-demand players,
+but you can't add them directly - put in a claim before their clear date.
+The best true free agents by roster % are Fears (44%), Mamukelashvili (39%), Missi (36%), Portis (35%).
+
+========================================================================
+PART 5 - FULL WAIVER WIRE (all 4 players, can't add directly; claim by date)
+========================================================================
+
+Clears   %Ros  Blend  Pre   Cur   Player                         Team - Pos        Inj
+Nov 2    44%   168    210   125   Precious Achiuwa               SAC - PF,C        
+Nov 3    42%   120    145   94    Daniel Gafford                 DAL - C           
+Nov 2    33%   154    158   150   Saddiq Bey                     NOP - SF,PF       
+Nov 1    22%   159    173   144   Daniss Jenkins                 DET - PG,SG       
+
+========================================================================
+PART 6 - THIS WEEK'S MATCHUPS (week 2, Oct 26 - Nov 1)
+========================================================================
+
+Category totals so far this week (as of ~9:38 AM MST, no Oct 31 games started yet, earlier games final).
+Yahoo projected end-of-week totals / projected score / win %: Yahoo shows none for this league's
+matchups (no projection fields on the matchup pages), so none are listed. Nothing is estimated.
+
+fatty zhou vs kobe colorado
+  fatty zhou             FGM/FGA 165/380   FTM/FTA 64/90   3PTM 46   PTS 440   REB 210   AST 137   ST 31   BLK 19   TO 74
+                         Games played 33   Games remaining 9   (week total 42)
+  kobe colorado          FGM/FGA 209/467   FTM/FTA 71/95   3PTM 64   PTS 553   REB 191   AST 109   ST 37   BLK 17   TO 61
+                         Games played 32   Games remaining 9   (week total 41)
+
+Toronto blue jays vs langangsters
+  Toronto blue jays      FGM/FGA 165/333   FTM/FTA 80/102   3PTM 29   PTS 439   REB 200   AST 110   ST 34   BLK 18   TO 56
+                         Games played 32   Games remaining 6   (week total 38)
+  langangsters           FGM/FGA 130/267   FTM/FTA 62/92   3PTM 35   PTS 357   REB 138   AST 81   ST 25   BLK 16   TO 44
+                         Games played 25   Games remaining 9   (week total 34)
+
+Shanghai Sharks vs Kerala blasters
+  Shanghai Sharks        FGM/FGA 165/368   FTM/FTA 81/103   3PTM 51   PTS 462   REB 175   AST 122   ST 29   BLK 14   TO 54
+                         Games played 31   Games remaining 10   (week total 41)
+  Kerala blasters        FGM/FGA 168/363   FTM/FTA 102/131   3PTM 48   PTS 486   REB 142   AST 122   ST 22   BLK 19   TO 64
+                         Games played 29   Games remaining 12   (week total 41)
+
+Wesburn incident vs Mathmagicians
+  Wesburn incident       FGM/FGA 146/309   FTM/FTA 75/91   3PTM 32   PTS 399   REB 116   AST 81   ST 23   BLK 19   TO 47
+                         Games played 23   Games remaining 8   (week total 31)
+  Mathmagicians          FGM/FGA 124/278   FTM/FTA 48/60   3PTM 52   PTS 348   REB 134   AST 87   ST 25   BLK 4   TO 48
+                         Games played 27   Games remaining 4   (week total 31)
+
+Mumbai Meteors vs Big Tuo Plumbing Inc.
+  Mumbai Meteors         FGM/FGA 140/275   FTM/FTA 55/66   3PTM 48   PTS 383   REB 161   AST 92   ST 21   BLK 15   TO 47
+                         Games played 25   Games remaining 7   (week total 32)
+  Big Tuo Plumbing Inc.  FGM/FGA 217/448   FTM/FTA 98/128   3PTM 70   PTS 602   REB 182   AST 113   ST 30   BLK 32   TO 71
+                         Games played 34   Games remaining 7   (week total 41)
+
+John Ball vs Birds that I hate
+  John Ball              FGM/FGA 195/409   FTM/FTA 95/110   3PTM 65   PTS 550   REB 171   AST 122   ST 36   BLK 19   TO 72
+                         Games played 34   Games remaining 8   (week total 42)
+  Birds that I hate      FGM/FGA 182/367   FTM/FTA 109/128   3PTM 50   PTS 523   REB 149   AST 120   ST 43   BLK 21   TO 62
+                         Games played 31   Games remaining 5   (week total 36)
+
+========================================================================
+PART 7 - RECENT TRANSACTIONS (last 30, newest first)
+========================================================================
+
+  Oct 31 11:32am  Shanghai Sharks       drop          Daniel Gafford
+  Oct 31 3:17am   kobe colorado         add           Jarace Walker
+  Oct 30 7:16pm   Birds that I hate     add           Noah Clowney
+  Oct 30 2:51pm   fatty zhou            add           Keaton Wagler (dropped Precious Achiuwa)
+  Oct 30 2:05pm   Birds that I hate     add           Tre Jones
+  Oct 30 2:00am   Shanghai Sharks       add           Daniel Gafford (dropped Saddiq Bey)
+  Oct 29 5:40pm   Shanghai Sharks       add           Saddiq Bey
+  Oct 29 4:35am   John Ball             add           Jusuf Nurkić
+  Oct 29 2:37am   Big Tuo Plumbing Inc. drop          Daniss Jenkins
+  Oct 28 2:19pm   Kerala blasters       add           Ja'Kobe Walter (dropped Egor Dëmin)
+  Oct 28 1:00pm   Kerala blasters       add           Terrence Shannon Jr.
+  Oct 28 3:55am   John Ball             add           Grayson Allen (dropped Quentin Grimes)
+  Oct 28 3:54am   John Ball             drop          Naji Marshall
+  Oct 28 3:02am   fatty zhou            waiver claim  Keegan Murray
+  Oct 28 3:02am   Big Tuo Plumbing Inc. waiver claim  Christian Braun (dropped Joan Beringer)
+  Oct 28 3:02am   Shanghai Sharks       trade         sent Chet Holmgren + Paul Reed to Birds that I hate (received Jayson Tatum)
+  Oct 28 3:02am   Birds that I hate     trade         sent Jayson Tatum to Shanghai Sharks (received Chet Holmgren + Paul Reed)
+  Oct 27 7:38pm   Big Tuo Plumbing Inc. add           Aaron Wiggins
+  Oct 27 5:42pm   Big Tuo Plumbing Inc. add           Daniss Jenkins
+  Oct 27 5:42pm   Big Tuo Plumbing Inc. drop          Adem Bona
+  Oct 27 4:17pm   Toronto blue jays     add           Jay Huff
+  Oct 27 1:20pm   Kerala blasters       add           Mitchell Robinson (dropped Aday Mara)
+  Oct 27 10:48am  Toronto blue jays     drop          Miles McBride
+  Oct 26 7:01pm   John Ball             add           Kris Dunn (dropped Tristan da Silva)
+  Oct 26 7:00pm   Toronto blue jays     drop          Jusuf Nurkić
+  Oct 26 12:11pm  kobe colorado         drop          Keaton Wagler
+  Oct 26 3:08am   fatty zhou            waiver claim  Brandin Podziemski (dropped Jeremiah Fears)
+  Oct 25 5:59pm   fatty zhou            add           Precious Achiuwa
+  Oct 25 5:35pm   John Ball             add           Naji Marshall
+  Oct 25 5:31pm   John Ball             add           Tristan da Silva (dropped Grayson Allen)
+
+========================================================================
+PART 8 - YAHOO PROJECTIONS (rest of season, per game)
+========================================================================
+
+Yahoo's rest-of-season projections, shown per game (Yahoo publishes them as
+remaining-games totals; per-game = total / projected remaining games).
+MIN is not included in Yahoo's projection view, shown as "-".
+
+ROSTERED PLAYERS (all 173, by team)
+
+Toronto blue jays:
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Cade Cunningham             DET - PG,SG       -     8.9   19.2  4.7   5.7   2.1   24.5  6.0   9.3   1.2   0.8   3.9
+  Ausar Thompson              DET - SG,SF,PF    -     4.8   9.1   1.7   2.8   0.2   11.5  6.3   3.5   2.0   1.0   1.7
+  Tari Eason                  HOU - SG,SF,PF    -     3.4   7.7   0.9   1.2   1.0   8.8   4.7   1.1   1.1   0.6   1.0
+  Derrick Jones Jr.           LAC - SF,PF       -     3.5   6.8   1.1   1.5   1.1   9.2   3.2   1.0   0.9   0.6   0.8
+  Bam Adebayo                 MIA - PF,C        -     7.0   15.4  3.9   5.1   1.9   19.8  8.5   3.6   1.3   0.7   1.9
+  Jaden McDaniels             MIN - SF          -     5.8   11.2  2.2   2.7   1.4   15.2  4.9   2.9   1.2   0.9   1.5
+  Moussa Diabaté              CHA - C           -     2.4   3.9   1.2   1.8   0.0   6.1   6.8   1.5   0.7   0.8   0.9
+  Aaron Gordon                DEN - PF,C        -     5.5   10.8  3.1   4.1   1.6   15.6  5.8   3.1   0.7   0.4   1.3
+  Ayo Dosunmu                 MIN - PG,SG       -     5.9   12.0  1.7   2.0   1.8   15.3  3.8   3.8   1.0   0.4   1.6
+  Amen Thompson               HOU - PG,SG       -     6.7   12.4  3.7   4.8   0.4   17.6  7.5   4.8   1.6   0.8   2.1
+  Lauri Markkanen             UTA - SF,PF       -     7.7   16.8  4.7   5.3   2.8   22.9  7.8   1.9   0.9   0.4   1.5
+  Stephon Castle              SAS - PG,SG       -     6.2   12.8  4.3   5.8   1.5   18.2  5.4   6.8   1.4   0.3   3.0
+  Jay Huff                    IND - C           -     1.3   2.6   0.4   0.4   0.6   3.5   1.4   0.5   0.2   0.6   0.3
+  Ivica Zubac                 IND - C           -     6.0   9.7   1.9   2.7   0.0   13.9  10.6  2.1   0.5   1.0   1.5
+  Jimmy Butler III            GSW - SF,PF       -     4.9   9.7   5.2   6.1   0.6   15.7  3.4   4.2   1.2   0.2   1.3
+
+Shanghai Sharks:
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Tyrese Maxey                PHI - PG          -     8.5   18.2  4.7   5.3   2.8   24.6  3.4   5.3   1.5   0.6   2.0
+  Jaime Jaquez Jr.            MIL - SG,SF,PF    -     4.3   7.9   1.6   2.1   0.7   11.0  3.7   3.1   0.6   0.1   0.8
+  James Harden                CLE - PG,SG       -     5.6   13.4  5.0   5.7   2.6   18.9  4.7   7.4   1.1   0.5   3.3
+  Dyson Daniels               ATL - SG,SF       -     4.8   9.5   1.1   1.7   0.6   11.3  6.0   5.4   2.1   0.5   1.7
+  Jalen Johnson               ATL - SF,PF       -     8.0   16.3  4.3   5.5   1.6   22.0  9.8   7.7   1.3   0.6   3.1
+  Derik Queen                 NOP - PF,C        -     4.8   9.9   2.9   3.6   0.4   12.9  7.3   3.6   1.1   0.9   2.2
+  Zach Edey                   MEM - C           -     4.1   7.0   1.6   2.1   0.2   9.9   9.2   1.3   0.5   1.7   1.5
+  Onyeka Okongwu              ATL - C           -     5.5   11.6  2.0   2.6   1.8   14.7  7.6   3.2   1.0   1.0   1.6
+  Darryn Peterson             UTA - SG          -     6.2   13.8  3.0   3.5   1.9   17.1  4.9   3.2   1.2   0.6   1.9
+  Dejounte Murray             NOP - PG          -     6.3   14.4  2.6   3.1   1.7   17.0  6.5   6.5   1.7   0.3   3.5
+  Immanuel Quickley           TOR - PG,SG       -     5.3   12.4  2.4   2.8   2.6   15.6  3.9   5.7   1.1   0.1   1.5
+  Jayson Tatum                BOS - SF,PF       -     8.3   18.3  4.8   5.8   3.0   24.5  8.7   5.3   1.0   0.4   2.5
+  Alex Sarr                   WAS - C           -     5.9   12.2  1.7   2.5   1.2   14.8  6.6   2.2   0.8   1.1   1.4
+  Mark Williams               PHX - C           -     4.3   6.8   2.1   2.6   0.0   10.6  7.3   1.0   0.7   0.8   1.0
+  Maxime Raynaud              SAC - C           -     3.0   5.3   1.0   1.3   0.2   7.2   4.3   0.7   0.3   0.3   0.7
+
+langangsters:
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Tyler Herro                 MIL - PG,SG       -     8.1   17.3  4.4   5.0   3.2   23.8  5.1   4.9   0.8   0.2   2.3
+  Trey Murphy III             NOP - SG,SF       -     6.8   14.6  2.9   3.3   2.9   19.3  5.1   3.4   1.2   0.4   1.9
+  Dennis Schröder             CHA - PG,SG       -     1.7   3.5   0.9   1.1   0.5   4.6   1.1   1.4   0.3   0.3   0.6
+  Jaylen Wells                MEM - SG,SF       -     4.6   10.0  1.9   2.4   2.1   13.1  3.4   1.6   1.1   0.2   1.2
+  Giannis Antetokounmpo       MIA - PF,C        -     11.2  18.5  6.7   10.5  0.4   29.6  10.6  6.2   1.0   1.0   3.2
+  Zach LaVine                 SAC - PG,SG,SF    -     6.7   13.4  2.9   3.4   2.5   18.9  3.2   3.0   0.7   0.2   2.2
+  Neemias Queta               BOS - C           -     3.7   5.8   1.8   2.8   0.1   9.4   7.0   1.5   0.6   1.4   1.0
+  Day'Ron Sharpe              BKN - C           -     4.5   7.7   2.0   3.2   0.3   11.3  9.0   2.8   1.3   0.8   2.4
+  De'Aaron Fox                SAS - PG          -     6.4   13.4  2.5   3.2   1.7   17.0  3.7   5.4   1.3   0.3   2.2
+  Brook Lopez                 LAC - C           -     2.6   5.6   0.7   0.9   1.2   7.1   2.7   0.9   0.3   0.9   0.6
+  Duncan Robinson             DET - SG,SF       -     3.2   7.3   1.1   1.3   2.2   9.6   1.7   1.6   0.6   0.2   0.8
+  Jaylen Brown                PHI - SG,SF,PF    -     8.6   18.3  4.6   6.0   1.9   23.8  6.1   4.5   1.1   0.4   3.0
+  Kawhi Leonard               TOR - SG,SF,PF    -     8.7   17.4  4.4   5.0   2.3   24.1  6.1   3.2   1.7   0.5   1.9
+
+Wesburn incident:
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Shai Gilgeous-Alexander     OKC - PG          -     11.2  20.9  7.8   8.8   1.8   32.0  4.8   6.4   1.6   0.9   2.3
+  Andrew Wiggins              MIA - SG,SF,PF    -     5.6   12.5  1.9   2.4   1.7   14.8  4.4   2.3   0.9   0.9   1.5
+  Deni Avdija                 POR - SG,SF,PF    -     6.5   13.6  6.1   7.8   1.7   20.7  7.0   5.5   0.9   0.6   2.9
+  Scottie Barnes              TOR - SF,PF,C     -     7.4   15.4  3.2   4.1   1.0   19.1  7.5   4.9   1.4   1.3   2.7
+  Julius Randle               BKN - PF          -     7.0   14.9  4.7   5.8   1.5   20.2  7.1   4.9   0.9   0.2   2.9
+  DeMar DeRozan               DEN - SF,PF       -     5.0   10.5  3.6   4.2   0.6   14.3  2.4   3.1   0.7   0.3   1.0
+  Jarrett Allen               CLE - C           -     5.5   8.4   2.8   3.8   0.0   13.9  8.9   1.8   0.8   0.9   1.2
+  Jakob Poeltl                TOR - C           -     3.7   5.7   1.2   1.9   0.0   8.5   6.6   1.6   0.8   0.8   1.2
+  Desmond Bane                ORL - SG,SF       -     7.1   14.9  3.6   4.0   2.3   20.1  4.3   4.1   1.1   0.5   2.2
+  Darius Garland              LAC - PG          -     7.6   16.4  3.4   3.9   2.9   21.5  2.8   7.1   1.2   0.2   3.1
+  Rui Hachimura               LAC - SF,PF       -     6.2   13.7  2.5   3.3   2.1   17.0  5.6   1.9   0.7   0.3   1.4
+  Cason Wallace               OKC - PG,SG,SF    -     3.5   7.7   0.5   0.6   1.4   8.8   3.2   2.3   1.9   0.4   0.9
+  Reed Sheppard               HOU - PG,SG       -     3.7   8.2   0.8   1.0   1.9   10.0  2.2   2.3   1.2   0.5   1.2
+
+fatty zhou:
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Damian Lillard              POR - PG          -     6.5   15.1  4.3   4.7   3.0   20.4  6.4   5.7   0.9   0.2   2.2
+  VJ Edgecombe                PHI - PG,SG       -     5.6   12.6  2.0   2.4   1.9   15.1  4.5   2.9   1.4   0.4   1.6
+  LaMelo Ball                 MIN - PG          -     7.8   19.1  2.7   3.3   4.0   22.2  4.6   8.0   1.5   0.2   3.7
+  Anthony Black               ORL - PG,SG,SF    -     5.2   11.2  2.7   3.6   1.5   14.7  3.7   3.7   1.3   0.7   2.0
+  Cameron Boozer              MEM - PF          -     6.3   14.7  3.5   4.3   2.3   18.3  11.1  6.3   0.4   0.6   2.3
+  John Collins                DET - PF,C        -     5.4   10.3  1.4   1.9   1.4   13.5  6.2   0.9   0.8   0.9   1.3
+  Walker Kessler              LAL - C           -     5.3   8.2   2.6   4.2   0.5   13.7  11.4  1.6   0.7   2.6   1.6
+  Nikola Jokić                DEN - C           -     10.0  17.7  5.2   6.3   1.6   26.9  12.6  9.9   1.5   0.8   3.4
+  P.J. Washington             DAL - PF,C        -     4.7   10.6  2.0   2.8   1.4   12.9  6.5   1.7   0.9   0.9   1.6
+  Devin Booker                PHX - PG,SG       -     8.8   18.5  6.9   7.9   2.1   26.6  4.1   6.5   0.8   0.3   2.9
+  Brandin Podziemski          GSW - PG,SG       -     4.6   10.3  1.8   2.4   1.9   13.0  5.4   3.9   1.1   0.2   1.5
+  Keaton Wagler               LAC - SG          -     3.9   9.7   4.4   5.1   2.3   14.5  4.4   3.6   1.3   0.2   3.0
+  Paul George                 BOS - SF,PF       -     5.5   12.3  1.8   2.1   2.3   15.2  4.5   3.2   1.5   0.4   1.8
+  Brandon Ingram              LAC - SG,SF,PF    -     7.0   14.5  3.2   3.9   1.5   18.6  4.7   3.7   0.7   0.6   2.2
+  Jalen Suggs                 ORL - PG,SG       -     5.0   11.6  1.9   2.3   2.0   13.9  3.8   5.1   1.7   0.7   2.5
+  Keegan Murray               SAC - SF,PF       -     5.1   11.8  1.2   1.4   1.9   13.4  6.1   1.5   0.9   1.0   0.9
+
+Mathmagicians:
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Jared McCain                OKC - PG,SG       -     5.6   12.9  1.8   2.0   2.7   15.5  3.2   2.5   0.9   0.1   1.6
+  Collin Gillespie            PHX - PG,SG       -     4.1   9.8   0.9   1.1   2.6   11.7  3.8   4.5   1.3   0.2   1.5
+  Josh Hart                   NYK - SG,SF       -     4.3   8.9   1.4   1.9   1.5   11.6  7.8   4.2   1.2   0.3   1.8
+  Alex Caruso                 OKC - SG,SF       -     3.6   8.1   1.1   1.3   1.5   9.9   4.3   3.4   2.0   0.7   1.1
+  Jalen Williams              OKC - SF,PF       -     7.0   14.7  2.9   3.6   1.3   18.2  4.7   4.6   1.2   0.6   1.8
+  Julian Champagnie           SAS - SF,PF       -     2.8   6.5   0.9   1.0   1.8   8.3   3.5   1.2   0.6   0.4   0.7
+  Pascal Siakam               IND - PF,C        -     8.2   16.4  3.4   4.8   1.5   21.4  6.7   3.6   0.9   0.4   1.9
+  Jaylin Williams             OKC - PF,C        -     2.1   5.1   0.9   1.1   1.4   6.5   5.5   1.3   0.9   0.2   0.6
+  Pat Spencer                 PHX - PG,SG       -     0.2   0.4   0.0   0.0   0.0   0.4   0.1   0.1   0.0   0.0   0.1
+  Kristaps Porziņģis          GSW - C           -     4.6   9.7   3.0   3.6   1.6   13.9  4.2   2.0   0.5   1.0   1.0
+  Mikal Bridges               NYK - SF,PF       -     5.0   11.1  0.8   0.9   1.7   12.4  3.6   3.4   1.1   0.7   1.0
+  Jalen Brunson               NYK - PG          -     9.2   19.7  4.8   5.8   2.5   25.8  3.3   6.7   0.9   0.2   2.4
+  Karl-Anthony Towns          NYK - PF,C        -     7.3   14.2  4.5   5.3   1.7   20.9  11.6  3.5   0.8   0.6   2.7
+
+Mumbai Meteors:
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Fred VanVleet               HOU - PG          -     4.0   10.2  1.7   2.0   2.2   12.0  3.1   5.1   1.2   0.4   1.2
+  Tyrese Haliburton           IND - PG,SG       -     6.2   13.3  2.5   3.0   2.7   17.6  3.4   8.8   1.3   0.6   1.8
+  Jamal Murray                DEN - PG          -     8.4   17.8  4.3   4.9   3.1   24.2  4.2   6.5   1.1   0.5   2.2
+  Ace Bailey                  UTA - SF,PF       -     5.1   11.4  0.8   1.1   1.7   12.8  4.3   1.8   0.7   0.7   1.4
+  Domantas Sabonis            SAC - PF,C        -     7.0   11.9  3.0   4.1   0.6   17.6  13.9  6.1   0.8   0.4   2.9
+  Michael Porter Jr.          BKN - SF,PF       -     7.7   16.5  3.1   3.7   3.2   21.7  7.1   2.5   1.0   0.4   2.0
+  Isaiah Hartenstein          OKC - C           -     4.3   7.0   1.5   2.2   0.0   10.0  10.1  3.5   1.0   1.0   1.7
+  Alperen Şengün              HOU - PF,C        -     8.1   15.7  3.9   5.6   0.5   20.7  9.0   6.1   1.2   0.9   3.0
+  Miles Bridges               PHX - PF          -     6.1   13.8  2.8   3.3   2.0   17.0  6.7   3.3   0.7   0.6   1.6
+  Jabari Smith Jr.            HOU - PF,C        -     4.9   10.9  1.9   2.4   2.0   13.8  5.6   1.6   0.6   0.8   1.2
+  Kon Knueppel                CHA - SG,SF       -     7.1   15.0  2.8   3.2   3.7   20.6  5.8   3.8   0.8   0.3   2.3
+  Andrew Nembhard             IND - PG,SG       -     4.7   10.4  2.3   2.9   1.4   13.2  2.8   6.1   1.0   0.1   2.0
+  Jaxson Hayes                UTA - C           -     0.7   0.9   0.3   0.5   0.0   1.7   1.1   0.3   0.1   0.2   0.1
+
+kobe colorado:
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Dylan Harper                SAS - PG,SG       -     6.3   12.5  1.8   2.4   1.1   15.6  4.5   4.5   1.1   0.4   2.0
+  Donovan Mitchell            CLE - PG,SG       -     8.9   19.1  4.9   5.7   3.1   25.9  4.8   5.4   1.5   0.3   2.6
+  Nickeil Alexander-Walker    ATL - PG,SG       -     6.6   14.4  3.0   3.6   3.1   19.2  3.5   3.4   1.1   0.5   1.7
+  Brandon Miller              CHA - SF,PF       -     7.6   17.8  4.3   4.9   3.3   22.8  4.7   3.8   1.2   0.7   2.6
+  Cooper Flagg                DAL - SG,SF,PF    -     8.6   18.0  4.6   5.5   1.3   23.2  7.6   5.1   1.4   1.0   2.6
+  Naz Reid                    CHA - PF,C        -     5.0   11.0  1.2   1.6   2.1   13.2  5.9   1.9   0.8   0.9   1.5
+  Kel'el Ware                 MIL - C           -     5.3   10.1  1.4   2.0   1.2   13.1  10.4  0.8   0.8   1.1   1.1
+  Evan Mobley                 CLE - PF,C        -     7.1   12.8  3.0   4.5   1.1   18.2  9.2   3.5   0.8   1.7   2.0
+  Jonathan Kuminga            MIN - SF,PF       -     5.7   11.8  3.0   4.2   1.1   15.5  5.1   2.3   0.9   0.5   1.7
+  CJ McCollum                 ATL - PG,SG       -     6.3   13.5  2.1   2.7   2.3   16.9  2.8   3.5   0.8   0.4   1.7
+  Davion Mitchell             MIA - PG          -     4.1   8.3   0.8   1.2   1.4   10.4  2.6   6.8   1.0   0.2   1.7
+  Jalen Smith                 CHI - PF,C        -     3.7   7.7   1.4   1.8   1.4   10.1  6.8   1.4   0.6   0.8   1.4
+  Jarace Walker               IND - SF,PF       -     2.6   6.2   1.3   1.6   1.2   7.7   3.4   1.5   0.7   0.3   1.2
+  Obi Toppin                  IND - SF,PF       -     3.9   7.4   1.2   1.5   1.4   10.5  4.0   1.6   0.5   0.3   0.9
+  Coby White                  CHA - PG,SG       -     5.8   12.8  3.3   3.9   2.4   17.2  3.4   5.3   0.6   0.2   2.2
+
+John Ball:
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Keyonte George              UTA - PG,SG       -     6.6   13.9  5.0   5.8   2.1   20.3  3.9   6.2   1.1   0.2   2.9
+  Kris Dunn                   LAC - PG,SG       -     2.1   4.3   0.6   0.8   0.7   5.6   2.5   2.9   1.3   0.2   1.1
+  Grayson Allen               CHA - SG,SF       -     3.1   7.3   1.6   1.8   2.0   9.8   2.3   2.2   0.7   0.2   1.1
+  Cedric Coward               MEM - SG,SF       -     6.5   13.7  2.8   3.4   2.0   17.9  7.0   3.7   0.9   0.6   2.3
+  Matas Buzelis               CHI - SF,PF       -     5.9   13.2  3.7   4.6   2.3   17.7  6.1   2.2   0.8   1.5   2.5
+  Kyshawn George              WAS - SG,SF,PF    -     5.1   11.5  2.2   2.7   1.8   14.2  4.8   4.1   0.9   0.9   2.7
+  Anthony Davis               WAS - PF,C        -     8.2   15.9  4.5   5.7   0.5   21.5  10.3  3.0   1.0   1.8   1.9
+  Victor Wembanyama           SAS - C           -     9.0   17.4  5.7   7.0   1.9   25.6  11.4  3.3   1.0   3.4   2.7
+  Josh Giddey                 CHI - PG,SG       -     5.3   12.4  2.7   3.6   1.6   14.9  7.7   9.1   0.9   0.5   3.4
+  Derrick White               BOS - PG,SG       -     5.7   13.3  2.0   2.3   2.8   16.2  4.3   5.2   1.0   1.1   1.7
+  Payton Pritchard            BOS - PG          -     6.5   13.9  1.6   1.8   2.8   17.5  3.9   4.6   0.8   0.1   1.3
+  Norman Powell               CHI - SG,SF       -     6.7   14.3  4.0   4.8   2.6   19.9  3.2   2.0   1.1   0.2   1.7
+  Wendell Carter Jr.          ORL - C           -     4.0   7.9   2.3   3.0   0.9   11.2  7.5   1.9   0.8   0.6   1.2
+  Nic Claxton                 CHI - C           -     5.2   8.5   1.7   3.0   0.1   12.2  7.9   3.0   0.8   1.4   1.4
+  Jusuf Nurkić                UTA - C           -     4.1   8.2   1.8   2.9   0.6   10.6  9.9   3.8   1.1   0.7   2.3
+
+Big Tuo Plumbing Inc.:
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Darius Acuff Jr.            SAC - PG          -     8.6   22.2  3.5   4.5   2.4   23.1  2.7   4.7   0.7   0.3   2.7
+  Kevin Durant                HOU - SG,SF,PF    -     8.4   16.1  4.7   5.5   2.1   23.7  5.1   4.1   0.7   1.0   2.8
+  Christian Braun             DEN - SG,SF,PF    -     5.2   9.6   1.9   2.4   1.1   13.3  5.0   2.5   1.0   0.4   1.0
+  Aaron Wiggins               ATL - SG,SF       -     2.5   5.6   0.6   0.8   1.1   6.8   2.1   1.3   0.8   0.1   0.8
+  Yaxel Lendeborg             GSW - PF          -     4.9   10.8  4.2   5.5   1.6   15.6  6.5   3.2   0.7   0.3   2.0
+  Caleb Wilson                CHI - PF          -     6.7   15.9  3.5   4.9   1.8   18.8  6.3   1.6   1.6   1.2   3.2
+  Rudy Gobert                 MIN - C           -     3.8   6.2   2.3   4.1   0.0   9.9   11.2  1.5   0.7   1.2   1.3
+  Myles Turner                MIL - C           -     4.4   9.5   1.8   2.3   1.9   12.4  5.7   1.5   0.6   1.8   1.5
+  Jalen Green                 PHX - SG,SF       -     7.1   16.7  3.0   3.9   2.6   19.8  4.4   3.5   0.9   0.3   2.5
+  Dillon Brooks               PHX - SF,PF       -     5.8   13.4  2.1   2.5   2.2   16.0  3.5   1.8   0.9   0.2   1.3
+  AJ Dybantsa                 WAS - SF          -     5.6   12.0  3.6   4.6   1.1   15.8  5.3   2.7   0.9   0.3   2.3
+  Collin Murray-Boyles        TOR - PF,C        -     4.5   7.8   1.6   2.4   0.4   10.9  6.4   2.4   1.2   1.1   1.4
+  Kyrie Irving                DAL - PG          -     7.8   16.3  2.9   3.2   2.8   21.3  4.1   4.2   1.1   0.4   1.7
+  Anthony Edwards             MIN - PG,SG       -     10.4  21.4  5.5   7.0   3.6   30.0  5.0   3.8   1.5   0.8   2.9
+  Paolo Banchero              ORL - PF          -     7.4   15.8  6.3   8.3   1.2   22.4  8.3   5.4   0.7   0.6   3.1
+
+Birds that I hate:
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Trae Young                  WAS - PG          -     6.7   16.0  6.1   7.1   2.6   22.1  2.8   9.7   1.1   0.2   3.9
+  Jrue Holiday                POR - PG,SG       -     5.0   11.0  1.3   1.6   2.1   13.4  4.5   4.9   1.1   0.2   1.9
+  Stephen Curry               GSW - PG          -     8.5   18.6  4.6   5.0   4.7   26.3  4.1   5.0   1.0   0.4   2.6
+  Peyton Watson               CLE - SF,PF       -     4.6   9.9   2.1   2.9   1.3   12.7  4.7   2.2   0.9   1.4   1.4
+  Paul Reed                   DET - PF,C        -     3.1   5.3   1.2   1.7   0.3   7.6   4.8   1.4   0.9   0.9   1.0
+  OG Anunoby                  NYK - SF,PF       -     5.8   12.2  2.5   3.1   2.2   16.3  5.0   2.1   1.4   0.7   1.6
+  Draymond Green              GSW - PF,C        -     2.9   6.6   1.0   1.4   1.2   7.9   5.7   5.5   1.0   0.8   2.5
+  Khaman Maluach              PHX - C           -     3.4   5.9   1.3   1.8   0.4   8.5   7.5   0.7   0.4   1.6   1.1
+  Devin Vassell               SAS - SG,SF       -     4.6   10.5  1.6   2.0   2.3   13.1  3.9   2.9   1.1   0.4   1.2
+  Tre Jones                   CHI - PG,SG       -     4.3   8.0   2.3   2.8   0.6   11.5  3.1   5.1   1.1   0.2   1.3
+  Toumani Camara              POR - SF,PF       -     4.6   10.1  1.1   1.6   2.3   12.6  5.2   2.2   1.2   0.5   1.5
+  Zion Williamson             NOP - PF,C        -     8.7   14.3  5.2   7.3   0.1   22.6  5.9   3.9   1.2   0.6   2.4
+  Noah Clowney                BKN - PF,C        -     2.9   7.3   2.3   2.8   1.5   9.7   4.2   1.4   0.8   0.6   0.9
+  Chet Holmgren               OKC - PF,C        -     6.7   12.5  3.5   4.4   1.5   18.4  10.3  2.1   0.7   2.3   1.8
+  Ja Morant                   POR - PG          -     5.4   12.1  3.8   4.5   1.1   15.7  2.9   5.4   1.0   0.2   3.1
+  Jalen Duren                 DET - C           -     7.0   10.7  4.5   6.0   0.0   18.5  11.2  2.5   0.8   1.1   2.0
+
+Kerala blasters:
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Luka Dončić                 LAL - PG,SG       -     10.2  21.6  7.6   9.6   3.8   31.8  7.6   8.0   1.5   0.5   3.8
+  Austin Reaves               LAL - PG,SG,SF    -     7.4   15.3  6.5   7.4   2.4   23.6  5.2   5.6   1.1   0.4   2.8
+  Ryan Rollins                MIL - PG,SG       -     6.2   14.2  1.6   2.2   2.3   16.4  4.8   5.5   1.3   0.5   2.5
+  Franz Wagner                ORL - SF,PF       -     8.3   17.4  5.5   6.5   1.6   23.7  5.7   4.2   1.1   0.3   2.3
+  LeBron James                PHI - SF,PF       -     6.7   13.1  3.0   4.0   1.3   17.7  5.5   6.1   0.9   0.5   2.5
+  Terrence Shannon Jr.        MIN - SG,SF       -     3.4   7.6   1.9   2.3   1.3   10.0  2.5   1.8   0.6   0.2   1.0
+  Joel Embiid                 PHI - C           -     7.8   16.2  6.7   7.8   1.2   23.6  7.6   3.9   0.6   1.1   2.6
+  Donovan Clingan             POR - C           -     5.1   9.5   1.8   2.8   1.0   13.1  12.7  2.2   0.7   1.9   1.5
+  Ajay Mitchell               OKC - PG,SG       -     6.3   12.8  3.0   3.4   1.3   16.8  3.9   4.3   1.6   0.4   1.7
+  Ty Jerome                   MEM - PG,SG       -     6.7   13.5  3.1   3.6   2.3   18.9  3.3   5.0   1.4   0.1   1.8
+  RJ Barrett                  TOR - SG,SF,PF    -     6.4   13.6  2.9   4.3   1.7   17.4  5.5   3.1   0.7   0.3   1.8
+  Mitchell Robinson           BOS - C           -     2.7   3.9   0.8   1.9   0.0   6.3   8.9   0.9   1.0   1.2   0.8
+  Ja'Kobe Walter              TOR - PG,SG       -     3.4   7.3   1.2   1.7   2.1   10.1  3.2   1.8   1.4   0.3   0.5
+  Jaren Jackson Jr.           UTA - PF,C        -     6.9   14.4  3.5   4.4   1.7   19.0  5.5   1.9   1.0   1.4   2.3
+
+TOP 100 FREE AGENTS (same list as Part 3)
+
+  Player                      Team - Pos        MIN   FGM   FGA   FTM   FTA   3PTM  PTS   REB   AST   ST    BLK   TO
+  Yves Missi                  NOP - C           -     3.1   5.0   1.3   1.9   0.0   7.5   6.4   1.4   0.4   1.6   0.8
+  Pelle Larsson               MIA - SG,SF       -     3.4   7.0   2.6   3.2   0.8   10.3  3.2   3.2   0.8   0.2   1.2
+  Isaiah Jackson              LAC - C           -     2.9   4.7   1.4   2.1   0.0   7.2   5.5   1.1   0.8   1.0   1.1
+  Robert Williams III         POR - C           -     2.2   3.2   0.5   0.7   0.1   5.0   5.1   0.7   0.5   1.1   0.6
+  Sandro Mamukelashvili       LAL - PF,C        -     3.5   7.3   1.3   1.7   1.5   9.9   4.8   1.7   0.6   0.3   1.1
+  Zaccharie Risacher          DAL - SF,PF       -     2.9   6.8   0.8   1.2   1.1   7.8   3.6   1.0   0.9   0.7   0.8
+  Bobby Portis Jr.            MIA - PF,C        -     4.3   9.0   0.8   1.0   1.4   10.8  5.7   1.3   0.6   0.3   0.9
+  Tristan da Silva            ORL - SF,PF       -     3.0   6.6   0.6   0.9   1.4   8.1   2.9   1.1   0.5   0.3   0.8
+  Jake LaRavia                LAL - SF,PF       -     2.2   4.7   1.1   1.5   0.8   6.3   3.1   1.3   1.0   0.4   0.4
+  Keon Ellis                  BKN - SG,SF       -     0.9   2.1   0.3   0.3   0.5   2.6   0.8   0.5   0.5   0.3   0.3
+  Kyle Kuzma                  MIL - SF,PF       -     3.9   8.6   1.5   2.0   1.1   10.5  3.9   1.8   0.6   0.2   0.9
+  Jeremiah Fears              NOP - PG,SG       -     5.4   12.6  2.5   3.2   1.4   14.7  4.1   3.8   1.3   0.4   2.4
+  Ziaire Williams             LAL - SG,SF       -     1.7   3.8   0.9   1.0   0.8   5.0   1.6   0.7   0.6   0.2   0.5
+  Bilal Coulibaly             WAS - SG,SF       -     2.4   5.5   1.3   1.7   0.6   6.7   2.7   1.5   0.8   0.6   0.9
+  Quentin Grimes              LAL - SG,SF       -     3.7   8.1   2.1   2.6   1.4   11.0  3.6   2.7   0.7   0.3   1.4
+  Naji Marshall               DAL - SG,SF,PF    -     3.7   7.3   1.7   2.2   0.6   9.7   3.3   2.3   0.8   0.1   1.1
+  Isaiah Stewart              MEM - PF,C        -     2.5   4.6   1.2   1.6   0.5   6.7   3.7   0.9   0.2   0.9   0.7
+  De'Anthony Melton           GSW - PG,SG       -     3.8   8.9   1.6   2.0   1.6   10.8  3.0   2.3   1.4   0.4   1.4
+  Jordan Goodwin              PHX - PG,SG       -     1.6   3.8   0.3   0.4   0.7   4.1   2.4   1.2   0.7   0.1   0.5
+  Jordan Poole                NOP - PG,SG       -     1.4   3.4   0.8   0.9   0.7   4.2   0.7   1.0   0.3   0.1   0.6
+  Cam Spencer                 MEM - PG,SG       -     1.6   3.6   0.7   0.8   0.9   4.9   1.2   2.4   0.3   0.1   0.6
+  Aaron Nesmith               IND - SG,SF       -     4.3   9.4   1.7   2.0   2.0   12.2  3.7   1.5   0.7   0.5   1.1
+  Justin Champagnie           WAS - SF,PF       -     1.5   2.9   0.4   0.5   0.4   3.8   2.5   0.5   0.4   0.3   0.3
+  Egor Dëmin                  BKN - PG,SG       -     4.2   10.6  1.6   1.9   2.9   13.0  3.9   4.1   1.0   0.4   2.1
+  Joan Beringer               MIN - PF,C        -     2.6   3.8   1.4   1.9   0.0   6.5   4.7   0.7   0.6   1.0   0.7
+  Sam Hauser                  BOS - SF,PF       -     1.8   4.1   0.1   0.1   1.4   5.1   2.1   0.8   0.3   0.2   0.3
+  Gui Santos                  GSW - SF,PF       -     2.2   4.6   0.8   1.2   0.8   6.1   3.1   1.7   0.7   0.2   0.8
+  Anfernee Simons             PHI - PG,SG       -     2.0   4.6   0.5   0.6   1.0   5.5   1.0   1.3   0.2   0.0   0.6
+  Jerami Grant                MEM - SF,PF       -     3.6   8.7   2.7   3.3   1.7   11.7  2.4   1.6   0.5   0.5   1.3
+  De'Andre Hunter             SAC - SF,PF       -     3.9   9.0   2.1   2.5   1.9   11.9  3.8   1.5   0.6   0.2   1.3
+  Luke Kennard                PHX - SG,SF       -     1.7   3.1   0.3   0.5   0.8   4.5   1.3   1.0   0.4   0.1   0.5
+  Dean Wade                   PHI - SF,PF       -     1.3   3.1   0.3   0.4   0.8   3.7   2.9   1.0   0.6   0.3   0.5
+  Trevon Brazile              DEN - PF          -     0.3   0.7   0.1   0.2   0.1   0.9   0.7   0.0   0.1   0.1   0.1
+  Cameron Johnson             DEN - SF,PF       -     4.5   9.3   1.7   2.0   2.0   12.7  4.0   2.6   0.8   0.4   1.2
+  Kobe Sanders                LAC - SG,SF       -     0.7   1.6   0.2   0.3   0.3   2.0   0.7   0.8   0.2   0.0   0.3
+  Klay Thompson               MIA - SG,SF       -     3.6   8.8   0.5   0.7   2.3   10.1  2.0   1.6   0.4   0.3   1.2
+  Al Horford                  GSW - PF,C        -     2.1   4.8   0.3   0.4   1.2   5.7   3.8   1.6   0.4   0.7   0.6
+  Kasparas Jakučionis         MIL - PG,SG       -     0.8   1.8   0.4   0.5   0.4   2.4   1.0   1.1   0.2   0.1   0.4
+  Miles McBride               NYK - PG,SG       -     3.7   8.9   0.8   1.0   2.2   10.5  2.4   2.5   0.9   0.2   0.7
+  Keldon Johnson              SAS - SF,PF       -     4.1   8.2   1.6   2.0   1.0   10.8  4.3   1.3   0.5   0.2   0.8
+  Sam Merrill                 CLE - SG,SF       -     3.2   7.6   0.8   0.9   2.5   9.8   2.4   2.0   0.7   0.1   0.7
+  Mike Conley                 BOS - PG          -     0.8   2.3   0.4   0.5   0.6   2.7   0.9   1.6   0.3   0.1   0.5
+  Bennedict Mathurin          NOP - SG,SF       -     1.3   3.0   1.1   1.3   0.3   4.1   1.3   0.6   0.2   0.1   0.5
+  Deandre Ayton               WAS - C           -     2.6   4.1   0.6   0.8   0.0   5.7   4.2   0.5   0.3   0.4   0.6
+  Matisse Thybulle            LAL - SG,SF       -     1.2   2.8   0.3   0.4   0.8   3.5   1.3   0.7   1.1   0.3   0.5
+  Jamal Shead                 TOR - PG          -     2.8   7.0   1.2   1.4   1.1   7.9   1.9   5.1   1.0   0.4   1.5
+  Kelly Oubre Jr.             IND - SF,PF       -     3.8   8.3   1.7   2.3   1.1   10.4  4.0   1.3   1.0   0.4   1.0
+  Herbert Jones               NOP - SG,SF       -     3.5   8.3   1.2   1.5   1.4   9.6   3.5   2.7   1.6   0.6   1.4
+  Brice Sensabaugh            UTA - SG,SF,PF    -     3.0   6.9   1.2   1.4   1.4   8.8   2.3   1.1   0.4   0.2   0.7
+  Kentavious Caldwell-Pope    PHI - SG,SF       -     1.2   2.7   0.4   0.5   0.5   3.4   0.9   0.7   0.4   0.1   0.4
+  Allen Graves                TOR - PF          -     1.3   3.0   0.6   0.9   0.4   3.6   2.2   0.9   0.5   0.3   0.6
+  Mikel Brown Jr.             BKN - PG          -     4.2   10.5  2.7   3.5   1.7   12.8  3.6   4.2   0.8   0.2   1.5
+  Marcus Smart                HOU - PG,SG       -     2.3   5.9   1.3   1.5   1.1   7.1   2.0   2.5   0.6   0.2   1.0
+  Tre Johnson                 WAS - PG,SG,SF    -     3.7   8.8   1.1   1.3   1.7   10.3  2.5   1.9   0.7   0.1   0.7
+  Javonte Green               DET - SG,SF       -     0.1   0.3   0.1   0.1   0.1   0.4   0.2   0.0   0.1   0.0   0.0
+  Bones Hyland                MIN - PG,SG       -     2.9   7.3   1.1   1.2   1.7   8.7   1.8   3.0   0.7   0.3   0.8
+  Aday Mara                   OKC - C           -     1.8   3.5   0.7   1.2   0.1   4.5   4.2   1.2   0.3   1.0   0.9
+  Scotty Pippen Jr.           MEM - PG          -     3.3   7.0   1.4   2.0   0.9   9.0   2.4   3.4   1.3   0.3   1.9
+  Jaylon Tyson                CLE - SG,SF,PF    -     4.1   8.8   1.0   1.4   1.5   10.8  4.6   1.0   0.8   0.3   0.9
+  Luguentz Dort               ATL - SG,SF       -     2.4   5.8   0.6   0.8   1.4   6.8   2.7   1.0   0.7   0.3   0.6
+  Ryan Kalkbrenner            CHA - C           -     2.2   3.0   0.8   1.2   0.0   5.3   3.9   0.6   0.3   1.0   0.7
+  Bub Carrington              WAS - PG,SG       -     2.2   5.1   0.8   1.0   1.2   6.3   2.0   2.4   0.4   0.2   1.1
+  Max Christie                DAL - SG,SF       -     4.1   9.5   1.6   1.8   2.2   12.0  3.6   2.6   0.6   0.3   2.9
+  Clint Capela                HOU - C           -     0.1   0.3   0.0   0.1   0.0   0.3   0.4   0.1   0.0   0.1   0.0
+  Kevin Huerter               DET - SG,SF       -     2.7   6.2   0.5   0.6   1.2   7.1   2.4   1.8   0.7   0.3   0.7
+  Jase Richardson             ORL - PG,SG       -     0.3   0.7   0.1   0.1   0.1   0.7   0.3   0.2   0.1   0.2   0.2
+  Leonard Miller              CHI - SF,PF       -     0.4   0.8   0.1   0.2   0.1   1.0   0.5   0.1   0.0   0.0   0.1
+  Trendon Watford             NOP - PF          -     0.2   0.3   0.1   0.1   0.0   0.4   0.2   0.1   0.0   0.0   0.0
+  Royce O'Neale               CHA - SF,PF       -     1.7   4.1   0.2   0.2   1.3   4.9   2.8   1.3   0.5   0.2   0.6
+  Gradey Dick                 LAC - SG,SF       -     0.9   2.2   0.4   0.5   0.4   2.6   0.8   0.4   0.2   0.1   0.5
+  Andre Drummond              NYK - C           -     1.5   3.2   0.5   0.8   0.2   3.7   5.1   0.8   0.5   0.4   0.6
+  Baylor Scheierman           BOS - SG,SF       -     1.4   3.2   0.3   0.3   0.9   3.9   2.5   1.1   0.4   0.1   0.5
+  AJ Green                    MIL - PG,SG,SF    -     2.3   5.4   0.4   0.5   2.0   7.0   2.0   1.4   0.4   0.2   1.6
+  Ronald Holland II           DET - SF,PF       -     2.7   5.9   1.1   1.7   0.6   7.2   3.4   1.0   0.9   0.7   0.5
+  Karlo Matković              NOP - PF,C        -     1.1   1.8   0.2   0.3   0.3   2.7   1.6   0.6   0.2   0.1   0.2
+  Quenton Jackson             IND - PG,SG       -     0.7   1.5   0.4   0.5   0.2   2.0   0.5   0.5   0.1   0.1   0.2
+  Terance Mann                BKN - SG,SF       -     0.6   1.3   0.2   0.2   0.2   1.5   0.7   0.2   0.1   0.1   0.2
+  Nikola Vučević              ORL - C           -     3.2   6.4   0.6   0.8   0.7   7.8   4.4   1.6   0.3   0.3   0.7
+  Marvin Bagley III           DEN - PF,C        -     1.9   3.5   0.9   1.2   0.1   4.9   3.0   0.6   0.3   0.2   0.3
+  Brandon Williams            GSW - PG          -     0.5   1.0   0.4   0.5   0.1   1.4   0.3   0.3   0.1   0.0   0.1
+  Hugo González               BOS - SG,SF       -     1.5   3.4   0.2   0.4   0.5   3.9   3.1   0.6   0.4   0.3   0.5
+  Jose Alvarado               NYK - PG          -     2.1   4.8   0.5   0.6   1.1   5.8   1.6   0.9   0.3   0.1   0.4
+  Jordan Walsh                BOS - SF,PF       -     1.5   3.1   0.4   0.6   0.6   4.0   3.0   0.7   0.4   0.6   0.8
+  Corey Kispert               ATL - SG,SF       -     1.8   3.7   0.6   0.8   0.8   5.0   1.2   0.8   0.2   0.1   0.4
+  Tim Hardaway Jr.            MIA - SG,SF       -     3.6   8.6   1.7   2.0   2.2   11.2  2.3   1.4   0.5   0.2   0.6
+  Brayden Burries             MIL - SG          -     2.1   4.7   1.3   1.5   0.7   6.2   2.0   1.2   0.5   0.2   0.6
+  Morez Johnson Jr.           DAL - PF          -     3.2   5.5   1.6   2.1   0.3   8.3   5.0   1.1   0.9   1.0   1.1
+  Kingston Flemings           ATL - PG          -     1.8   4.1   0.9   1.1   0.4   5.0   1.6   2.1   0.5   0.2   0.7
+  Goga Bitadze                ORL - C           -     1.4   2.3   0.7   1.0   0.0   3.6   3.3   0.9   0.4   0.7   0.4
+  Ryan Dunn                   PHX - SF,PF       -     1.7   3.9   0.2   0.5   0.7   4.4   2.8   0.9   0.6   0.3   0.4
+  Adem Bona                   PHI - C           -     2.3   3.5   1.2   1.7   0.0   5.8   4.9   0.5   0.6   1.3   0.9
+  Quinten Post                MEM - C           -     1.3   2.9   0.2   0.3   0.7   3.5   1.7   0.7   0.2   0.1   0.3
+  Mo Bamba                    UTA - C           -     0.5   0.8   0.1   0.1   0.1   1.2   0.9   0.2   0.0   0.2   0.2
+  Oso Ighodaro                PHX - C           -     2.7   4.2   0.6   1.3   0.0   6.0   4.8   2.0   0.7   0.1   1.3
+  Collin Sexton               LAL - PG,SG       -     4.1   8.5   2.5   2.9   1.3   11.9  1.9   2.7   0.7   0.1   1.7
+  Daeqwon Plowden             SAC - SG,SF       -     0.2   0.5   0.1   0.1   0.1   0.6   0.2   0.2   0.1   0.0   0.1
+  Jock Landale                ATL - C           -     1.8   3.5   0.7   0.9   0.4   4.6   2.6   0.7   0.2   0.1   0.5
+  Nikola Jović                MIA - PF,C        -     1.6   4.2   0.8   1.1   0.8   4.9   2.3   0.9   0.4   0.3   0.6
+  Danny Wolf                  BKN - PF,C        -     1.6   3.7   0.7   0.9   0.7   4.6   2.4   1.0   0.4   0.2   0.7
+  Isaiah Collier              UTA - PG,SG       -     2.4   5.4   1.5   2.0   0.4   6.8   2.0   4.2   0.5   0.2   1.3
+
+========================================================================
+PART 9 - LAST SEASON'S WEEKLY RESULTS
+========================================================================
+
+Skipped: no 2025-26 season found for this league on Yahoo. The league has no
+prior-season links (settings, draft and league pages checked), and your Yahoo
+manager profile shows "Playing since 2026" - this looks like the league's
+first season.
+
+========================================================================
+ADDS USED THIS WEEK AND WAIVER PRIORITY
+========================================================================
+
+Adds used this week (week 2, Oct 26 - Nov 1) out of 4. Yahoo shows this count only on your own
+team page (fatty zhou 3/4, matches); the other 11 are counted from Yahoo's transaction log
+(adds and waiver claims dated Oct 26 or later; trades and drops do not count).
+
+  Toronto blue jays     1/4
+  Shanghai Sharks       2/4
+  langangsters          0/4
+  Wesburn incident      0/4
+  fatty zhou            3/4
+  Mathmagicians         0/4
+  Mumbai Meteors        0/4
+  kobe colorado         1/4
+  John Ball             3/4
+  Big Tuo Plumbing Inc. 3/4
+  Birds that I hate     2/4
+  Kerala blasters       3/4
+
+Current waiver priority (rolling list, 1 = first claim):
+
+  1   Mathmagicians
+  2   kobe colorado
+  3   langangsters
+  4   Wesburn incident
+  5   Kerala blasters
+  6   Mumbai Meteors
+  7   Toronto blue jays
+  8   Shanghai Sharks
+  9   John Ball
+  10  Birds that I hate
+  11  Big Tuo Plumbing Inc.
+  12  fatty zhou
+
+========================================================================
+SEASON SCHEDULE (weeks 1-23)
+========================================================================
+
+Week 1: Tue Oct 20 - Sun Oct 25
+  fatty zhou vs Kerala blasters
+  Toronto blue jays vs John Ball
+  Shanghai Sharks vs langangsters
+  Wesburn incident vs Birds that I hate
+  Mathmagicians vs Mumbai Meteors
+  kobe colorado vs Big Tuo Plumbing Inc.
+
+Week 2: Mon Oct 26 - Sun Nov 1
+  fatty zhou vs kobe colorado
+  Toronto blue jays vs langangsters
+  Shanghai Sharks vs Kerala blasters
+  Wesburn incident vs Mathmagicians
+  Mumbai Meteors vs Big Tuo Plumbing Inc.
+  John Ball vs Birds that I hate
+
+Week 3: Mon Nov 2 - Sun Nov 8
+  fatty zhou vs Mumbai Meteors
+  Toronto blue jays vs Birds that I hate
+  Shanghai Sharks vs kobe colorado
+  langangsters vs Kerala blasters
+  Wesburn incident vs Big Tuo Plumbing Inc.
+  Mathmagicians vs John Ball
+
+Week 4: Mon Nov 9 - Sun Nov 15
+  fatty zhou vs Wesburn incident
+  Toronto blue jays vs Mathmagicians
+  Shanghai Sharks vs Mumbai Meteors
+  langangsters vs Birds that I hate
+  kobe colorado vs Kerala blasters
+  John Ball vs Big Tuo Plumbing Inc.
+
+Week 5: Mon Nov 16 - Sun Nov 22
+  fatty zhou vs John Ball
+  Toronto blue jays vs Big Tuo Plumbing Inc.
+  Shanghai Sharks vs Wesburn incident
+  langangsters vs kobe colorado
+  Mathmagicians vs Birds that I hate
+  Mumbai Meteors vs Kerala blasters
+
+Week 6: Mon Nov 23 - Sun Nov 29
+  fatty zhou vs Toronto blue jays
+  Shanghai Sharks vs John Ball
+  langangsters vs Mathmagicians
+  Wesburn incident vs Kerala blasters
+  Mumbai Meteors vs kobe colorado
+  Big Tuo Plumbing Inc. vs Birds that I hate
+
+Week 7: Mon Nov 30 - Sun Dec 13 (14-day week, one matchup)
+  fatty zhou vs Birds that I hate
+  Toronto blue jays vs Shanghai Sharks
+  langangsters vs Mumbai Meteors
+  Wesburn incident vs kobe colorado
+  Mathmagicians vs Big Tuo Plumbing Inc.
+  John Ball vs Kerala blasters
+
+Week 8: Mon Dec 14 - Sun Dec 20
+  fatty zhou vs Mathmagicians
+  Toronto blue jays vs Kerala blasters
+  Shanghai Sharks vs Birds that I hate
+  langangsters vs Big Tuo Plumbing Inc.
+  Wesburn incident vs Mumbai Meteors
+  kobe colorado vs John Ball
+
+Week 9: Mon Dec 21 - Sun Dec 27
+  fatty zhou vs Big Tuo Plumbing Inc.
+  Toronto blue jays vs kobe colorado
+  Shanghai Sharks vs Mathmagicians
+  langangsters vs Wesburn incident
+  Mumbai Meteors vs John Ball
+  Birds that I hate vs Kerala blasters
+
+Week 10: Mon Dec 28 - Sun Jan 3
+  fatty zhou vs langangsters
+  Toronto blue jays vs Mumbai Meteors
+  Shanghai Sharks vs Big Tuo Plumbing Inc.
+  Wesburn incident vs John Ball
+  Mathmagicians vs Kerala blasters
+  kobe colorado vs Birds that I hate
+
+Week 11: Mon Jan 4 - Sun Jan 10
+  fatty zhou vs Shanghai Sharks
+  Toronto blue jays vs Wesburn incident
+  langangsters vs John Ball
+  Mathmagicians vs kobe colorado
+  Mumbai Meteors vs Birds that I hate
+  Big Tuo Plumbing Inc. vs Kerala blasters
+
+Week 12: Mon Jan 11 - Sun Jan 17
+  fatty zhou vs Kerala blasters
+  Toronto blue jays vs John Ball
+  Shanghai Sharks vs langangsters
+  Wesburn incident vs Birds that I hate
+  Mathmagicians vs Mumbai Meteors
+  kobe colorado vs Big Tuo Plumbing Inc.
+
+Week 13: Mon Jan 18 - Sun Jan 24
+  fatty zhou vs kobe colorado
+  Toronto blue jays vs langangsters
+  Shanghai Sharks vs Kerala blasters
+  Wesburn incident vs Mathmagicians
+  Mumbai Meteors vs Big Tuo Plumbing Inc.
+  John Ball vs Birds that I hate
+
+Week 14: Mon Jan 25 - Sun Jan 31
+  fatty zhou vs Mumbai Meteors
+  Toronto blue jays vs Birds that I hate
+  Shanghai Sharks vs kobe colorado
+  langangsters vs Kerala blasters
+  Wesburn incident vs Big Tuo Plumbing Inc.
+  Mathmagicians vs John Ball
+
+Week 15: Mon Feb 1 - Sun Feb 7
+  fatty zhou vs Wesburn incident
+  Toronto blue jays vs Mathmagicians
+  Shanghai Sharks vs Mumbai Meteors
+  langangsters vs Birds that I hate
+  kobe colorado vs Kerala blasters
+  John Ball vs Big Tuo Plumbing Inc.
+
+Week 16: Mon Feb 8 - Sun Feb 14
+  fatty zhou vs John Ball
+  Toronto blue jays vs Big Tuo Plumbing Inc.
+  Shanghai Sharks vs Wesburn incident
+  langangsters vs kobe colorado
+  Mathmagicians vs Birds that I hate
+  Mumbai Meteors vs Kerala blasters
+
+Week 17: Mon Feb 15 - Sun Feb 28 (14-day week, one matchup)
+  fatty zhou vs Toronto blue jays
+  Shanghai Sharks vs John Ball
+  langangsters vs Mathmagicians
+  Wesburn incident vs Kerala blasters
+  Mumbai Meteors vs kobe colorado
+  Big Tuo Plumbing Inc. vs Birds that I hate
+
+Week 18: Mon Mar 1 - Sun Mar 7
+  fatty zhou vs Birds that I hate
+  Toronto blue jays vs Shanghai Sharks
+  langangsters vs Mumbai Meteors
+  Wesburn incident vs kobe colorado
+  Mathmagicians vs Big Tuo Plumbing Inc.
+  John Ball vs Kerala blasters
+
+Week 19: Mon Mar 8 - Sun Mar 14
+  fatty zhou vs Mathmagicians
+  Toronto blue jays vs Kerala blasters
+  Shanghai Sharks vs Birds that I hate
+  langangsters vs Big Tuo Plumbing Inc.
+  Wesburn incident vs Mumbai Meteors
+  kobe colorado vs John Ball
+
+Week 20: Mon Mar 15 - Sun Mar 21
+  fatty zhou vs Big Tuo Plumbing Inc.
+  Toronto blue jays vs kobe colorado
+  Shanghai Sharks vs Mathmagicians
+  langangsters vs Wesburn incident
+  Mumbai Meteors vs John Ball
+  Birds that I hate vs Kerala blasters
+
+Week 21: Mon Mar 22 - Sun Mar 28
+  Playoffs - pairings not set yet (8 teams, seeded after Week 20; Yahoo lists none)
+
+Week 22: Mon Mar 29 - Sun Apr 4
+  Playoffs - pairings not set yet (8 teams, seeded after Week 20; Yahoo lists none)
+
+Week 23: Mon Apr 5 - Sun Apr 11
+  Playoffs - pairings not set yet (8 teams, seeded after Week 20; Yahoo lists none)
+
+========================================================================
+NOTES
+========================================================================
+
+- Pulled Saturday, October 31, 2026, 9:38 AM MST. No Oct 31 games had started and all earlier games were final, so Part 6 totals are not mid-game.
+- Roster layout: 10 starters + 3 BN + 3 IL = 16 slots, as in Yahoo's settings. "BN Empty slot" lines are not written. Empty starter slots are listed (Mathmagicians' SF). Yahoo hides empty IL slots, so "IL Empty slot" lines are filled in up to 3.
+- Mathmagicians show 4 bench players on Yahoo (3 BN allowed). All 4 are kept so no real player is dropped; a note is under that team.
+- Completeness: the 12 rosters match Yahoo's Taken list by player ID (173 players, 0 missing, 0 extra). Apostrophe and accent names are kept as Yahoo shows them.
+- Full first names: Nickeil Alexander-Walker, Kentavious Caldwell-Pope, Thanasis Antetokounmpo, Jeremiah Robinson-Earl, Yanic Konan Niederhäuser. Names Yahoo itself shows as initials (P.J. Washington, T.J. McConnell, R.J. Davis, A.J. Lawson, E.J. Liddell) are kept.
+- Part 6 FGM/FGA and FTM/FTA are Yahoo's week totals (made/attempted) from each matchup page's Totals view.
+- Trades this season (who sent whom): Oct 28 3:02am: Shanghai Sharks sent Chet Holmgren + Paul Reed to Birds that I hate; Birds that I hate sent Jayson Tatum to Shanghai Sharks | Oct 19 2:50am: John Ball sent Peyton Watson to Birds that I hate; Birds that I hate sent Kyshawn George to John Ball. Trades inside the last 30 transactions also appear in Part 7, one line per team.
+- Part 7 times are Yahoo's transaction-log times as shown (league time, Central). Trades list who sent whom, one line per team.
+- Part 8: Yahoo publishes rest-of-season projections as remaining-games totals; per-game values = those totals / Yahoo's projected games. No values were made up.
+- Ranks (Pre/Cur) and %Ros are live Yahoo values at pull time.
