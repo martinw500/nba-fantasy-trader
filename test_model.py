@@ -1004,6 +1004,20 @@ def test_all():
                        pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 27),
                        sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week}, logs=box)
     assert gap._so_far()["Me"]["PTS"] == 130 and gap._so_far()["Them"]["PTS"] == 50 and gap.games_week["twin a"] == 3
+    # B1: switching teams (/api/me) keeps the week's `from`, dates and Yahoo games; the opponent, the old team's, comes
+    # from the schedule. Before, the matchup was cleared: `from` fell to today and Monday's 30 points were lost
+    gsched = [{"week": 2, "start": "2026-10-26", "end": "2026-11-01", "matchups": [["Them", "Me"]]}]
+    m0 = {**gap.snap["matchup"], "week_start": "2026-10-26",
+          "games": {"Me": {"played": 3, "left": 20}, "Them": {"played": 2, "left": 22}}}
+    s0 = {**gap.snap, "schedule": gsched, "matchup": m0}
+    sw = model.switched(s0, "Them")
+    assert sw == {**m0, "opponent": "Me"}  # `from`, the dates, Yahoo's games and the totals stay
+    them = model.League({**s0, "me": "Them", "matchup": sw}, pd.concat([base, twins]), pd.concat([cur, twins]),
+                        today=model.date(2026, 10, 27), sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week}, logs=box)
+    assert them.matchup["opponent"] == "Me" and them.this_week()["today"] == "2026-10-27"
+    assert them._so_far()["Me"]["PTS"] == 130 and them.games_week["twin a"] == 3  # Monday in the score, the rest from today
+    back = model.switched({**s0, "me": "Them", "matchup": {**sw, "opponent": "Me"}}, "Me")  # an opponent picked, then back
+    assert back == m0  # switching back: the file's matchup again
     # a "Jan 2" claim read on Dec 30 clears next year: Twin F gets 2 of the 4 games left, not all 4
     ny = ["2026-12-30", "2027-01-01", "2027-01-02", "2027-01-03"]
     nl = model.League({**snap, "free_agents": [f for f in snap["free_agents"] if f["name"] != "Twin F"]

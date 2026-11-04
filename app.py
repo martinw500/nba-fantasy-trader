@@ -180,7 +180,7 @@ def api(path, q, body):
     if path == "/api/me":  # which team is yours
         if body.get("team") not in lg.rosters:
             raise KeyError(f"Unknown team: {body.get('team')}")
-        remember(me=body["team"], matchup=None)  # the opponent was the old team's
+        remember(me=body["team"], matchup=model.switched(lg.snap, body["team"]))  # the week stays, not the opponent (B1)
         lg, gm = model.load(), None
         return lg.state(punt)
     if path == "/api/week":  # POST {opponent} sets this week's opponent until the week ends

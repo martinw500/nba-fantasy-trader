@@ -3359,6 +3359,20 @@ class League:
                 "give": sorted(give, key=lambda p: -p["worth"]), "keep": keep}
 
 
+def switched(snap, team):
+    """This week's matchup once `team` is yours (/api/me): the week stays (its dates, `from`, Yahoo's games played /
+    left, the totals); the opponent was the old team's, so it's the new team's from the season schedule (none without
+    one: This week asks). B1 (audit #13): the switch saved no matchup, so `from` fell back to today and the nights
+    from the snapshot's `from` to yesterday were in neither the score so far (_so_far) nor the games left (game_days),
+    and an opponent picked after it saved that until Refresh."""
+    m = {k: v for k, v in (snap.get("matchup") or {}).items() if k != "opponent"}
+    if not m:
+        return None
+    wk = next((w for w in snap.get("schedule", ()) if w["start"] <= (m.get("week_start") or "") <= w["end"]), {})
+    opp = next((t for pr in wk.get("matchups", ()) if team in pr for t in pr if t != team), None)
+    return {**m, **({"opponent": opp} if opp else {})}
+
+
 def load(path=DATA / "league.json", refetch=()):
     """The league from the snapshot, with every cache refreshed once past its window. refetch: "injuries" and "live"
     (scores()) now, "stats" (this season's stats and box scores) once 15 minutes old: Refresh (Nov 1: a 9:57pm Refresh
