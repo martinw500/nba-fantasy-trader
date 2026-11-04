@@ -1,6 +1,7 @@
 # Audit, Nov 4 2026
 
 **Checked Nov 4 (Claude Code, against the code, data and fresh backtest runs) — read this before acting on a finding:**
+- **Done Nov 4:** #15, #23, #8 / #25 (ROADMAP A4: This week and Start / sit follow Healthy only; `live()` drops a rebuild started before a team switch, opponent pick or Refresh; `playoffs()`' docstring).
 - **Done Nov 4:** #2 + #3 (ROADMAP A2: rookies blend the expert line at 75% and follow this season at 10 games, measured better in all four seasons; freezing Yahoo at the first snapshot measured worse on this season's snapshots, so the live line stays). #1 (ROADMAP A1: no-ESPN Yahoo rows under half of the baseline's or this season's are dropped; Kobe Sanders 7.0 → 7.9, you 57.9 → 57.8%, This week unchanged).
 - **Valid, to do:** #1 (11 players with 3+ games on a junk Yahoo line, ESPN has none: Kobe Sanders 1.9 vs 11.0), #2 (snapshot Yahoo lines move in-season: Acuff 17.3 → 23.3, Wilson 16.1 → 18.8, Oct 27 → Nov 3), #3 (rookie prior 40% fringe: Boozer 15.8 on Yahoo 18.4 / 17.4 this season), #15 (`/api/week`, `/api/lineup` use `lg`, not `fl`), #23 (`live()` assigns `lg = new` whatever `/api/me` did meanwhile), #8 / #25 (`playoffs()` docstring predates M2).
 - **Not valid:** #4: M8's `python backtest.py trend` already measured it (a 14-day form gap carries −0.07 to +0.02 into the next 14 days), so a recent-form line for This week would be worse. #22's "`backtest.py ahead` produced an empty log": it runs (re-run Nov 3, numbers as in ROADMAP M27).
@@ -127,6 +128,7 @@ Start/sit, `_clears()` (rolling-waiver claim day), `_handoff()` (IL return cuts 
 A player on waivers only starts from `_clears()`. A player *not* on waivers is treated as a free add tonight/tomorrow. Rolling waivers (2 days) mean a *drop you just made* isn't addable; the plan doesn't simulate the rest of the league's claims. Fine for "best stream if you get him"; it is not a FAAB/waiver-priority model.
 
 ### 15. SMALL — `/api/week` ignores Healthy only
+**FIXED Nov 4 (ROADMAP A4)** for `/api/week` and `/api/lineup` (`/api/player` left as is: a card shows one player, not a pick).
 `app.py` `/api/state` / trades use `fl = lg.healthy_fa()` when the toggle is on; `/api/week` and `/api/lineup` always use `lg`. Injured FAs can still show as streams. Same for `/api/player`.
 
 ---
@@ -169,12 +171,14 @@ Trust of fitted constants: DISPERSION / SCHED_CV / PCT_NOISE **high**; PROJ_W **
 ## App / UI
 
 ### 23. SMALL — `live()` can overwrite a team switch
+**FIXED Nov 4 (ROADMAP A4):** a generation counter.
 `/api/me` writes `me` and `lg = load()`. `live()` may have started `load()` on the old file and assigns `lg = new` when it finishes. One user, rare. Fix: compare `loaded` / mtime, or a generation counter.
 
 ### 24. Fine — XSS, punt dimming, JSON
 `esc()` on names, news, teams. Main stat tables use `.punted-col`. `json.dumps(state/trade/week)` succeeds (numpy scalars in `market.sum` are still JSON-safe here). `/` only serves `index.html`; API is a fixed set; bound to 127.0.0.1.
 
 ### 25. DOC — `playoffs()` docstring and a few backtest numbers are behind M2/M26/M27
+**FIXED Nov 4 (ROADMAP A4).**
 Not user-facing.
 
 ---

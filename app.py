@@ -25,12 +25,16 @@ PORT = 8765
 load_dotenv(ROOT / ".env")
 lg = model.load()
 gm = None  # created on first chat so the app works without an API key
+gen = 0  # bumped whenever data/league.json changes under the app (remember(), Refresh): live() drops a rebuild it
+         # started before (Nov 4 audit #23: a team switch made while it loaded was overwritten with the old team)
 
 
 def remember(**choices):
     """Save choices into the snapshot file, so they survive restarts and refreshes."""
+    global gen
     snap = {**json.loads(yahoo.OUT.read_text(encoding="utf-8")), **choices}
     yahoo.OUT.write_text(json.dumps(snap, indent=1, ensure_ascii=False), encoding="utf-8")
+    gen += 1  # after the write: a rebuild that read the old file is dropped, one reading the new file is fine
 
 
 GM_PROMPT = """You are the AI GM in the user's fantasy basketball app. Follow the playbook below, with these changes:
@@ -137,7 +141,7 @@ def offers(body, punt):
 
 
 def api(path, q, body):
-    global lg, gm
+    global lg, gm, gen
     punt = model.punts(body.get("punt", q.get("punt", [""])[0]))
     # Waivers' "Healthy only": injured free agents off waivers for its suggestions and every trade's free moves
     fl = lg.healthy_fa() if body.get("healthy_fa", q.get("healthy_fa", [""])[0]) else lg
@@ -185,9 +189,10 @@ def api(path, q, body):
                 raise KeyError(f"Unknown opponent: {opp}")
             lg.snap["matchup"] = lg.matchup = {**lg.matchup, "opponent": opp, "week_end": lg.week_end}
             remember(matchup=lg.matchup)
-        return lg.this_week(punt=punt)
+            fl = lg.healthy_fa() if fl is not lg else lg  # the copy was made before the new opponent
+        return fl.this_week(punt=punt)  # Healthy only: no injured free agent as a stream (audit #15)
     if path == "/api/lineup":  # This week's Start / sit, playing for some categories only
-        return lg.start_sit(punt=punt, cats=body.get("cats", []))
+        return fl.start_sit(punt=punt, cats=body.get("cats", []))
     if path == "/api/refresh":
         refetch = ()
         if os.environ.get("YAHOO_LEAGUE_ID"):
@@ -202,6 +207,7 @@ def api(path, q, body):
             refetch = ("injuries", "stats", "live")  # offline, the old copies stay (the sidebar says so)
         else:
             yahoo.demo()
+        gen += 1  # the new snapshot is written: drop a rebuild live() started on the old one
         lg, gm = model.load(refetch=refetch), None
         return lg.state(punt)
     if path == "/api/chats":
@@ -277,12 +283,15 @@ def live():
     while True:
         time.sleep(model.next_poll(lg.live, LIVE_MIN * 60))
         due = time.time() - feed >= LIVE_MIN * 60 - 60
+        g0 = gen
         try:
             new = model.load(refetch=("injuries",) if due else ())
         except Exception:
             traceback.print_exc()
             continue
         feed = time.time() if due else feed
+        if gen != g0:  # your team, the opponent or the snapshot changed while it loaded: that request's league stands
+            continue
         lg = new
         if gm is not None:  # the API-key chat keeps its conversation on the new numbers
             gm.lg, gm.tools = new, gm._tools()

@@ -69,7 +69,9 @@ OLDER_W, REGRESS = 0.5, 25  # baseline: a game two seasons ago counts half; 25 g
 # line's rates, not the fringe line's ~26 minutes (prior(); ros() for a rookie with no line); None = off. Fitted Nov 4
 # (python backtest.py bench, 2022-23 to 2025-26): those players ran ~2 min a game high in weeks 1-6 (15.8 projected,
 # 13.8 played); rest-of-season stats error -2.2 / -3.5 / -2.1 / -0.6% for everyone (theirs -7.0 / -10.6 / -6.4 / -1.6%),
-# 10-15 about as good. Next week's stats (teammates) better in 2025-26 and 2024-25 too, minutes 0.3 a game lower
+# 10-15 about as good. Next week's stats (teammates) better in 2025-26 and 2024-25 too, minutes 0.3 a game lower.
+# Rerun Nov 4 after A2 (rookies' faster rates, empty expert rows): everyone -2.1 / -4.3 / -2.0 / -0.4% (theirs -6.5 /
+# -10.3 / -5.9 / -1.0%), still better than the fringe line every season; 15 ties it pooled (-2.2%), so 12 stays
 BENCH_MIN = 12
 PROJ_W = 0.6  # expert projections' weight in the pre-season line (prior()); fitted by python backtest.py replay
 # a rookie (no NBA past, so no baseline): the expert line weighs ROOKIE_W in prior() (the rest is the fringe line), and
@@ -166,6 +168,8 @@ USAGE_STATS = ["FGM", "FGA", "FTM", "FTA", "PTS", "AST", "TOV"]  # rebounds, ste
 # (its edge in weeks 0-4 carries 0.57 into weeks 5-9, 0.32 into the playoff weeks), but a weekly drift term gained
 # nothing. Its rosters never change, so real leagues swing a bit more. Rechecked with the real schedule (M2, Nov 4):
 # 0.35 / 0.6 still on the diagonal (log loss 0.3444, title 0.2631); 0.4 / 0.65 0.3430 / 0.2614, too close to move
+# Rerun after A2 (Nov 4; its leagues draft differently now, so the levels aren't comparable): 0.35 / 0.6 0.3233 /
+# 0.2588, within 0.0001 of 0.35 / 0.5 and 0.7; 0.25 and 0.45 0.3266 / 0.3263
 SEASON_SD, WEEK_SD, SIMS = 0.35, 0.6, 4000
 
 # Trade market: what managers pay for a player, from his market rank (League.market): 100 x MARKET^(rank - 1).
@@ -1843,12 +1847,13 @@ class League:
     def playoffs(self):
         """Each team's odds to make the playoffs and win the title (season_sim()), from its record so far (the
         snapshot's category W-L-T) and the season schedule's weeks left. The live week counts its totals so far plus
-        the rest of it (week_vec, as This week does), later weeks are average weeks (vecs) scaled by their days (weeks
-        7 and 17 run 14). Real odds: nobody concedes a punt. {seats, weeks_left, teams: {team: w, l, t, proj
-        (expected final W-L), playoffs, title}}, or None without a schedule or outside a categories league.
-        ponytail: a stale snapshot's week plays as a fresh one, and every week is an average one (an NBA schedule
-        count would sharpen the all-star break and the playoff weeks). One Win records count matchups, not categories:
-        None there until a One Win league needs it."""
+        the rest of it (week_vec on _week_side(), as This week does); each later week is that week on the real NBA
+        schedule (M2, _sched_week(): each player's games in it, none before his ESPN return date, missed games half
+        filled; weeks 7 and 17 run 14 days), or without a schedule an average week (vecs) scaled by its days. Real
+        odds: nobody concedes a punt. {seats, weeks_left, teams: {team: w, l, t, proj (expected final W-L), playoffs,
+        title}}, or None without a schedule or outside a categories league.
+        ponytail: a stale snapshot's week plays as a fresh one. One Win records count matchups, not categories: None
+        there until a One Win league needs it."""
         weeks = [w for w in self.snap.get("schedule", ()) if w.get("matchups")]
         if self.mode == "points" or self.scoring == "one_win" or not weeks:
             return None

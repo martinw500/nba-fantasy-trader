@@ -1327,7 +1327,7 @@ function viewWaivers() {
   const tryCol = { h: "", v: p => tryBtn(p.name) }, dropCol = { h: "", v: p => tryBtn(undefined, p.name) };
   const A = S.state.adds, addsLeft = !A ? "" : A.left ? ` ${A.left} of ${A.max} adds left this week.` : ` You've used all ${A.max} adds this week: these moves wait until ${esc(dayName(A.resets))}.`;
   return `<div class="head"><div><h1>Waivers</h1><p class="sub">${odds ? `Free agents ranked by how much they'd raise your ${WIN().of}, swapped for your best drop.` : "Free agents ranked on your build."} Injured players on your roster are never suggested as drops.${addsLeft}</p></div>
-      <label class="field" title="Leave injured free agents (out, IL, suspended) out of these suggestions, and out of the waiver moves trades and Strategy are scored on top of"><input type="checkbox" id="w-healthy" ${S.healthyFa ? "checked" : ""}>Healthy only</label></div>
+      <label class="field" title="Leave injured free agents (out, IL, suspended) out of these suggestions, This week's streams, and the waiver moves trades and Strategy are scored on top of"><input type="checkbox" id="w-healthy" ${S.healthyFa ? "checked" : ""}>Healthy only</label></div>
     ${movePanel()}
     <div class="grid2"><div class="panel"><div class="panel-h"><div><h2>Suggested moves</h2><p>${odds ? `Add/drop pairs that clearly raise your ${WIN().of}.` : "Add/drop pairs worth at least +0.3."}${w.free?.length ? ` Trades are scored as if you'd made these first: ${freeList(w.free)}.` : ""}</p></div></div>${moves}</div>
       <div class="panel"><div class="panel-h"><div><h2>Drop candidates</h2><p>${odds ? "The healthy players you'd miss least." : "Your three weakest healthy players."}</p></div></div>${playerTable(w.drop_candidates, { extra: [dropCol] })}</div></div>
@@ -1737,7 +1737,7 @@ document.addEventListener("change", async e => {
   if (t.id === "w-healthy") {  // changes the waiver suggestions and every trade number (they build on your free moves)
     const re = S.trade.result;
     S.healthyFa = t.checked; store.set("healthyFa", t.checked);
-    S.trade.result = null; S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.strategy = {};
+    S.trade.result = null; S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.strategy = {}; S.week = {};
     await loadState();
     return re && evaluate();
   }
