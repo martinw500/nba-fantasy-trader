@@ -4,6 +4,8 @@ python backtest.py teammates [2025-26]: next week's error with and without teamm
 python backtest.py onoff [2025-26]: the same by how far each team's own split counts (fits ONOFF_K).
 python backtest.py rates [2025-26]: next week's and rest of season's stats error with a per-minute on/off split by stat
 group (M22, measured Nov 3, not shipped: no better).
+python backtest.py minor [2025-26]: the same with 15-25 minute sitters handing out minutes and a cap on what one sitter
+hands out (M25, measured Nov 4, not shipped: stats worse, the cap no change).
 python backtest.py gameday: how often players listed probable / questionable / doubtful for a game played it (fits
 GAMEDAY), from the archived ESPN feeds and this season's box scores.
 python backtest.py ahead: from every day of the week, how often a player who played his team's last game plays each of
@@ -33,7 +35,7 @@ import pandas as pd
 import model
 
 ARGS = [a for a in sys.argv[1:]
-        if a not in ("replay", "teammates", "onoff", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead")]
+        if a not in ("replay", "teammates", "onoff", "minor", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
@@ -118,13 +120,13 @@ def outcome(A, B):
     return np.stack(out, -1)
 
 
-def sat(g, line, team, w):
-    """Regulars who sat their team's last game before week w, as ESPN would list them: {key: the day he played again}
-    (Timestamp.max: never)."""
+def sat(g, line, team, w, low=None):
+    """Regulars (or players with `low`+ minutes) who sat their team's last game before week w, as ESPN would list
+    them: {key: the day he played again} (Timestamp.max: never)."""
     past, T = g[g.week < w], "TEAM_ABBREVIATION"
     last, played = past.groupby(T).GAME_DATE.max(), set(zip(past.key, past.GAME_DATE))
     back = g[g.week >= w].groupby("key").GAME_DATE.min()
-    return {k: back.get(k, pd.Timestamp.max) for k in line.index[line.MIN >= model.REGULAR]
+    return {k: back.get(k, pd.Timestamp.max) for k in line.index[line.MIN >= (low or model.REGULAR)]
             if team.get(k) in last and (k, last[team[k]]) not in played}
 
 
@@ -263,7 +265,7 @@ def mondays():
         cur = model.recent(past, monday(g, w))
         line = model.ros(pre, cur)
         team = past.sort_values("GAME_DATE").groupby("key")[T].last().combine_first(first)
-        regs, out = line.index[line.MIN >= model.REGULAR], sat(g, line, team, w)
+        regs, out = line.index[line.MIN >= model.REGULAR], sat(g, line, team, w, 10)
         yield {"pre": pre, "past": past, "cur": cur, "line": line, "team": team, "regs": regs, "out": out, "nxt": nxt,
                "rest": g[g.week >= w], "expert": ex.index, "monday": monday(g, w)}
 
@@ -273,6 +275,8 @@ def lifted(m, deboost=True):
     had (model.had()), plus each team's out regulars' lifts (model.lifts(), everyone out at once sitting together, in
     stretches between their returns: model.stretches(); less what the preseason projection counts: model.priced_in())
     over a player's games in each stretch."""
+    regs = m["line"].index[m["line"].MIN >= model.REGULAR]  # model.REGULAR as it is now (minor() moves it)
+    m = {**m, "regs": regs, "out": {k: r for k, r in m["out"].items() if k in regs}}
     pool = m["line"][m["line"].index.isin(m["cur"].index) | m["line"].index.isin(m["regs"])]
     line = m["line"]
     adj = model.onoff(m["past"], m["team"], pool, m["regs"], m["monday"]) if model.ONOFF_K else None
@@ -300,15 +304,35 @@ def teammates(grid=((model.SHARE, model.USAGE),), ks=(model.ONOFF_K,)):
     projected 20+ minutes, where playing every game is about health rather than teammates. All weeks: the partial ones
     too. Fitted SHARE and USAGE on 2025-26; ks: each ONOFF_K (0: the rule alone, no team's own split; fitted on
     2025-26 and 2024-25, M13)."""
-    weeks, cols, k0 = list(mondays()), ["MIN"] + model.RAW, model.ONOFF_K
-    model.ONOFF_K = 0  # injured teammate: the players the rule lifts, the same group whatever ONOFF_K
-    hits = [lifted(m)[1].index for m in weeks]
-    model.ONOFF_K = k0
     print(f"\n== {SEASON}: next week's lines with teammates' injuries ==")
-    for share, usage, k in [(s, u, k) for s, u in grid for k in ks]:
-        model.SHARE, model.USAGE, model.ONOFF_K = share, usage, k
-        rows = {k: [] for k in ("act", "off", "on", "fwd", "hit", "full")}
-        for m, lift_rule in zip(weeks, hits):
+    scored(list(mondays()), [{"SHARE": s, "USAGE": u, "ONOFF_K": k} for s, u in grid for k in ks])
+
+
+def knobs(**kv):
+    """Set model's knobs; returns their old values."""
+    old = {k: getattr(model, k) for k in kv}
+    for k, v in kv.items():
+        setattr(model, k, v)
+    return old
+
+
+def scored(weeks, configs, wide=None):
+    """teammates()' table for each config (model knobs to set): next week's error per player group. wide: knobs for
+    a second "injured teammate" group, the players a wider rule lifts (M25: sitters at 15+ minutes) that the shipped
+    rule doesn't."""
+    cols = ["MIN"] + model.RAW
+    old = knobs(ONOFF_K=0)  # injured teammate: the players the rule lifts, the same group whatever ONOFF_K
+    hits = [lifted(m)[1].index for m in weeks]
+    knobs(**old)
+    extra = None
+    if wide:
+        old = knobs(ONOFF_K=0, **wide)
+        extra = [lifted(m)[1].index.difference(h) for m, h in zip(weeks, hits)]
+        knobs(**old)
+    for cfg in configs:
+        old = knobs(**cfg)
+        rows = {k: [] for k in ("act", "off", "on", "fwd", "hit", "new", "full")}
+        for m, lift_rule, new_rule in zip(weeks, hits, extra or [None] * len(weeks)):
             act = per_game(m["nxt"])
             act = act[act.index.isin(m["line"].index)]
             on, boost = lifted(m)
@@ -318,17 +342,31 @@ def teammates(grid=((model.SHARE, model.USAGE),), ks=(model.ONOFF_K,)):
             rows["act"].append(act[cols]); rows["off"].append(m["line"].loc[act.index, cols])
             rows["on"].append(on.loc[act.index, cols] + add); rows["fwd"].append(fwd.loc[act.index, cols] + add)
             rows["hit"].append(pd.Series(act.index.isin(lift_rule), index=act.index))
+            rows["new"].append(pd.Series(act.index.isin(new_rule) if new_rule is not None else False, index=act.index))
             rows["full"].append(act.GP >= games.fillna(np.inf))
+        knobs(**old)
         act, hit, full = pd.concat(rows["act"]), pd.concat(rows["hit"]).to_numpy(), pd.concat(rows["full"]).to_numpy()
-        big = (pd.concat(rows["off"]).MIN >= 20).to_numpy()
-        print(f"  SHARE {share} USAGE {usage} ONOFF_K {k}")
-        for name, sub in (("injured teammate", hit & full), ("  20+ min", hit & full & big), ("everyone", full),
-                          ("  20+ min", full & big), ("injured, all weeks", hit)):
+        new, big = pd.concat(rows["new"]).to_numpy(bool), (pd.concat(rows["off"]).MIN >= 20).to_numpy()
+        print("  " + " ".join(f"{k} {v}" for k, v in cfg.items()))
+        groups = (("injured teammate", hit & full), ("  20+ min", hit & full & big), ("everyone", full),
+                  ("  20+ min", full & big), ("injured, all weeks", hit))
+        for name, sub in groups + ((("lifted by 15+ only", new & full),) if extra else ()):
             a = act[sub]
             err = lambda p: ((p[sub] - a).abs() / a.mean()).mean()
             out = {v: (err(pd.concat(rows[v])), (a - pd.concat(rows[v])[sub]).MIN.mean()) for v in ("off", "on", "fwd")}
             print(f"    {name:18} n {sub.sum():5}  " + "   ".join(
                 f"{v} MIN {e.MIN:.4f} stats {e[model.RAW].mean():.4f} bias {b:+.2f}" for v, (e, b) in out.items()))
+
+
+def minor(seasons=None):
+    """M25: teammates()' table with sitters of 15-25 minutes handing out SHARE_LOW of theirs (REGULAR 15), and with
+    what one sitter hands out capped at his own minutes (CAP_GIVE), against the shipped rule (REGULAR 25)."""
+    base = {"REGULAR": model.REGULAR, "SHARE_LOW": model.SHARE_LOW, "CAP_GIVE": model.CAP_GIVE}
+    configs = [base, {**base, "CAP_GIVE": True}] + [{"REGULAR": 15, "SHARE_LOW": x, "CAP_GIVE": c}
+                                                   for x in (0.1, 0.2, 0.35, 0.5) for c in (False, True)]
+    print(f"\n== {SEASON}: next week's lines, sitters under 25 minutes and the cap (M25) ==")
+    scored(list(mondays()), configs, wide={"REGULAR": 15, "SHARE_LOW": 0.5})
+    knobs(**base)
 
 
 LIFTS = model.lifts
@@ -713,6 +751,8 @@ if __name__ == "__main__":
         ahead()
     elif "rates" in sys.argv:
         ratesplit()
+    elif "minor" in sys.argv:
+        minor()
     elif "onoff" in sys.argv:
         teammates(ks=(0, 1, 2, 4, 8, 16))
     elif "teammates" in sys.argv:

@@ -124,6 +124,10 @@ HAZARD, ONE_GAME = 0.33, 0.56
 # sitter alone) until M4 (Oct 28): with everyone out at once spread together and the preseason projection's part taken
 # out (priced_in()), next week's stats are best at 0.5 in 2025-26 and out of sample in 2024-25, minutes better still
 REGULAR, SHARE, ROOM, ROLE, USAGE = 25, 0.5, 36, 0.5, 0.25
+# M25 (measured by python backtest.py minor): a sitter under FULL minutes (only when REGULAR is below it) hands out
+# SHARE_LOW of his, not SHARE; CAP_GIVE caps what one sitter hands out, the team's own split (onoff()) included, at
+# his own minutes
+FULL, SHARE_LOW, CAP_GIVE = 25, 0.15, False
 # Each team's own split (onoff(), M13): a receiver's minutes in this season's games a regular sat, vs his games with him,
 # pull that sitter's lifts() minutes toward what really happened, as if the rule's guess were worth ONOFF_K games.
 # Minutes only: shots in a couple of games are mostly noise (Bey's 25 on his usual 26 min)
@@ -661,7 +665,8 @@ def lifts(line, team, sets, adj=None):
                     sim = p @ q / np.sqrt((p * p).sum(1) * (q @ q) + 1e-9)
                     room = np.clip(ROOM - mins_all[mates] - given, 0, None)
                     w = room * np.exp(ROLE * sim)
-                    m, todo, on = np.zeros(len(w)), SHARE * mins_all[at[j]], w > 0  # no room at all: usage only
+                    share = SHARE if mins_all[at[j]] >= FULL else SHARE_LOW
+                    m, todo, on = np.zeros(len(w)), share * mins_all[at[j]], w > 0  # no room at all: usage only
                     while todo > 1e-9 and on.any():  # split by weight; whoever reaches ROOM is full, the rest re-split
                         x = todo * np.where(on, w, 0) / w[on].sum()
                         full = on & (m + x > room)
@@ -672,6 +677,8 @@ def lifts(line, team, sets, adj=None):
                         m[full], on = room[full], on & ~full
                     if j in adj:
                         m = np.clip(m + adj[j].reindex(rot.index[mates]).fillna(0).to_numpy(), -mins_all[mates], room)
+                    if CAP_GIVE and (tot := m.clip(min=0).sum()) > mins_all[at[j]]:  # never more than he plays
+                        m = np.where(m > 0, m * mins_all[at[j]] / tot, m)
                     given += m
                     rate = rate_all[mates]
                     d = rate * m[:, None]  # his minutes at their own rates

@@ -796,6 +796,21 @@ def test_all():
     big = model.lifts(ml.assign(MIN=ml.MIN.where(ml.index != "star", 120.0)), team, [["star"]]).droplevel("set")
     room = model.ROOM - ml.MIN[big.index.get_level_values("key")].to_numpy()
     assert np.allclose(big.MIN.to_numpy()[room > 0], room[room > 0]) and big.MIN.sum() < model.SHARE * 120
+    # M25's measuring switches (python backtest.py minor; measured Nov 4, off): with REGULAR at 15, Sixth (24 min, under
+    # FULL) hands out SHARE_LOW of his minutes; CAP_GIVE holds what one sitter hands out, his team's own split
+    # included, to his own minutes. Off (as shipped), Sixth hands out nothing and the split isn't capped
+    old = model.REGULAR, model.CAP_GIVE
+    try:
+        model.REGULAR = 15
+        six = model.lifts(ml, team, [["sixth"]]).droplevel("set").xs("sixth", level="by")
+        assert abs(six.MIN.sum() - model.SHARE_LOW * 24) < 1e-9
+        model.REGULAR = old[0]
+        lots = pd.Series({("guard", "star"): 15.0, ("big", "star"): 15.0, ("sixth", "star"): 15.0}).rename_axis(["key", "by"])
+        free = model.lifts(ml, team, [["star"]], lots).MIN.sum()
+        model.CAP_GIVE = True
+        assert free > 34 and np.isclose(model.lifts(ml, team, [["star"]], lots).MIN.sum(), 34)
+    finally:
+        model.REGULAR, model.CAP_GIVE = old
     # stretches between returns, per team: who's still out in each
     sp = model.stretches({"a": "2026-11-03", "b": "2026-11-10", "c": "2026-11-03"}, {"a": "AAA", "b": "AAA", "c": "BBB"},
                          "2026-10-28")
