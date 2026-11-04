@@ -197,11 +197,12 @@ def test_all():
     assert tagged[1]["player 199"] == lg._availability(base, cur)[1]["player 199"]
     lg.meta["player 199"]["status"] = "INJ"
     # ... of his team's games in the box scores, not the most anyone has played (Oct 30: PHX had 3 when others had
-    # 6), and this week he misses WEEK_K of what he misses all season, having played his team's last game; a player
-    # who sat it keeps his rest-of-season rate
-    rate, _, _, week = tagged
+    # 6), and this week, having played his team's last game, his next game plays at the late-news chain (M27:
+    # fresh_plays(), 1 - HAZARD x his missing share); a player who sat it keeps his rest-of-season rate
+    rate, _, _, week, fresh = tagged
     assert rate["player 199"] == model.availability(base.GP[["player 199"]], cur.GP[["player 199"]], 1)["player 199"]
-    assert abs(week["player 199"] - (1 - model.WEEK_K * (1 - rate["player 199"]))) < 1e-12 and week["player 198"] == rate["player 198"]
+    assert abs(week["player 199"] - (1 - model.HAZARD * (1 - rate["player 199"]))) < 1e-12 and week["player 198"] == rate["player 198"]
+    assert "player 199" in fresh and "player 198" not in fresh
     lg.logs = None
     # availability (N9): one lost season isn't fragility (the baseline keeps his better season: 58, not 5), a repeat
     # absentee (41 at best) stays below him, this season's games count, and a rookie starts from 85%
@@ -590,6 +591,14 @@ def test_all():
     assert q.gameday == {"twin a": ("2026-10-28", Q, "questionable")} and q._plays("twin a", "2026-10-30", q.rate_week) == rw
     assert np.isclose(q.week_vec(["twin a"])[model.RAW.index("PTS")], (Q + 2 * rw) * q.p_week.at["twin a", "PTS"])
     assert q.player("twin a")["listed"] == {"as": "questionable", "day": "2026-10-28", "plays": round(100 * Q)}
+    # this week (M27): one who played his team's last game (before any games: untagged) plays his next game at
+    # 1 - HAZARD x his missing share and each later one a little less (late news, fresh_plays()), not one flat
+    # whole-week chance; This week's line is the sum. Twin C, out, isn't on the chain
+    ra, ch = sl.rate["twin a"], [sl._plays("twin a", d) for d in week[:4]]
+    assert np.allclose(ch, [model.fresh_plays(ra, j) for j in (1, 2, 3, 4)]) and ch[0] > ch[1] > ch[2] > ch[3]
+    assert np.isclose(ch[0], 1 - model.HAZARD * (1 - ra)) and np.isclose(ch[1], ch[0] * (1 - model.HAZARD * (1 - ra) * (1 - model.ONE_GAME)))
+    assert np.isclose(sl.week_vec(["twin a"])[model.RAW.index("PTS")], sum(ch) * sl.p_week.at["twin a", "PTS"])
+    assert "twin a" in sl.fresh and "twin c" not in sl.fresh and sl._plays("twin c", week[4]) == sl.rate_week["twin c"]
     # an ESPN return date of today cuts nothing (Oct 30: 14 of 20 players back that day were still cut, Sengun 0.75 -> 0.70)
     sl.meta["twin b"]["status"], sl.inj["twin b"] = "O", {"status": "O", "note": "", "return": sl.today}
     assert sl._availability(pd.concat([base, twins]), pd.concat([cur, twins]))[0]["twin b"] == sl.rate["twin b"]
@@ -837,10 +846,10 @@ def test_all():
     # ... and Start / sit plays each game on its own day's lift, not the week's average: Twin A's Oct 26 game gets the
     # first stretch's, his Oct 30 game the second's, and his four games together are This week's line. On Oct 26 the
     # lineup lists both teammates (Twin D's shots without minutes count too)
-    wp, r = two._week_plan("Them"), two.rate_week["twin a"]
+    wp, r = two._week_plan("Them"), [two._plays("twin a", d) for d in week[:4]]
     one, flat = [wp["one"][d, "twin a"] for d in week[:4]], no.p.loc["twin a", model.RAW].to_numpy(float)
-    assert np.allclose(one[0], r * (flat + ta[model.RAW].iloc[0])) and np.allclose(one[2], r * (flat + ta[model.RAW].iloc[1]))
-    assert np.allclose(sum(one) / 4, r * two.p_week.loc["twin a", model.RAW].to_numpy(float))
+    assert np.allclose(one[0], r[0] * (flat + ta[model.RAW].iloc[0])) and np.allclose(one[2], r[2] * (flat + ta[model.RAW].iloc[1]))
+    assert np.allclose(sum(x / p for x, p in zip(one, r)) / 4, two.p_week.loc["twin a", model.RAW].to_numpy(float))
     mon = next(o for o in two.start_sit("Them")["days"][0]["options"] if o["name"] == "Twin A")
     assert sorted((x["name"], x["term"]) for x in mon["lift"]["out"]) == [("Twin C", "medium"), ("Twin D", "short")] and mon["lift"]["MIN"] > 0.5 and 0 < mon["plays"] <= 100
     # ... and the box scores are read net of the lifts players had: Twin C sat 2 of Twin A's 4 games, so Twin A's line
@@ -1169,15 +1178,17 @@ def test_all():
     # the week (_reserve()). Nobody ever ruled out (HAZARD 0): keeping it is worth nothing and the move is made (the
     # single best stream on its best day); ruled out more often than the 0.33 measured, it's worth more than the move,
     # so the add is kept and the plan says so. At 0.33 it's kept here (M19: 26% of yours sit, and the fill-ins already
-    # cover a sitter, so the move gains less) exactly when it's worth more than the move
-    hz = model.HAZARD
+    # cover a sitter, so the move gains less) exactly when it's worth more than the move. This week's chances to play
+    # (fresh_plays(), M27) stay on the measured hazard: only the reserve's changes
+    hz, fp = model.HAZARD, model.fresh_plays
     try:
         model.HAZARD = 0
+        model.fresh_plays = lambda rate, j: (1 - hz * (1 - rate)) * (1 - hz * (1 - rate) * (1 - model.ONE_GAME)) ** (j - 1)
         n0 = capped(adds={"Me": 3}).this_week()["plan"]
         model.HAZARD = 1
         n1 = capped(adds={"Me": 3}).this_week()["plan"]
     finally:
-        model.HAZARD = hz
+        model.HAZARD, model.fresh_plays = hz, fp
     x = n0["moves"][0]
     assert w3["adds"]["left"] == 1 and len(n0["moves"]) == 1 and x["add"] == w3["streams"][0]["name"]
     assert x["day"] == w3["streams"][0]["day"] and x["gain"] == w3["streams"][0]["gain"]

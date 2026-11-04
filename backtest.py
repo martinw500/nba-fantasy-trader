@@ -6,6 +6,8 @@ python backtest.py rates [2025-26]: next week's and rest of season's stats error
 group (M22, measured Nov 3, not shipped: no better).
 python backtest.py gameday: how often players listed probable / questionable / doubtful for a game played it (fits
 GAMEDAY), from the archived ESPN feeds and this season's box scores.
+python backtest.py ahead: from every day of the week, how often a player who played his team's last game plays each of
+his games left that week (checks fresh_plays(): This week's chance for his next game and later ones, M27).
 python backtest.py news: how often a player who's playing is newly ruled out mid-week, and for how many of the week's
 games (fits HAZARD, ONE_GAME: the add kept for late news, M17).
 python backtest.py availability: each Monday's games-played guess vs the real share, 2024-25 and 2025-26 (fits AVAIL_*).
@@ -161,12 +163,14 @@ def team_weeks(games="fixed", leagues=LEAGUES):
             if games != "fixed":
                 left = left[left < monday + pd.Timedelta(weeks=1)]
             n[idx[k]] *= (left >= back).mean() if len(left) else 0
-        if games != "fixed":  # this week, players who played their team's last game (week 0: everyone) play more of
-            past = g[g.week < w]  # it than all season (League.rate_week, WEEK_K)
+        played_n = n * avail
+        if games != "fixed":  # this week, players who played their team's last game (week 0: everyone) play their
+            past = g[g.week < w]  # j-th game at fresh_plays() (League._week_p, M27): more of it than all season
             last, played = past.groupby("TEAM_ABBREVIATION").GAME_DATE.max(), set(zip(past.key, past.GAME_DATE))
             fresh = np.array([(k, last.get(team[k])) in played for k in keys]) if len(past) else np.ones(len(keys), bool)
-            avail = np.where(fresh, 1 - model.WEEK_K * (1 - avail), avail)
-        yield w, R @ ((n * avail)[:, None] * line[model.RAW].to_numpy()), R @ actual[w]
+            chain = sum(model.fresh_plays(avail, j) * np.clip(n - j + 1, 0, 1) for j in range(1, int(n.max()) + 1))
+            played_n = np.where(fresh, chain, played_n)
+        yield w, R @ (played_n[:, None] * line[model.RAW].to_numpy()), R @ actual[w]
 
 
 def build(games="fixed"):
@@ -535,9 +539,13 @@ def news(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
 def ahead(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
     """Tomorrow's game at tomorrow's odds (M27): from every day of the week (today, as the app sees it before tip-off),
     the 156 best players on that Monday's line who played their team's last game, each of his team's games left that
-    week (to Sunday): did he play it, by days ahead (0 = today) and by game (1 = his team's next), against rate_week
-    (1 - WEEK_K x (1 - availability()) as League has it that day) and the rest of the week's games played against
-    rate_week's sum, by weekday. (1 - played) / (1 - availability()) is the K a game that far ahead would need."""
+    week (to Sunday): did he play it, by days ahead (0 = today), by game (1 = his team's next) and by week of the
+    season, against this week's chance (model.fresh_plays() for the game's place, availability() as League has it that
+    day) and the flat rule before it (1 - 0.45 x (1 - availability()), WEEK_K); the rest of the week's games played
+    against each one's sum, by weekday. K = (1 - played) / (1 - availability()). Nov 4: the chain within 2% of every
+    game's share and 1% of every weekday's (the flat rule +3.2% low on the next game, 4.9% high on the 4th); weeks 1-2
+    run healthier still (next game K 0.23, not 0.33: 2.7% more played than the chain says), not shipped (Brier 83.59 ->
+    83.51 with a hazard by part of the season)."""
     rows = []
     for season in seasons:
         prev, prev2 = (f"{int(season[:4]) - n}-{int(season[2:4]) - n + 1:02d}" for n in (1, 2))
@@ -560,11 +568,12 @@ def ahead(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
                         continue
                     left = [d for d in days[team[k]] if t <= d < mon + pd.Timedelta(days=7)]
                     for j, d in enumerate(left):
-                        rows.append((season, t.weekday(), (d - t).days, j + 1, 1 - av[k], (k, d) in played))
-    d = pd.DataFrame(rows, columns=["season", "dow", "ahead", "game", "miss", "played"])
-    d["rw"] = 1 - model.WEEK_K * d.miss
-    tab = lambda x: pd.Series({"n": len(x), "played": x.played.mean(), "rate_week": x.rw.mean(),
+                        rows.append((season, w, t.weekday(), (d - t).days, j + 1, 1 - av[k], (k, d) in played))
+    d = pd.DataFrame(rows, columns=["season", "week", "dow", "ahead", "game", "miss", "played"])
+    d["flat"], d["chain"] = 1 - 0.45 * d.miss, model.fresh_plays(1 - d.miss, d.game)
+    tab = lambda x: pd.Series({"n": len(x), "played": x.played.mean(), "chain": x.chain.mean(), "flat": x.flat.mean(),
                                "K": (1 - x.played).sum() / x.miss.sum()})
+    brier = lambda c: 1000 * ((d[c] - d.played) ** 2).mean()
     print(f"\n== {len(d)} player-games from each day of the week, after he played his team's last game ==")
     print("by days ahead (0 = today):")
     print(d.groupby("ahead").apply(tab).round(3).to_string())
@@ -576,10 +585,16 @@ def ahead(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
                         "later": d[d.game > 1].groupby("season").apply(tab).K}).round(3).to_string())
     print("next game's K by availability fifth:")
     print(d[d.game == 1].groupby(pd.qcut(d.miss, 5)).apply(tab).round(3).to_string())
-    print("rest of the week from each weekday (0 = Monday): games played / rate_week's sum")
-    print(d.groupby("dow").apply(lambda x: pd.Series({"games": len(x), "played": x.played.sum(), "rate_week": x.rw.sum(),
-                                                      "ratio": x.played.sum() / x.rw.sum()})).round(3).to_string())
-    print("model.WEEK_K, HAZARD:", model.WEEK_K, model.HAZARD)
+    print("next game / later games by week of the season:")
+    wk = pd.cut(d.week, [0, 2, 5, 10, 15, 40])
+    print(pd.concat([d[d.game == 1].groupby(wk, observed=True).apply(tab).add_prefix("next "),
+                     d[d.game > 1].groupby(wk, observed=True).apply(tab).add_prefix("later ")], axis=1).round(3).to_string())
+    print("rest of the week from each weekday (0 = Monday): games played / each rule's sum")
+    print(d.groupby("dow").apply(lambda x: pd.Series({"games": len(x), "played": x.played.sum(),
+                                                      "chain": x.played.sum() / x.chain.sum(),
+                                                      "flat": x.played.sum() / x.flat.sum()})).round(3).to_string())
+    print(f"Brier (per 1000 games): chain {brier('chain'):.2f}, flat {brier('flat'):.2f}; model.HAZARD, ONE_GAME:",
+          model.HAZARD, model.ONE_GAME)
     return d
 
 

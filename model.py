@@ -105,19 +105,18 @@ LISTED = re.compile(r"\b(probable|questionable|doubtful|game-time decision)\b[^.
 # share of games left that players who were playing then suited up for). Past games barely predict it (correlation
 # 0.04-0.18, this season's 0.26), and the worse past season adds nothing, so one lost season isn't fragility.
 AVAIL_PAST, AVAIL_K, AVAIL_T = 0.2, 50, 0.7
-# This week: a player who played his team's last game misses WEEK_K of the games availability() has him missing over
-# the rest of the season. Injuries come in spells, so the next few games run healthier than the season: 2022-23 to
-# 2025-26, those players played 0.89-0.91 of the week's games against 0.76-0.78 guessed, K 0.41-0.46 in every
-# availability band (Oct 30 audit). The rest of the week only (week_vec()); season-long lines keep availability().
-# backtest.py's schedule mode does the same: its weekly totals ran 11% low, now 0.99-1.08 of the real ones, category
-# log loss 0.5062 -> 0.5004, calibration on the diagonal, DISPERSION / SCHED_CV unchanged
-WEEK_K = 0.45
 # Late news (M17): a player who played his team's last game is ruled out for the next one at HAZARD x (1 - his
 # availability) a game, and ONE_GAME of those absences last only that game (else he misses the rest of the week).
 # 2022-23 to 2025-26, the 156 best players each Monday (python backtest.py news, Nov 3): 7.2% of games, 5.4% in the
 # healthiest fifth to 10.1% in the least, HAZARD 0.30-0.36 a season; ONE_GAME 0.55-0.57. The add plan keeps its last add
 # for that unless the move beats it (_reserve())
 HAZARD, ONE_GAME = 0.33, 0.56
+# This week (M27, fresh_plays()): a player who played his team's last game plays his j-th game from today at that same
+# chain, (1 - h)(1 - h(1 - ONE_GAME))^(j-1), h = HAZARD x (1 - availability): injuries come in spells, so the next game
+# runs healthiest and each later one a little less. 2022-23 to 2025-26 from every day of the week (python backtest.py
+# ahead, Nov 4, 121k player-games): played 0.930 / 0.893 / 0.874 / 0.858 of his next / 2nd / 3rd / 4th game, the chain
+# within 2% of each (the flat WEEK_K 0.45 it replaces: +3.2% / -1.0% / -3.1% / -4.9%), the rest of the week from each
+# weekday within 1% (was 0.998 Monday to 1.026 Sunday), Brier 84.2 -> 83.6 a thousand games, the same every season
 # Teammates' injuries (lifts()), fitted on 2025-26 box scores (python backtest.py teammates): while a regular (REGULAR+
 # minutes) sits, SHARE of his minutes go to teammates playing 10+, split by their room under ROOM minutes x
 # e^(ROLE x role similarity) and played at their own rates; USAGE of the USAGE_STATS those minutes don't replace go to
@@ -553,6 +552,14 @@ def baseline(last, older):
     return line.assign(PLAYER_NAME=last.PLAYER_NAME.combine_first(older.PLAYER_NAME).reindex(keys),
                        TEAM_ABBREVIATION=last.TEAM_ABBREVIATION.combine_first(older.TEAM_ABBREVIATION).reindex(keys),
                        GP=pd.concat([last.GP, older.GP], axis=1).max(axis=1).reindex(keys))
+
+
+def fresh_plays(rate, j):
+    """This week (M27): the chance a player who played his team's last game plays his j-th game from today (1 = his
+    next), at availability `rate`: each game he's newly ruled out at HAZARD x (1 - rate), ONE_GAME of those for that game
+    only, the rest for the rest of the week (M17's late news), so (1 - h)(1 - h(1 - ONE_GAME))^(j - 1). Arrays work."""
+    h = HAZARD * (1 - rate)
+    return (1 - h) * (1 - h * (1 - ONE_GAME)) ** (j - 1)
 
 
 def availability(best, played, games):
@@ -1062,7 +1069,7 @@ class League:
         self.p_week = self.p.copy()  # this week's per-game lines: the lifts for this week's games instead
         wk = self._boost(self.week_end).sub(ahead, fill_value=0)
         self.p_week.loc[wk.index, wk.columns] += wk
-        self.rate, self.avail, self.back, self.rate_week = self._availability(base, cur)
+        self.rate, self.avail, self.back, self.rate_week, self.fresh = self._availability(base, cur)
         self.games_week = pd.Series({k: len(self.game_days(k, self.week_end)) for k in self.p.index}, dtype=float)
         # expected weekly contribution: games played at his line, missed games partly covered at waiver level
         fill = self.p.loc[self._waiver_level(self.value()), RAW].mean()
@@ -1160,7 +1167,7 @@ class League:
         day, n = self._days(keys, self.week_end, start or {}, until, by), collections.Counter()
         for d, ks in day.items():
             if plays:  # a locked player here is one of today's held starters (game_days() drops the rest): his slot is set
-                w = self._subs(ks, [1.0 if d == self.today and self._locked(k) else self._plays(k, d, self._rw) for k in ks])
+                w = self._subs(ks, [1.0 if d == self.today and self._locked(k) else self._plays(k, d) for k in ks])
             else:
                 on = set(self._lineup(ks))
                 w = [k in on for k in ks]
@@ -1207,11 +1214,24 @@ class League:
     def _rw(self):  # rate_week as a dict: starts() reads it for every game
         return self.rate_week.to_dict()
 
-    def _plays(self, k, d, rate):
+    def _plays(self, k, d, rate=None):
         """His chance to play the game on day d: a game-day listing's rate for that game (self.gameday, M16), else
-        `rate` (rate_week this week)."""
+        `rate` (a later week: the season's), else this week's: one who played his team's last game at fresh_plays() for
+        the game's place among his games left (M27, _week_p), anyone else at rate_week."""
         g = self.gameday.get(k)
-        return g[1] if g and g[0] == d else float(rate[k])
+        if g and g[0] == d:
+            return g[1]
+        if rate is not None:
+            return float(rate[k])
+        return x if (x := self._week_p.get((k, d))) is not None else self._rw[k]
+
+    @functools.cached_property
+    def _week_p(self):
+        """{(player, date): his chance to play that game} this week for players who played their team's last game
+        (M27): fresh_plays() by its place among his games left from today (game_days(): a locked game isn't one)."""
+        return {(k, d): float(fresh_plays(self.rate[k], j))
+                for k in self.fresh if k in self.rate.index
+                for j, d in enumerate(self.game_days(k, self.week_end), 1)}
 
     def _pos(self, k):
         return {x for x in self.meta.get(k, {}).get("pos", "").split(",") if x}
@@ -1251,11 +1271,11 @@ class League:
     def _availability(self, base, cur):
         """Share of games a player suits up for: availability() (his better past season and this one, of the games his
         team has played in the box scores; without them, the most anyone has played), then cut by injury status.
-        Returns (rate, rest-of-season, share of games left after his return, this week's rate). A known return date
+        Returns (rate, rest-of-season, share of games left after his return, this week's rate, fresh). A known return date
         (today counts) replaces the status guess: rest of season he plays the share of remaining games after it.
         Without one, a tag cuts nothing if he played his team's last game (players who did play what availability()
-        says). This week, a player who played his team's last game (before any games: anyone untagged) misses WEEK_K of
-        what he misses rest of season.
+        says). This week (self.fresh: a player who played his team's last game; before any games, anyone untagged) his
+        j-th game from today plays at fresh_plays() (M27: rate_week holds his next game's chance, _week_p each game's).
         ponytail: one status cut for both horizons; This week runs high for an undated O who sat (0.47 of his rate this
         week, 0.8 rest of season, backtest.py availability). ESPN dates everyone it lists, so it's rare; split it if not."""
         games, played_last = cur.GP.max() if len(cur) else 0, None
@@ -1277,7 +1297,7 @@ class League:
             if (i.get("return") or "") >= self.today and rest and k in share.index:
                 status[k], share[k] = 1.0, sum(d >= i["return"] for d in rest) / len(rest)
         rate = a * status.reindex(a.index).fillna(1.0)
-        return rate, rate * share, share, rate.where(~fresh, 1 - WEEK_K * (1 - rate))
+        return rate, rate * share, share, rate.where(~fresh, fresh_plays(rate, 1)), set(fresh.index[fresh])
 
     def find(self, name, strict=True):
         if (k := match(name, self.p.index)) or not strict:
@@ -2806,7 +2826,7 @@ class League:
             if not (opp := self._opponent(opp)):
                 return None
             mine, until = self._week_roster(self.me, punt)  # players back from IL slots in, who's cut out then (M21)
-            rate, line, days = self.rate_week, self.p_week, lambda ks: self._days(ks, self.week_end, until=until)
+            rate, line, days = None, self.p_week, lambda ks: self._days(ks, self.week_end, until=until)
         zero = np.zeros(len(RAW))
         if span:
             ks = play(opp)  # their lines with the lift averaged over the season (they set their own lineups)
