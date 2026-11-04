@@ -163,6 +163,8 @@ th.punted-col, tr.punted-col td:first-child { text-decoration: line-through; }
 .neg { color: var(--neg-ink); }
 .rowbtn { border: 0; background: none; padding: 0; cursor: pointer; text-align: left; font-weight: 550; }
 .rowbtn:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; }
+.rowbtn.nm { font-weight: inherit; color: inherit; }  /* a name in running text or a deal (Q21): the card on click, no bold */
+.rowbtn.nm:hover { color: var(--accent-ink); }
 .rowbtn[aria-pressed="true"] { color: var(--accent-ink); }
 tr.sel td { background: var(--accent-soft); }
 tr.pick { cursor: pointer; }
@@ -426,8 +428,11 @@ const chance = v => v > 0 && v < 0.005 ? "<1%" : v < 1 && v > 0.995 ? ">99%" : p
 const delta = (v, unit) => unit === "win%" ? sign1(v) + "%" : sign(v);  // win% deltas are percentage points
 const and = xs => xs.length > 1 ? xs.slice(0, -1).join(", ") + " and " + xs.at(-1) : xs.join("");
 // waiver moves that need no trade (trades are scored on top of them): "Vučević for Achiuwa (+1.2%)"
-const into = m => m.drop ? "for " + esc(m.drop) : m.park ? "into an IL slot" : "into the open spot";  // B5: an injured add parks
-const freeList = (ms, more = 0) => and([...ms.map(m => `${esc(m.add)} ${into(m)} (${delta(m.gain, "win%")})`),
+// Q21: a name in a deal, a waiver move, This week's plan or a strategy step opens his card (under his table row if he
+// has one on screen, else at the top: showCard)
+const nameBtn = n => !n ? "" : `<button class="rowbtn nm" data-act="show-card" data-name="${esc(n)}" title="Open his player card">${esc(n)}</button>`;
+const into = (m, nm = esc) => m.drop ? "for " + nm(m.drop) : m.park ? "into an IL slot" : "into the open spot";  // B5: an injured add parks
+const freeList = (ms, more = 0, nm = esc) => and([...ms.map(m => `${nm(m.add)} ${into(m, nm)} (${delta(m.gain, "win%")})`),
   ...(more > 0 ? [`${more} more`] : [])]);
 const ord = n => n + (n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th");
 const when = iso => new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -603,7 +608,7 @@ function viewTeam() {
   const moves = st.waivers.moves.slice(0, 3), sells = st.movers.sell_high.slice(0, 3);
   const todo = (moves.length || sells.length) ? `<div class="panel"><div class="panel-h"><div><h2>Worth doing now</h2><p>Top waiver upgrades and sell-high candidates on your build.</p></div></div>
     <div class="tw"><table class="wrap"><tbody>
-      ${moves.map(m => `<tr><td>Add <b>${esc(m.add)}</b>${m.drop ? `, drop ${esc(m.drop)}` : m.park ? " into a free IL slot, no drop" : " into your open spot"}</td><td class="n pos val" title="${m.unit === "win%" ? "Change in your " + WIN().of : "Value gain"}">${delta(m.gain, m.unit)}</td><td class="n"><button class="btn ghost" data-go="waivers">Waivers</button></td></tr>`).join("")}
+      ${moves.map(m => `<tr><td>Add <b>${nameBtn(m.add)}</b>${m.drop ? `, drop ${nameBtn(m.drop)}` : m.park ? " into a free IL slot, no drop" : " into your open spot"}</td><td class="n pos val" title="${m.unit === "win%" ? "Change in your " + WIN().of : "Value gain"}">${delta(m.gain, m.unit)}</td><td class="n"><button class="btn ghost" data-go="waivers">Waivers</button></td></tr>`).join("")}
       ${sells.map(p => `<tr><td>Sell high on <b>${esc(p.name)}</b>: ${sign(p.gap)} above his real value over ${formWin()}</td><td class="n muted">${p.form_gp} GP</td><td class="n"><button class="btn ghost" data-act="shop" data-name="${esc(p.name)}">Find a buyer</button></td></tr>`).join("")}
     </tbody></table></div></div>` : "";
   const po = prof?.playoffs?.teams[st.me];
@@ -664,12 +669,12 @@ function strategyPanel() {
   const steps = b.steps.map((s, j) => {
     const prev = j ? b.steps[j - 1].win : d.win;
     const after = (span = "") => `<td class="n val"${span}>${p1(s.win)}</td><td class="n ${tone(s.win - prev)}"${span}>${delta(s.win - prev, "win%")}</td>`;
-    if (!s.trade) return `<tr><td class="muted">Waivers</td><td colspan="7" class="names">${s.free.length ? "Add " + freeList(s.free) : `<span class="muted">No waiver move clears the bar</span>`}</td>${after()}<td></td></tr>`;
+    if (!s.trade) return `<tr><td class="muted">Waivers</td><td colspan="7" class="names">${s.free.length ? "Add " + freeList(s.free, 0, nameBtn) : `<span class="muted">No waiver move clears the bar</span>`}</td>${after()}<td></td></tr>`;
     // its waiver moves (open spots, extra players, the adds it opens up) go on a line below the deal
     const t = s.trade, span = s.add.length || s.drop.length ? ` rowspan="2"` : "";
-    const wire = [...(s.add.length ? [`add ${and(s.add.map(esc))}`] : []), ...(s.drop.length ? [`drop ${and(s.drop.map(esc))}`] : [])].join(", ");
-    return `<tr${span ? ` class="has-sub"` : ""}><td class="muted"${span}>Trade ${j}</td><td>${esc(t.team)}</td><td class="names">${t.give.map(esc).join(", ")}</td>
-      <td class="names">${t.get.map(esc).join(", ")}</td>
+    const wire = [...(s.add.length ? [`add ${and(s.add.map(nameBtn))}`] : []), ...(s.drop.length ? [`drop ${and(s.drop.map(nameBtn))}`] : [])].join(", ");
+    return `<tr${span ? ` class="has-sub"` : ""}><td class="muted"${span}>Trade ${j}</td><td>${esc(t.team)}</td><td class="names">${t.give.map(nameBtn).join(", ")}</td>
+      <td class="names">${t.get.map(nameBtn).join(", ")}</td>
       <td class="n ${tone(t.their_net)}">${delta(t.their_net, "win%")}</td><td class="n">${mktSum(t.market)}</td><td class="n">${mktPair(t.market)}</td><td>${acceptPill(t.accept)}</td>${after(span)}
       <td class="n"${span}><button class="btn ghost" data-act="plan-load" data-i="${sel}" data-j="${j}" ${t.later ? `disabled title="Needs the trades before it first: Trades scores a deal on today's rosters"` : `title="Open it in Trades, scored on today's rosters and your punt"`}>Load</button></td></tr>
       ${span ? `<tr class="sub"><td colspan="7" class="names small muted">Then on waivers: ${wire}</td></tr>` : ""}`;
@@ -824,11 +829,11 @@ function streamPlan(w) {
     : ` <span title="${esc(newsTip)}">That last add beats keeping it for late news (<span class="pos">${delta(N.worth, "win%")}</span> on average).</span>`;
   if (!m.length) return A?.left ? `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}${hold}</div>` : "";
   if (A && A.left === 1) { const x = m[0];
-    return `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}Your last one is best spent ${on(x.day)}: add <b>${esc(x.add)}</b> for ${esc(x.drop)} (<span class="pos">${delta(x.gain, "win%")}</span>${x.games != null ? `, ${plural(x.games, "start")}` : ""}).
+    return `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}Your last one is best spent ${on(x.day)}: add <b>${nameBtn(x.add)}</b> for ${nameBtn(x.drop)} (<span class="pos">${delta(x.gain, "win%")}</span>${x.games != null ? `, ${plural(x.games, "start")}` : ""}).
       ${x.day > w.today ? `Hold it until then: ${x.kept ? `${esc(x.drop)} starts ${plural(x.kept, "more game")} first` : "waiting costs nothing"}, and the add is still yours if someone gets hurt.` : ""}${hold}${keep}</div>`; }
   return `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}${A ? `The best way to spend ${A.left > 1 ? "them" : "it"}` : "The best streams in a row (no weekly add limit)"}, each on top of the one before. A later one can replace an earlier streamer once his games are used.</div>
     <div class="tw" style="border-bottom:1px solid var(--line)"><table><thead><tr><th>Day</th><th>Add</th><th>Drop</th><th class="n" title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, on top of the moves above">This week</th>${m[0].games != null ? `<th class="n" title="Games he starts for you this week">Starts</th>` : ""}</tr></thead><tbody>
-    ${m.map(x => `<tr><td>${x.day === w.today ? "Today" : esc(dayName(x.day))}</td><td class="pname">${esc(x.add)}${x.end ? `<span class="tag" title="Cut after this day, when your player in an IL slot is back">until ${esc(dayName(x.end))}</span>` : ""}</td><td>${esc(x.drop)}</td><td class="n val ${tone(x.gain)}">${delta(x.gain, "win%")}</td>${x.games != null ? `<td class="n">${x.games}</td>` : ""}</tr>`).join("")}</tbody></table></div>
+    ${m.map(x => `<tr><td>${x.day === w.today ? "Today" : esc(dayName(x.day))}</td><td class="pname">${nameBtn(x.add)}${x.end ? `<span class="tag" title="Cut after this day, when your player in an IL slot is back">until ${esc(dayName(x.end))}</span>` : ""}</td><td>${nameBtn(x.drop)}</td><td class="n val ${tone(x.gain)}">${delta(x.gain, "win%")}</td>${x.games != null ? `<td class="n">${x.games}</td>` : ""}</tr>`).join("")}</tbody></table></div>
     <div class="panel-b small muted" style="border-bottom:1px solid var(--line)">Together <span class="pos">${delta(P.gain, "win%")}</span> this week.${hold}${keep}</div>`;
 }
 async function loadWeek(opponent) {
@@ -1143,7 +1148,7 @@ function dealTable(list, src) {
     ${th("net", "You", "Change in your " + u + (lostTip() && u !== "value" ? ". " + lostTip() : ""))}${th("their_net", "Them", "Change in their " + u)}
     ${mk ? th("mkt", "Market", MKT_TIP) + th("pkg", "Package", PKG_TIP) : th("their_view", "Looks to them", "On this season's hot and cold starts, what Yahoo's ranks show them")}
     ${acc ? th("accept", "Will they say yes", "Mostly the market, a little how it really helps them", "") : ""}<th></th></tr>`;
-  const body = rows.map(([x, i]) => `<tr><td>${esc(x.team)}</td><td class="names">${x.give.map(esc).join(", ")}</td><td class="names">${x.get.map(esc).join(", ")}</td>
+  const body = rows.map(([x, i]) => `<tr><td>${esc(x.team)}</td><td class="names">${x.give.map(nameBtn).join(", ")}</td><td class="names">${x.get.map(nameBtn).join(", ")}</td>
     ${goal ? `<td class="n val ${tone(x.score)}">${delta(x.score, "win%")}</td>` : ""}
     <td class="n ${goal ? "" : "val"} ${tone(x.net)}">${delta(x.net, x.unit)}</td><td class="n ${tone(x.their_net)}">${delta(x.their_net, x.unit)}</td>
     ${mk ? `<td class="n">${mktSum(x.market)}</td><td class="n">${mktPair(x.market)}</td>` : `<td class="n ${tone(x.their_view)}">${sign(x.their_view)}</td>`}${acc ? `<td>${acceptPill(x.accept)}</td>` : ""}
@@ -1335,7 +1340,7 @@ function viewWaivers() {
   // Try: load a move into Try a move (a side left undefined keeps what's there; a null drop is the open spot)
   const tryBtn = (add, drop) => `<button class="btn ghost" data-act="mv-try"${add === undefined ? "" : ` data-add="${esc(add)}"`}${drop === undefined ? "" : ` data-drop="${esc(drop || "")}"`} title="Score ${add === undefined ? "dropping him" : drop === undefined ? "adding him" : "this move"} under Try a move">Try</button>`;
   const moves = w.moves.length ? `<div class="tw"><table><thead><tr><th>Add</th><th>Drop</th><th class="n"${odds && lostTip() ? ` title="${lostTip()}"` : ""}>${odds ? WIN().h : "Gain"}</th><th></th></tr></thead><tbody>
-    ${w.moves.map(m => `<tr><td class="pname">${esc(m.add)}</td><td>${m.drop ? esc(m.drop) : `<span class="muted" title="${m.park ? "He's out: he goes into a free IL slot and starts once he's back" : ""}">${m.park ? "IL slot, no drop" : "Open spot"}</span>`}${m.sell ? `<div class="small muted" title="The model would drop ${esc(m.sell)} here, but the market rates him as a trade piece: sell him instead of cutting him">Keeps ${esc(m.sell)}: sell him instead</div>` : ""}</td><td class="n pos val">${delta(m.gain, m.unit)}</td><td class="n">${tryBtn(m.add, m.drop)}</td></tr>`).join("")}</tbody></table></div>`
+    ${w.moves.map(m => `<tr><td class="pname">${nameBtn(m.add)}</td><td>${m.drop ? nameBtn(m.drop) : `<span class="muted" title="${m.park ? "He's out: he goes into a free IL slot and starts once he's back" : ""}">${m.park ? "IL slot, no drop" : "Open spot"}</span>`}${m.sell ? `<div class="small muted" title="The model would drop ${esc(m.sell)} here, but the market rates him as a trade piece: sell him instead of cutting him">Keeps ${esc(m.sell)}: sell him instead</div>` : ""}</td><td class="n pos val">${delta(m.gain, m.unit)}</td><td class="n">${tryBtn(m.add, m.drop)}</td></tr>`).join("")}</tbody></table></div>`
     : `<div class="empty"><b>No clear upgrades</b>Nobody on waivers beats your weakest healthy player by enough to bother.</div>`;
   const tryCol = { h: "", v: p => tryBtn(p.name) }, dropCol = { h: "", v: p => tryBtn(undefined, p.name) };
   const A = S.state.adds, addsLeft = !A ? "" : A.left ? ` ${A.left} of ${A.max} adds left this week.` : ` You've used all ${A.max} adds this week: these moves wait until ${esc(dayName(A.resets))}.`;
@@ -1679,6 +1684,7 @@ document.addEventListener("click", async e => {
   if (act === "plan-load") { const x = S.strategy.data.builds[+t.dataset.i].steps[+t.dataset.j].trade; setView("trades"); return loadDeal(x); }
   if (act === "plan-show") { S.strategy.sel = +t.dataset.i; render(); return reveal("#strategy"); }
   if (act === "card") return openCard(t.dataset.name, +t.dataset.t);
+  if (act === "show-card") return showCard(t.dataset.name);  // Q21
   if (act === "cmp-add") return addCompare(t.dataset.name, true);
   if (act === "cmp-remove") { setCompare(S.compare.names.filter(x => x !== t.dataset.name)); if (S.compare.names.length < 2) history.replaceState(null, "", "#compare"); return render(); }
   if (act === "cmp-clear") { setCompare([]); history.replaceState(null, "", "#compare"); return render(); }
