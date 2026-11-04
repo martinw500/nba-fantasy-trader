@@ -1,5 +1,12 @@
 # Audit, Nov 4 2026
 
+**Checked Nov 4 (Claude Code, against the code, data and fresh backtest runs) — read this before acting on a finding:**
+- **Valid, to do:** #1 (11 players with 3+ games on a junk Yahoo line, ESPN has none: Kobe Sanders 1.9 vs 11.0), #2 (snapshot Yahoo lines move in-season: Acuff 17.3 → 23.3, Wilson 16.1 → 18.8, Oct 27 → Nov 3), #3 (rookie prior 40% fringe: Boozer 15.8 on Yahoo 18.4 / 17.4 this season), #15 (`/api/week`, `/api/lineup` use `lg`, not `fl`), #23 (`live()` assigns `lg = new` whatever `/api/me` did meanwhile), #8 / #25 (`playoffs()` docstring predates M2).
+- **Not valid:** #4: M8's `python backtest.py trend` already measured it (a 14-day form gap carries −0.07 to +0.02 into the next 14 days), so a recent-form line for This week would be worse. #22's "`backtest.py ahead` produced an empty log": it runs (re-run Nov 3, numbers as in ROADMAP M27).
+- **Unproven, not on the list:** #11 (a hypothesis, no measurement).
+- **Answered:** #8's bracket question: the snapshot says "Reseeding: yes", as the sim does.
+- **Found while checking #22:** `python backtest.py recency` after M26 gives weeks 1–6 +1.3 / −0.6 / 0.0 / −0.3% (2022-23 to 2025-26), not −2.0%: `MIN_SHRINK` / `RECENT` need a rerun (ROADMAP "Nov 4 check").
+
 Deep check of player values, team strength, this week, trades, data, backtests, and the app. No code was changed. `python test_model.py` passes. There is no `data/notes.md` (no open AI GM notes).
 
 **Standings at audit:** fatty zhou 57.9% (1st), Mumbai 57.4%, Shanghai 55.0%, … Mathmagicians 35.1%. Playoff odds sum to 8.00, title odds to 1.00. You 93.4% to make it, 16.2% to win it. This week vs Mumbai ~75% (categories 5.4–3.6).
