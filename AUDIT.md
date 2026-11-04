@@ -1,7 +1,7 @@
 # Audit, Nov 4 2026
 
 **Checked Nov 4 (Claude Code, against the code, data and fresh backtest runs) — read this before acting on a finding:**
-- **Done Nov 4:** #1 (ROADMAP A1: no-ESPN Yahoo rows under half of the baseline's or this season's are dropped; Kobe Sanders 7.0 → 7.9, you 57.9 → 57.8%, This week unchanged).
+- **Done Nov 4:** #2 + #3 (ROADMAP A2: rookies blend the expert line at 75% and follow this season at 10 games, measured better in all four seasons; freezing Yahoo at the first snapshot measured worse on this season's snapshots, so the live line stays). #1 (ROADMAP A1: no-ESPN Yahoo rows under half of the baseline's or this season's are dropped; Kobe Sanders 7.0 → 7.9, you 57.9 → 57.8%, This week unchanged).
 - **Valid, to do:** #1 (11 players with 3+ games on a junk Yahoo line, ESPN has none: Kobe Sanders 1.9 vs 11.0), #2 (snapshot Yahoo lines move in-season: Acuff 17.3 → 23.3, Wilson 16.1 → 18.8, Oct 27 → Nov 3), #3 (rookie prior 40% fringe: Boozer 15.8 on Yahoo 18.4 / 17.4 this season), #15 (`/api/week`, `/api/lineup` use `lg`, not `fl`), #23 (`live()` assigns `lg = new` whatever `/api/me` did meanwhile), #8 / #25 (`playoffs()` docstring predates M2).
 - **Not valid:** #4: M8's `python backtest.py trend` already measured it (a 14-day form gap carries −0.07 to +0.02 into the next 14 days), so a recent-form line for This week would be worse. #22's "`backtest.py ahead` produced an empty log": it runs (re-run Nov 3, numbers as in ROADMAP M27).
 - **Unproven, not on the list:** #11 (a hypothesis, no measurement).
@@ -40,7 +40,7 @@ Capela 0.4 *is* caught (ESPN has him at 6.6, so ESPN wins). The ROADMAP note abo
 **Fix:** drop a Yahoo row that is under half of ESPN *or* of `baseline()` / this season's volume, same as the Hayes/Capela rule. Then `prior()` for those players is ESPN or the M26 bench line.
 
 ### 2. GAP — in-season Yahoo updates double-count this season
-**CONFIRMED.** `PROJ_W` 0.6 was fitted by `backtest.py replay` on ESPN's *preseason* projections, which barely move (6 of 348 players changed PTS > 0.05 between Oct 27 and Nov 2). Live Yahoo rows in the snapshot *do* chase the start: Acuff 17.3 → 23.3 PTS in a week. `ros()` then leans on this season's games *again* (`MIN_SHRINK` 3, `SHRINK` 20).
+**MEASURED Nov 4, not shipped (ROADMAP A2):** freezing each player's Yahoo line at the first snapshot made this season's lines worse (`python backtest.py yahoo`: 0.551 vs 0.530 for players whose line moved). **CONFIRMED.** `PROJ_W` 0.6 was fitted by `backtest.py replay` on ESPN's *preseason* projections, which barely move (6 of 348 players changed PTS > 0.05 between Oct 27 and Nov 2). Live Yahoo rows in the snapshot *do* chase the start: Acuff 17.3 → 23.3 PTS in a week. `ros()` then leans on this season's games *again* (`MIN_SHRINK` 3, `SHRINK` 20).
 
 So a breakout is in the expert line *and* in `recent()`. A bust is too.
 
@@ -49,7 +49,7 @@ So a breakout is in the expert line *and* in `recent()`. A bust is too.
 **Fix:** for live leagues, either (a) freeze Yahoo at the first snapshot / use ESPN's preseason as the expert, or (b) cut `PROJ_W` as GP grows (`PROJ_W * MIN_SHRINK / (GP + MIN_SHRINK)`), since this season is already in `ros()`. Re-run `python backtest.py replay` after, because the backtest still uses frozen ESPN.
 
 ### 3. GAP — rookies with an expert line are still 40% a bench player
-**CONFIRMED.** A rookie has no `baseline()`, so `prior()` is 40% the fringe-rotation line (26 min of replacement rates) + 60% expert. Then `ros()` only lets this season's *rates* in at `GP * MIN / (GP * MIN + SHRINK * prior_MIN)` ≈ 25% after 7 games of 32 minutes (`SHRINK` 20). Minutes move fast (`MIN_SHRINK` 3); rates do not.
+**FIXED Nov 4 (ROADMAP A2):** `ROOKIE_W` 0.75, `ROOKIE_K` 10 (`python backtest.py rookies`). **CONFIRMED.** A rookie has no `baseline()`, so `prior()` is 40% the fringe-rotation line (26 min of replacement rates) + 60% expert. Then `ros()` only lets this season's *rates* in at `GP * MIN / (GP * MIN + SHRINK * prior_MIN)` ≈ 25% after 7 games of 32 minutes (`SHRINK` 20). Minutes move fast (`MIN_SHRINK` 3); rates do not.
 
 Boozer, on your roster: prior 15.7 PTS, this season 17.4 in 32 min, ROS **15.8**. Wilson and Lendeborg are the same shape. This is the knob the rest-of-season backtest liked *on average* (hot starts fade). Two weeks in, the rookies who are clearly starters are low.
 

@@ -8,6 +8,10 @@ python backtest.py minor [2025-26]: the same with 15-25 minute sitters handing o
 hands out (M25, measured Nov 4, not shipped: stats worse, the cap no change).
 python backtest.py bench: rest-of-season error by BENCH_MIN, the minutes players no expert projects are pulled toward,
 2022-23 to 2025-26 (fits BENCH_MIN, M26).
+python backtest.py rookies: rest-of-season error by a rookie's expert weight and rate shrink, 2022-23 to 2025-26 (fits
+ROOKIE_W, ROOKIE_K: audit #3).
+python backtest.py yahoo: this season's snapshots, each one's Yahoo lines vs each player's first-seen one, against the
+games after it (audit #2: the live line stays, measured Nov 4).
 python backtest.py trend: a 14-day form window's gap from rest of season by games in it (fits TREND, TREND_GP: M8).
 python backtest.py gameday: how often players listed probable / questionable / doubtful for a game played it (fits
 GAMEDAY), from the archived ESPN feeds and this season's box scores.
@@ -39,7 +43,7 @@ import pandas as pd
 import model
 
 ARGS = [a for a in sys.argv[1:]
-        if a not in ("replay", "teammates", "onoff", "minor", "bench", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead")]
+        if a not in ("replay", "teammates", "onoff", "minor", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
@@ -295,6 +299,84 @@ def bench(seasons=("2022-23", "2023-24", "2024-25", "2025-26"), grid=(None, 6, 8
                   f"wks1-6 {e['bias'][1:7].mean():+.2f} season {e['bias'].mean():+.2f}")
     model.BENCH_MIN = old
 
+
+
+def rookies(seasons=("2022-23", "2023-24", "2024-25", "2025-26"),
+            grid=((None, None), (0.75, 10), (0.7, 10), (0.8, 10), (0.75, 8), (0.75, 12), (0.75, 15), (0.75, None),
+                  (None, 10), (1.0, None))):
+    """Audit #3: replay()'s rest-of-season error by model.ROOKIE_W (a rookie's expert weight in prior(); None: PROJ_W)
+    and model.ROOKIE_K (games of his minutes his production per minute leans on in ros(); None: SHRINK), each season
+    on its own ESPN preseason projection, players with 10+ games left from week 0 to 4 weeks from the end: everyone,
+    rookies an expert projects (no baseline) and rookies none does, week 0, weeks 1-6 and the season, against both off.
+    Fitted ROOKIE_W 0.75, ROOKIE_K 10 (Nov 4)."""
+    old = model.ROOKIE_W, model.ROOKIE_K
+    for season in seasons:
+        prev, prev2 = (f"{int(season[:4]) - n}-{int(season[2:4]) - n + 1:02d}" for n in (1, 2))
+        g, base = logs(season), model.baseline(model.fetch(prev), model.fetch(prev2))
+        ex = model.experts({}, model.espn(season), base, base.index.union(g.key.unique()))
+        err = {x: {"all": [], "pro": [], "none": [], "n": []} for x in grid}
+        for x in grid:
+            model.ROOKIE_W, model.ROOKIE_K = x
+            pre = model.prior(base, ex)
+            for w in range(int(g.week.max()) - 3):
+                left = per_game(g[g.week >= w]).query("GP >= 10")
+                line = model.ros(pre, model.recent(g[g.week < w], monday(g, w))).reindex(left.index)[model.RAW].fillna(0)
+                e = ((line - left[model.RAW]).abs() / left[model.RAW].mean()).mean(axis=1)
+                new = ~left.index.isin(base.index)
+                err[x]["all"].append(float(e.mean())); err[x]["n"].append(int((new & left.index.isin(ex.index)).sum()))
+                err[x]["pro"].append(float(e[new & left.index.isin(ex.index)].mean()))
+                err[x]["none"].append(float(e[new & ~left.index.isin(ex.index)].mean()))
+        e0 = {k: np.array(v) for k, v in err[grid[0]].items()}
+        pct = lambda a, b: f"{100 * (a / b - 1):+.1f}%"
+        print(f"\n== {season}: rest-of-season error by a rookie's expert weight and rate shrink (projected rookies: "
+              f"n {e0['n'].mean():.0f} a Monday) ==")
+        for x in grid:
+            e = {k: np.array(v) for k, v in err[x].items()}
+            print(f"  ROOKIE_W {str(x[0]):4} ROOKIE_K {str(x[1]):4} everyone wk0 {e['all'][0]:.4f} wks1-6 {e['all'][1:7].mean():.4f}"
+                  f" season {e['all'].mean():.4f} ({100 * (e['all'].mean() / e0['all'].mean() - 1):+.2f}%) | projected rookies"
+                  f" wk0 {pct(e['pro'][0], e0['pro'][0])} wks1-6 {pct(e['pro'][1:7].mean(), e0['pro'][1:7].mean())}"
+                  f" season {pct(e['pro'].mean(), e0['pro'].mean())} | unprojected rookies wks1-6 "
+                  f"{pct(np.nanmean(e['none'][1:7]), np.nanmean(e0['none'][1:7]))} season {pct(np.nanmean(e['none']), np.nanmean(e0['none']))}")
+    model.ROOKIE_W, model.ROOKIE_K = old
+
+
+def yahoo_lines(top=1.0):
+    """Audit #2: the snapshots' Yahoo lines move in-season (Acuff 17.3 -> 23.3 points, Oct 27 -> Nov 3) and PROJ_W was
+    fitted on frozen preseason lines, so is the live line counting this season twice? No past season's in-season Yahoo
+    lines exist, so this season's own: from each snapshot in the folder (games before it, ESPN's copy of that day),
+    each player's rest-of-season line with that snapshot's Yahoo line vs the one from the first snapshot that lists him,
+    against his games after it (2+), for everyone and for players whose Yahoo line moved `top`+ points. Nov 4: the live
+    line was better (moved players 0.530 vs 0.551, 39 of 54 player-weeks), so it stays. Rerun as snapshots pile up."""
+    import glob, json, yahoo
+    g, base = model.gamelogs(model.CUR), model.baseline(model.fetch(model.LAST), model.fetch(model.OLDER))
+    keys, first, out = base.index.union(g.key.unique()), {}, {"day": [], "first": []}
+    for f in sorted(glob.glob(str(model.ROOT / "*snapshot*.txt"))):
+        s = yahoo.parse_text(open(f, encoding="utf-8").read())
+        if not s.get("pulled"):
+            continue
+        for n, x in s["projections"].items():
+            first.setdefault(n, x)
+        d = pd.Timestamp(s["pulled"][:10]) + pd.Timedelta(days=1 if s["pulled"][11:13] >= "17" else 0)  # evening: games in
+        past, left = g[g.GAME_DATE < d], per_game(g[g.GAME_DATE >= d]).query("GP >= 2")
+        if not len(left):
+            continue
+        ep = sorted(p for p in glob.glob(str(model.DATA / "projections_20??-??-??.json")) if p[-15:-5] <= str(d.date()))
+        esp = json.load(open(ep[-1] if ep else model.DATA / f"projections_{model.CUR}.json", encoding="utf-8"))
+        cur, err, ex = per_game(past), {}, {}
+        for kind, yl in (("day", s["projections"]), ("first", {n: first[n] for n in s["projections"]})):
+            ex[kind] = model.experts(yl, esp, base, keys, cur)
+            line = model.ros(model.prior(base, ex[kind]), model.recent(past, d)).reindex(left.index)[model.RAW].fillna(0)
+            err[kind] = ((line - left[model.RAW]).abs() / left[model.RAW].mean()).mean(axis=1)
+        yd, yf = (ex[k][ex[k].src == "Yahoo"].PTS for k in ("day", "first"))
+        both = yd.index.intersection(yf.index).intersection(left.index)
+        moved = both[(yd[both] - yf[both]).abs() >= top]
+        for k in out:
+            out[k].append(err[k].reindex(moved))
+        print(f"  {s['pulled'][:10]}: everyone {err['day'].mean():.4f} with its Yahoo lines, {err['first'].mean():.4f} with the "
+              f"first; Yahoo line moved {top}+ pts (n {len(moved)}): {err['day'].reindex(moved).mean():.4f} vs "
+              f"{err['first'].reindex(moved).mean():.4f}")
+    day, fst = pd.concat(out["day"]), pd.concat(out["first"])
+    print(f"moved, pooled ({len(day)} player-weeks): live {day.mean():.4f}, first {fst.mean():.4f}; first better in {int((fst < day).sum())}")
 
 def trend(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
     """M8: how far a FORM_DAYS window's value runs from rest of season by the games it holds. Each Monday from week 3 to
@@ -873,6 +955,10 @@ if __name__ == "__main__":
         trend()
     elif "bench" in sys.argv:
         bench()
+    elif "rookies" in sys.argv:
+        rookies()
+    elif "yahoo" in sys.argv:
+        yahoo_lines()
     elif "minor" in sys.argv:
         minor()
     elif "onoff" in sys.argv:

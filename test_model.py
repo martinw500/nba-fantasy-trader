@@ -1597,7 +1597,18 @@ Sharks has an open SF slot.""")
     pre = model.prior(base, pj)
     assert abs(pre.at["player 152", "PTS"] - (1 - model.PROJ_W + 1.5 * model.PROJ_W) * base.at["player 152", "PTS"]) < 1e-9
     fringe = base.nlargest(200, "MIN").tail(60).PTS.mean()
-    assert abs(pre.at["new rookie", "PTS"] - ((1 - model.PROJ_W) * fringe + model.PROJ_W * line("", 190)["PTS"])) < 1e-9
+    assert abs(pre.at["new rookie", "PTS"] - ((1 - model.ROOKIE_W) * fringe + model.ROOKIE_W * line("", 190)["PTS"])) < 1e-9
+    # a rookie (audit #3, Nov 4): his expert line weighs ROOKIE_W 0.75, not PROJ_W 0.6, and his production per minute
+    # leans on this season at ROOKIE_K 10 games of his minutes, not SHRINK 20; a veteran's still at SHRINK
+    assert model.ROOKIE_W == 0.75 and model.ROOKIE_K == 10 and pre.at["new rookie", "GP"] == 0
+    hot = model.keyed(pd.DataFrame([line("New Rookie", 190, gp=5, PTS=30), line("Player 152", 152, gp=5, PTS=30)]))
+    after = model.ros(pre, hot)
+    for k, kk in (("new rookie", model.ROOKIE_K), ("player 152", model.SHRINK)):
+        gp, cm, bm = 5, hot.at[k, "MIN"], pre.at[k, "MIN"]
+        mins, w = (gp * cm + model.MIN_SHRINK * bm) / (gp + model.MIN_SHRINK), gp * cm / (gp * cm + kk * bm)
+        assert abs(after.at[k, "PTS"] - mins * (w * 30 / cm + (1 - w) * pre.at[k, "PTS"] / bm)) < 1e-9, k
+    # an expert row with no numbers at all is no projection (ESPN's 2023-24 file: 43 of that season's rookies), not 0s
+    assert "player 153" not in model.experts({}, {"Player 153": {}, "Player 154": {"MIN": 0.0}}, base, base.index).index
     assert ex.find("New Rookie") == "new rookie" and ex.find("Zed Unknown", strict=False) is None
     assert ex.p.at["player 150", "PTS"] > lg.p.at["player 150", "PTS"] and ex.p.at["player 152", "PTS"] > lg.p.at["player 152", "PTS"]
     assert np.allclose(ex.p.loc["player 160", model.RAW].astype(float), lg.p.loc["player 160", model.RAW].astype(float))

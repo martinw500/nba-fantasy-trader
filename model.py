@@ -68,6 +68,14 @@ OLDER_W, REGRESS = 0.5, 25  # baseline: a game two seasons ago counts half; 25 g
 # 10-15 about as good. Next week's stats (teammates) better in 2025-26 and 2024-25 too, minutes 0.3 a game lower
 BENCH_MIN = 12
 PROJ_W = 0.6  # expert projections' weight in the pre-season line (prior()); fitted by python backtest.py replay
+# a rookie (no NBA past, so no baseline): the expert line weighs ROOKIE_W in prior() (the rest is the fringe line), and
+# his production per minute leans on this season at ROOKIE_K games of his minutes in ros(), not SHRINK (prior and
+# rookies no expert projects alike); None = PROJ_W / SHRINK. Fitted Nov 4 (python backtest.py rookies, 2022-23 to
+# 2025-26, audit #3): projected rookies' rest-of-season error -1.5 / -5.5 / -2.5 / -0.5% (weeks 1-6 -1.1 / -5.0 / -2.7
+# / -1.8%, week 0 -7.9 / -1.0 / -2.3 / -2.2%), everyone's -0.07 / -0.28 / -0.21 / -0.13%; every weight 0.7-0.8 with
+# 8-15 games wins in all four seasons. The expert line alone (1.0) is worse in 2 of 4: a rookie's projection is no
+# surer than a veteran's, it just has nothing to blend with
+ROOKIE_W, ROOKIE_K = 0.75, 10
 HYPE = 10    # same, for how other managers see players (hot starts count more: 3 games = 23%, 10 games = half)
 FORM_DAYS, FORM_GP = 14, 3  # recent form: value over the last 14 days, for players with 3+ games in them
 # form this far (x League.u) from rest-of-season value: a trend arrow and Hot & cold, at TREND for a window of TREND_GP
@@ -606,7 +614,8 @@ def experts(yahoo, espn, base, keys=(), cur=None):
     to play. Yahoo shows no minutes, so his are ESPN's (else the baseline's) scaled by how much more or less Yahoo has
     him scoring, rebounding and assisting: a role change moves minutes, not rates. A stat a source leaves out is 0:
     ESPN drops zeros (Duren: no 3PM, PTS = 2 FGM + FTM)."""
-    def frame(d):
+    def frame(d):  # a row with no numbers at all is no projection, not a zero line (ESPN's 2023-24 file lists 43 of
+        d = {n: x for n, x in d.items() if any(x.get(c) for c in RAW)}  # that season's rookies that way, D'Angelo Russell now)
         df = pd.DataFrame([{"PLAYER_NAME": n, **x} for n, x in d.items()], columns=["PLAYER_NAME", "MIN"] + RAW)
         df[RAW] = df[RAW].fillna(0)
         df["key"] = [match(n, keys) or norm(n) for n in df.PLAYER_NAME]
@@ -624,7 +633,8 @@ def experts(yahoo, espn, base, keys=(), cur=None):
 
 def prior(base, proj, w=PROJ_W):
     """Pre-season line: baseline() blended with the experts' line (experts(), weighing w). A rookie's baseline is the
-    fringe-roster line ros() starts unprojected rookies from. ros() then leans on this season as games pile up.
+    fringe-roster line ros() starts unprojected rookies from, and his expert line weighs ROOKIE_W (GP 0 marks him for
+    ros()). ros() then leans on this season as games pile up.
     BENCH_MIN (M26): one no expert projects has the fringe line's part of his baseline at BENCH_MIN minutes instead
     (his rates kept)."""
     cols = ["MIN"] + RAW
@@ -636,7 +646,10 @@ def prior(base, proj, w=PROJ_W):
         mins = (out.loc[k, "MIN"] - out.loc[k, "PULL_MIN"] + out.loc[k, "PULL"] * BENCH_MIN).clip(lower=0.1)
         out.loc[k, RAW] = out.loc[k, RAW].mul(mins / out.loc[k, "MIN"].clip(lower=0.1), axis=0)
         out.loc[k, "MIN"] = mins
-    out.loc[proj.index, cols] = (1 - w) * out.loc[proj.index, cols] + w * proj[cols]
+    wt = pd.Series(float(w), index=proj.index)
+    if ROOKIE_W is not None:
+        wt[new.index] = ROOKIE_W
+    out.loc[proj.index, cols] = out.loc[proj.index, cols].mul(1 - wt, axis=0) + proj[cols].mul(wt, axis=0)
     return out
 
 
@@ -645,11 +658,13 @@ def ros(base, cur, k=SHRINK, k_min=MIN_SHRINK):
     GP / (GP + k_min), since a new role or team shows up at once and sticks. Production per minute leans on it slowly:
     this season's minutes played / (those + k games of baseline minutes), so a player stuck at 8 minutes a night barely
     moves his rates. Rookies no expert projects (prior()) start from a fringe-roster line, so 3 hot games don't make
-    them stars.
+    them stars. A rookie (no baseline: prior()'s GP 0, or none at all) has his rates lean on ROOKIE_K games instead of k
+    (k if lower: HYPE).
     Replayed on 2025-26 (each Monday's rest-of-season line vs what players did after, stats scaled equally): 8% less
     error than one GP / (GP + 20) blend in weeks 1-6, 9% less for players whose minutes moved 6+, even late in the
     season. Faster minutes for players on a new team gained nothing."""
     rookies = cur.index.difference(base.index)
+    new = rookies.union(base.index[base.GP.eq(0)])  # no NBA past: unprojected rookies and prior()'s projected ones
     out = pd.concat([base, cur.loc[rookies]])
     fringe = base.nlargest(200, "MIN").tail(60)[["MIN"] + RAW].mean()
     if BENCH_MIN is not None:  # M26: at the fringe line's rates, bench minutes
@@ -658,7 +673,8 @@ def ros(base, cur, k=SHRINK, k_min=MIN_SHRINK):
     both = out.index.intersection(cur.index)
     gp, cm, bm = cur.loc[both, "GP"], cur.loc[both, "MIN"], out.loc[both, "MIN"]
     mins = (gp * cm + k_min * bm) / (gp + k_min)
-    w = (gp * cm / (gp * cm + k * bm)).to_numpy()[:, None]
+    kr = np.where(both.isin(new), min(k, ROOKIE_K if ROOKIE_K is not None else k), k)
+    w = (gp * cm / (gp * cm + kr * bm)).to_numpy()[:, None]
     rate = (w * cur.loc[both, RAW].div(cm.clip(lower=1), axis=0).to_numpy()
             + (1 - w) * out.loc[both, RAW].div(bm, axis=0).to_numpy())
     out.loc[both, RAW] = rate * mins.to_numpy()[:, None]
