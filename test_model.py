@@ -126,9 +126,23 @@ def test_all():
     mv = lg2.movers()
     assert "Player 159" in [p["name"] for p in mv["buy_low"]] and [p["name"] for p in mv["pickups"]] == ["Hot FA"]
     assert lg2.player("player 139")["trend"] == "up"
-    assert all(p["team"] not in (lg2.me, "FA") and p["gap"] <= -model.TREND and p["edge"] <= -15
+    assert all(p["team"] not in (lg2.me, "FA") and p["gap"] <= -model.trend_cut(p["form_gp"]) and p["edge"] <= -15
                for p in mv["buy_low"])
-    assert all(p["team"] == "FA" and p["gap"] >= model.TREND and p["gain"] >= model.MOVE * lg2.s for p in mv["pickups"])
+    assert all(p["team"] == "FA" and p["gap"] >= model.trend_cut(p["form_gp"]) and p["gain"] >= model.MOVE * lg2.s
+               for p in mv["pickups"])
+    # M8: the cutoff shrinks with games in the window, TREND at TREND_GP and x sqrt(TREND_GP / games) (one standard
+    # deviation of a 14-day gap at each count): a gap between the 7-game and 3-game cutoffs gets an arrow over 7
+    # games, none over 3
+    assert np.isclose(model.trend_cut(model.TREND_GP), model.TREND) and model.trend_cut(3) > model.trend_cut(7)
+    gaps = (lg2.value(frame="form") - lg2.value(lg2.form_gp.index)).abs()
+    mid = gaps[gaps < 0.01].index[0]  # a player in form as usual, then 3.0 hotter in one category
+    z0, gp0 = lg2.zform.loc[mid].copy(), lg2.form_gp[mid]
+    lg2.zform.loc[mid, lg2.cats[0]] += 3.0
+    lg2.form_gp[mid] = 7
+    assert lg2.player(mid)["trend"] == "up"
+    lg2.form_gp[mid] = 3
+    assert "trend" not in lg2.player(mid)
+    lg2.zform.loc[mid], lg2.form_gp[mid] = z0, gp0
     # ... unless he's out for over a tenth of the games left (Oct 30: Champagnie, out till Feb 25, was listed)
     days = [str(model.date(2026, 10, 26) + model.timedelta(3 * i)) for i in range(55)]
     hurt = lambda back: model.League(snap2, base2, cur2, today=model.date(2026, 10, 26), sched={"XXX": days},

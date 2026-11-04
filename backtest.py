@@ -8,6 +8,7 @@ python backtest.py minor [2025-26]: the same with 15-25 minute sitters handing o
 hands out (M25, measured Nov 4, not shipped: stats worse, the cap no change).
 python backtest.py bench: rest-of-season error by BENCH_MIN, the minutes players no expert projects are pulled toward,
 2022-23 to 2025-26 (fits BENCH_MIN, M26).
+python backtest.py trend: a 14-day form window's gap from rest of season by games in it (fits TREND, TREND_GP: M8).
 python backtest.py gameday: how often players listed probable / questionable / doubtful for a game played it (fits
 GAMEDAY), from the archived ESPN feeds and this season's box scores.
 python backtest.py ahead: from every day of the week, how often a player who played his team's last game plays each of
@@ -37,7 +38,7 @@ import pandas as pd
 import model
 
 ARGS = [a for a in sys.argv[1:]
-        if a not in ("replay", "teammates", "onoff", "minor", "bench", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead")]
+        if a not in ("replay", "teammates", "onoff", "minor", "bench", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
@@ -286,6 +287,48 @@ def bench(seasons=("2022-23", "2023-24", "2024-25", "2025-26"), grid=(None, 6, 8
                   f"{e['none'].mean():.4f} ({100 * (e['none'].mean() / e0['none'].mean() - 1):+.2f}%), minutes bias "
                   f"wks1-6 {e['bias'][1:7].mean():+.2f} season {e['bias'].mean():+.2f}")
     model.BENCH_MIN = old
+
+
+def trend(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
+    """M8: how far a FORM_DAYS window's value runs from rest of season by the games it holds. Each Monday from week 3 to
+    4 weeks from the end, the TEAMS x ROSTER best on that Monday's rest-of-season line (ros() on prior(), as League)
+    with FORM_GP+ games in the last FORM_DAYS: gap = form value - rest-of-season value (zscores() against the same pool,
+    as League.zform), and the next FORM_DAYS' gap. By games in the window: the gap's spread (sd, and its fit
+    sd^2 = a + b / games), the share past TREND, and how much of the gap the next window keeps (slope)."""
+    rows = []
+    for season in seasons:
+        prev, prev2 = (f"{int(season[:4]) - n}-{int(season[2:4]) - n + 1:02d}" for n in (1, 2))
+        g, base = logs(season), model.baseline(model.fetch(prev), model.fetch(prev2))
+        pre = model.prior(base, model.experts({}, model.espn(season), base, base.index.union(g.key.unique())))
+        cols, n = ["MIN"] + model.RAW, TEAMS * ROSTER
+        for w in range(3, int(g.week.max()) - 3):
+            mon = monday(g, w)
+            line = model.ros(pre, model.recent(g[g.GAME_DATE < mon], mon)).dropna(subset=["MIN"])
+            zr = model.zscores(line, n).sum(axis=1)
+            top = zr.nlargest(n).index
+            win = lambda a, b: g[(g.GAME_DATE >= a) & (g.GAME_DATE < b)]
+            now = win(mon - pd.Timedelta(days=model.FORM_DAYS), mon)
+            nxt = win(mon, mon + pd.Timedelta(days=model.FORM_DAYS))
+            f, f2 = (x.groupby("key")[cols].mean().assign(GP=x.groupby("key").size()) for x in (now, nxt))
+            f, f2 = f[f.GP >= model.FORM_GP], f2[f2.GP >= model.FORM_GP]
+            gap = (model.zscores(f, n, line).sum(axis=1) - zr).reindex(top).dropna()
+            gap2 = (model.zscores(f2, n, line).sum(axis=1) - zr).reindex(gap.index)
+            rows.append(pd.DataFrame({"season": season, "week": w, "gp": f.GP.reindex(gap.index), "gap": gap, "next": gap2}))
+    d = pd.concat(rows)
+    d["gp"] = d.gp.clip(upper=8)
+    def tab(x):
+        nx = x.dropna(subset=["next"])
+        return pd.Series({"n": len(x), "sd": x.gap.std(), "past TREND": (x.gap.abs() >= model.TREND).mean(),
+                          "keeps": np.polyfit(nx.gap, nx.next, 1)[0] if len(nx) > 2 else np.nan})
+    t = d.groupby("gp").apply(tab)
+    a, b = np.linalg.lstsq(np.c_[np.ones(len(t)), 1 / t.index.to_numpy(float)], t.sd.to_numpy() ** 2, rcond=None)[0]
+    t["fit sd"] = np.sqrt(a + b / t.index.to_numpy(float))
+    print(f"\n== form gap by games in the last {model.FORM_DAYS} days, {', '.join(seasons)} (8 = 8+) ==")
+    print(t.round(3).to_string())
+    print(f"sd^2 = {a:.2f} + {b:.2f} / games; by season (sd at 3 / 5 / 7 games):")
+    for s_, x in d.groupby("season"):
+        print(" ", s_, [round(float(x[x.gp == k].gap.std()), 2) for k in (3, 5, 7)])
+    return d
 
 
 def mondays():
@@ -787,6 +830,8 @@ if __name__ == "__main__":
         ahead()
     elif "rates" in sys.argv:
         ratesplit()
+    elif "trend" in sys.argv:
+        trend()
     elif "bench" in sys.argv:
         bench()
     elif "minor" in sys.argv:

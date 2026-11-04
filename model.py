@@ -70,9 +70,13 @@ BENCH_MIN = 12
 PROJ_W = 0.6  # expert projections' weight in the pre-season line (prior()); fitted by python backtest.py replay
 HYPE = 10    # same, for how other managers see players (hot starts count more: 3 games = 23%, 10 games = half)
 FORM_DAYS, FORM_GP = 14, 3  # recent form: value over the last 14 days, for players with 3+ games in them
-# form this far (x League.u) from rest-of-season value: a trend arrow and Hot & cold. About one standard deviation of
-# a 14-day window's gap among 2025-26 regulars mid-season (2.9-3.2 on Dec 15 and Feb 15): a third of them get one
-TREND = 3.0
+# form this far (x League.u) from rest-of-season value: a trend arrow and Hot & cold, at TREND for a window of TREND_GP
+# games and x sqrt(TREND_GP / games) for others (trend_cut(), M8): one standard deviation of a 14-day window's gap among
+# the 156 best each Monday, 2022-23 to 2025-26 (python backtest.py trend, Nov 4: 4.1 at 3 games, 2.4 at 7, sd x
+# sqrt(games) 6.3-7.2, 6.5 pooled, 6.7 in 2025-26), so a third get one whatever the window holds (30-37%; a flat 3.0
+# gave 49% of 3-game windows and 22% of 7-game ones). The gap doesn't carry into the next 14 days (slope -0.07 to
+# +0.02): an arrow says what happened, not what will
+TREND, TREND_GP = 2.5, 7
 OUT = {"O", "INJ", "IL", "IL+", "NA", "SUSP"}  # Yahoo statuses that mean "not playing now"
 # ESPN notes for a rest day ("George will be rested Monday", "Robinson (rest) ...", not "the rest of Sunday's game"): he
 # sits one game, so he's tagged REST, not O, and isn't treated as injured (Martin, Nov 2: George and Black sat the second
@@ -565,6 +569,12 @@ def baseline(last, older):
                        TEAM_ABBREVIATION=last.TEAM_ABBREVIATION.combine_first(older.TEAM_ABBREVIATION).reindex(keys),
                        GP=pd.concat([last.GP, older.GP], axis=1).max(axis=1).reindex(keys), PULL=pull,
                        PULL_MIN=pull * fringe[0])
+
+
+def trend_cut(games):
+    """How far form must run from rest-of-season value for a trend arrow / Hot & cold (M8): TREND at TREND_GP games in
+    the window, scaled by sqrt(TREND_GP / games) (Series work)."""
+    return TREND * np.sqrt(TREND_GP / games)
 
 
 def fresh_plays(rate, j):
@@ -1446,13 +1456,13 @@ class League:
                 "z": {c: round(float(self.z.at[k, c]), 2) for c in self.cats}}
 
     def _form(self, k, punt=()):
-        """His value over the last FORM_DAYS (form, form_gp games) and trend: up / down when it's TREND off his
-        rest-of-season value. Nothing with under FORM_GP games in the window."""
+        """His value over the last FORM_DAYS (form, form_gp games) and trend: up / down when it's trend_cut() off his
+        rest-of-season value (fewer games, a bigger gap: M8). Nothing with under FORM_GP games in the window."""
         if k not in self.form_gp.index:
             return {}
         f, v = (float(self.value([k], punt, fr).iloc[0]) for fr in ("form", "ros"))
         return {"form": round(f, 2), "form_gp": int(self.form_gp[k]),
-                **({"trend": "up" if f > v else "down"} if abs(f - v) >= TREND * self.u else {})}
+                **({"trend": "up" if f > v else "down"} if abs(f - v) >= trend_cut(self.form_gp[k]) * self.u else {})}
 
     @functools.cached_property
     def lifted(self):
@@ -3145,7 +3155,7 @@ class League:
 
     def movers(self, punt=(), limit=10):
         """Hot and cold runs worth acting on. gap = value on your build over the last FORM_DAYS (this season without
-        box scores) minus rest of season, past TREND. edge = Hot & cold's price (League.hot_market: Yahoo's current
+        box scores) minus rest of season, past trend_cut() for his games in it (M8). edge = Hot & cold's price (League.hot_market: Yahoo's current
         rank counts more than in trades, Nov 2) against his worth to you (his rank on your build, effective(), on the
         same curve), in % as priced(); past fair's 15% either way.
         Sell high: your players running hot that the market prices above their worth to you. Buy low: players on
@@ -3156,7 +3166,8 @@ class League:
         healthy player), back for 90%+ of the games left: the gap alone listed Mo Bamba, below the waiver level."""
         form = self.value(punt=punt, frame="form")
         gap = form - self.value(form.index, punt)
-        hot, cold = gap[gap >= TREND * self.u], gap[gap <= -TREND * self.u]
+        need = trend_cut(self.form_gp.reindex(gap.index)) * self.u  # fewer games in the window, a bigger gap (M8)
+        hot, cold = gap[gap >= need], gap[gap <= -need]
         mk, cut = self.hot_market, TIERS["fair"][3]  # not the trade market (HOT_CHASE)
         mine = mk.index.isin(list(self.here)) | mk.index.isin(list(self.meta))  # ranked as the market is
         eff = self.effective(punt)
