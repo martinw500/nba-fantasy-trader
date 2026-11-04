@@ -245,10 +245,12 @@ def replay(weights=(0, 0.25, 0.5, 0.6, 0.75, 1)):
 
 
 def recency(seasons=("2022-23", "2023-24", "2024-25", "2025-26"),
-            grid=((6, None), (3, None), (6, 45), (2, 45), (3, 30), (3, 45), (3, 60), (4, 45))):
+            grid=((6, None), (3, None), (6, 45), (2, 45), (3, 30), (3, 45), (3, 60), (4, 45), (5, 45))):
     """replay() from week 1 at each minutes shrink (k_min) and recency half-life (days; None: every game alike), each
     season on its own ESPN preseason projection: error vs the old line (k_min 6, every game alike), weeks 1-6 and
-    season. Fitted MIN_SHRINK 3 and RECENT 45 on all four (Oct 30)."""
+    season. Fitted MIN_SHRINK 3 and RECENT 45 on all four (Oct 30). Rerun Nov 4 (after M26, A2): 4-6 now edge 3 here
+    (season -0.04 to -0.32% at 4), but the weekly matchup backtest (python backtest.py [season]) is worse at 4 and 6 in
+    three of four seasons, so both stay."""
     for season in seasons:
         prev, prev2 = (f"{int(season[:4]) - n}-{int(season[2:4]) - n + 1:02d}" for n in (1, 2))
         g, base = logs(season), model.baseline(model.fetch(prev), model.fetch(prev2))

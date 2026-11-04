@@ -56,10 +56,14 @@ RAW = ["FGM", "FGA", "FTM", "FTA"] + COUNTING
 POINTS = {"PTS": 1, "REB": 1.2, "AST": 1.5, "STL": 3, "BLK": 3, "TOV": -1}  # Yahoo default
 SHRINK = 20  # production per minute: games of baseline minutes that count as much as this season's minutes played
 MIN_SHRINK = 3  # minutes per game: games of baseline that count as much as this season's (a new role shows at once)
-RECENT = 45  # days: this season's games weigh 0.5^(days ago / RECENT) in its per-game line (recent()). With MIN_SHRINK
-             # 3 (was 6, every game alike): rest-of-season error -2.0% in weeks 1-6 and over the season, minutes -2.7%,
-             # better in each of 2022-23 to 2025-26 (python backtest.py recency, Oct 30). A 7-day half-life is +5.5%:
-             # streaks don't last. Slower minutes for established players' early dips gained nothing
+RECENT = 45  # days: this season's games weigh 0.5^(days ago / RECENT) in its per-game line (recent()). Fitted with
+             # MIN_SHRINK 3 on 2022-23 to 2025-26 (python backtest.py recency, Oct 30). Rerun Nov 4 after M26 and A2
+             # (rookies): against the old line (MIN_SHRINK 6, every game alike) weeks 1-6 +1.3 / -0.8 / +0.1 / -0.2%,
+             # season -0.4 / -1.4 / -0.3 / -1.3% (was -2.0% everywhere). MIN_SHRINK 4 was 0.04-0.32% better over the
+             # season in all four, but the weekly matchups (python backtest.py [season], what win % runs on) were worse
+             # at 4 and 6 in three of four seasons (category log loss 0.5135 / 0.5128 / 0.5208 / 0.5141 at 3, real
+             # schedule), so both stay; 30-60 days within 0.3%. A 7-day half-life is +5.5%: streaks don't last.
+             # Slower minutes for established players' early dips gained nothing
 OLDER_W, REGRESS = 0.5, 25  # baseline: a game two seasons ago counts half; 25 games of a fringe line pull small samples in
 # M26: a player no expert projects (deep bench, two-way, undrafted) is pulled toward BENCH_MIN minutes at the fringe
 # line's rates, not the fringe line's ~26 minutes (prior(); ros() for a rookie with no line); None = off. Fitted Nov 4

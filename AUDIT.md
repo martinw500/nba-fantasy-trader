@@ -6,7 +6,7 @@
 - **Not valid:** #4: M8's `python backtest.py trend` already measured it (a 14-day form gap carries −0.07 to +0.02 into the next 14 days), so a recent-form line for This week would be worse. #22's "`backtest.py ahead` produced an empty log": it runs (re-run Nov 3, numbers as in ROADMAP M27).
 - **Unproven, not on the list:** #11 (a hypothesis, no measurement).
 - **Answered:** #8's bracket question: the snapshot says "Reseeding: yes", as the sim does.
-- **Found while checking #22:** `python backtest.py recency` after M26 gives weeks 1–6 +1.3 / −0.6 / 0.0 / −0.3% (2022-23 to 2025-26), not −2.0%: `MIN_SHRINK` / `RECENT` need a rerun (ROADMAP "Nov 4 check").
+- **Found while checking #22:** `python backtest.py recency` after M26 gives weeks 1–6 +1.3 / −0.6 / 0.0 / −0.3% (2022-23 to 2025-26), not −2.0%: `MIN_SHRINK` / `RECENT` need a rerun (ROADMAP "Nov 4 check"). **Done Nov 4 (ROADMAP A3):** rerun after A1/A2, both kept (4 games edged 3 on rest-of-season lines by 0.2% but the weekly matchup odds were worse in three of four seasons); the comments carry the new numbers.
 
 Deep check of player values, team strength, this week, trades, data, backtests, and the app. No code was changed. `python test_model.py` passes. There is no `data/notes.md` (no open AI GM notes).
 
