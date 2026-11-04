@@ -1323,6 +1323,26 @@ def test_all():
     po = model.League({**sn, "records": {"Me": {"w": 27, "l": 0, "t": 0}, "Them": {"w": 0, "l": 27, "t": 0}}}, base, cur,
                       today=model.date(2026, 11, 1)).playoffs["teams"]
     assert po["Me"]["playoffs"] == 1 and po["Me"]["w"] == 27 and 27 < po["Me"]["proj"][0] < 31.5
+    # M2: each later week from the real NBA schedule. Both make it (2 seats), so the playoff week (week 4) decides the
+    # title: Me's players (AAA) with 4 games in it and Them's (BBB) with 1 win it more often than the other way round,
+    # though the regular weeks are alike (3 games each). Without a schedule both are an average week
+    gd = lambda i, n: [day(7 * i + j) for j in range(n)]
+    two = {**sn, "settings": {**sn["settings"], "playoff_teams": 2},
+           "teams": {t: [{**x, "nba": "AAA" if t == "Me" else "BBB"} for x in sn["teams"][t]] for t in ("Me", "Them")}}
+    two["free_agents"] = [f for f in sn["free_agents"] if f["name"] not in {x["name"] for ts in two["teams"].values() for x in ts}]
+    title = lambda me, them: model.League(two, base, cur, today=model.date(2026, 11, 1), sched={
+        "AAA": [d for i in range(4) for d in gd(i, 3)] + gd(4, me),
+        "BBB": [d for i in range(4) for d in gd(i, 3)] + gd(4, them)}).playoffs["teams"]["Me"]["title"]
+    assert title(4, 1) > title(1, 4) + 0.2
+    # ... and a player out with an ESPN date counts only from it: back on the week's 2nd day, 2 of AAA's 3 games at his
+    # rate, the rest half-covered at the waiver level
+    out = model.League(two, base, cur, today=model.date(2026, 11, 1), sched={"AAA": gd(2, 3), "BBB": gd(2, 3)},
+                       inj={"Player 100": {"status": "O", "note": "", "return": day(15)}})
+    wk2, bk2, _ = out._sched_week(day(14), day(20))
+    i = out._ix["player 100"]
+    assert np.isclose(bk2[i], 2 / 3) and out._sched_week(day(14), day(20))[1] is bk2  # cached
+    assert bk2[out._ix["player 104"]] == 1 and np.allclose(wk2[i], 2 * out.rate["player 100"] * out.p.loc["player 100", model.RAW].to_numpy(float)
+                                                          + (3 - 2 * out.rate["player 100"]) * model.FILL * out._fill_line)
     # the live week: its totals so far count (Me 900 PTS up by Tuesday), only once its dates match the snapshot's
     live = {"matchup": {"opponent": "Them", "week_start": "2026-11-02", "week_end": "2026-11-08"},
             "matchups": [{"teams": ["Me", "Them"], "totals": {"Me": {"PTS": 900}, "Them": {"PTS": 100}}}]}

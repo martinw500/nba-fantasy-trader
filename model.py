@@ -152,7 +152,8 @@ USAGE_STATS = ["FGM", "FGA", "FTM", "FTA", "PTS", "AST", "TOV"]  # rebounds, ste
 # playoffs): WEEK_SD matches a week's spread, SEASON_SD the rest of the season's from each Monday (0.37-0.39 in weeks
 # 0-1, 0.31-0.36 after), and both give the best playoff log loss (0.351, naive 0.441). A team's strength also drifts
 # (its edge in weeks 0-4 carries 0.57 into weeks 5-9, 0.32 into the playoff weeks), but a weekly drift term gained
-# nothing. Its rosters never change, so real leagues swing a bit more.
+# nothing. Its rosters never change, so real leagues swing a bit more. Rechecked with the real schedule (M2, Nov 4):
+# 0.35 / 0.6 still on the diagonal (log loss 0.3444, title 0.2631); 0.4 / 0.65 0.3430 / 0.2614, too close to move
 SEASON_SD, WEEK_SD, SIMS = 0.35, 0.6, 4000
 
 # Trade market: what managers pay for a player, from his market rank (League.market): 100 x MARKET^(rank - 1).
@@ -964,6 +965,7 @@ class League:
         self.snap, self.teams_n, self.roster_n = snap, s.get("teams", 12), s.get("roster", 13)
         self.slots = s.get("slots") or []  # starting slots by position (yahoo.py reads them); none = any players start
         self.lineup = len(self.slots) or s.get("starters", 10)  # players whose games count each day
+        self._weeks = {}  # _sched_week() cache: (start, end) -> a schedule week's arrays (M2)
         self._lineups = {}  # _lineup() cache: players with a game -> starters; _subs(): (them, chances) -> starts
         self.mode = s.get("mode", "9cat")
         self.scoring = s.get("scoring", "categories")  # Yahoo's H2H default; "one_win" = only the matchup counts
@@ -1109,6 +1111,7 @@ class League:
         self.games_week = pd.Series({k: len(self.game_days(k, self.week_end)) for k in self.p.index}, dtype=float)
         # expected weekly contribution: games played at his line, missed games partly covered at waiver level
         fill = self.p.loc[self._waiver_level(self.value()), RAW].mean()
+        self._fill_line = fill.to_numpy()  # a missed game's half-covered waiver line (_sched_week(), M2)
         # what a missed game is worth in value units: the half-covered waiver line (zero point for effective())
         f = pd.DataFrame([FILL * fill], index=["_fill"]).assign(MIN=0.0)
         self.zfill = {"ros": zscores(pd.concat([line, f]), pool).loc["_fill", self.cats],
@@ -1589,15 +1592,45 @@ class League:
                       key=lambda x: x["date"], reverse=True)
 
     # --- matchup model (9-cat) -----------------------------------------------
-    def vec(self, keys, il=None, team=None):
+    def vec(self, keys, il=None, team=None, wk=None):
         """Weekly totals: each active player's week, plus what the ones in `il` (default: parked here) add when they
         return (_return()): into an open active spot first (_open()), then in place of the weakest. Until then another
         team's (`team`, not yours) open spot holds a waiver-level week (self.level); yours holds nothing, so Waivers says
-        to fill it."""
+        to fill it. wk: one schedule week's (week, back, from-return) arrays instead of the average week's
+        (_sched_week(), M2)."""
         il = self._parked if il is None else set(il)
         on, off = [k for k in keys if k not in il], [k for k in keys if k in il]
         S = np.r_[self._ids(on), self._open(team, self.roster_n - len(on))].astype(int)
-        return self._wk[S].sum(0) + self._return(S, self._ids(off))
+        return (self._wk if wk is None else wk[0])[S].sum(0) + self._return(S, self._ids(off), wk=wk)
+
+    def _sched_week(self, start, end):
+        """One week of the season schedule as vec()'s arrays (M2), from each player's NBA games from start through end
+        (self.sched): his line x games from his return (an ESPN date after today) x his rate, the rest half-covered at
+        the waiver level, as `week` does over an average week; parked players' healthy weeks from their return, and the
+        share of the week's games that is (_return()'s back); open spots the waiver level's week x days / 7. A player
+        with no NBA team in the schedule keeps his average week x days / 7. Cached per week (copies share it: nothing
+        here reads rosters). -> (week, back share, from-return week)"""
+        if (hit := self._weeks.get((start, end))) is not None:
+            return hit
+        days = (date.fromisoformat(end) - date.fromisoformat(start)).days + 1
+        rate, line = self.rate.reindex(self.p.index).fillna(1.0).to_numpy(), self.p[RAW].to_numpy(float)
+        cal = {t: np.array(sorted(ds)) for t, ds in self.sched.items() if ds}
+        n = lambda t, a, b: max(int(np.searchsorted(cal[t], b, "right") - np.searchsorted(cal[t], a)), 0) if t in cal else np.nan
+        team = {t: n(t, start, end) for t in cal}
+        g = np.array([team.get(self.nba.get(k), np.nan) for k in self.p.index], float)
+        a = g.copy()
+        for k, i in self.inj.items():  # from his return date only
+            if (i.get("return") or "") > self.today and k in self._ix and self.nba.get(k) in cal:
+                a[self._ix[k]] = n(self.nba[k], max(start, i["return"]), end)
+        no = np.isnan(g)
+        played = (a * rate)[:, None]
+        wk = played * line + (np.nan_to_num(g)[:, None] - played) * FILL * self._fill_line
+        cr = a[:, None] * (rate[:, None] * line + (1 - rate[:, None]) * FILL * self._fill_line)
+        bk = np.where(g > 0, a / np.where(g > 0, g, 1), 0.0)
+        wk[no], cr[no], bk[no] = self.week.to_numpy()[no] * days / 7, self.week_il.to_numpy()[no] * days / 7, self.back.to_numpy()[no]
+        self._weeks[start, end] = out = (np.vstack([wk, np.zeros(len(RAW)), self.level * days / 7, np.zeros(len(RAW))]),
+                                         np.r_[bk, 0.0, 0.0, 0.0], np.vstack([cr, np.zeros((3, len(RAW)))]))
+        return out
 
     def _open(self, team, n):
         """n open active spots as _return() ids: another team's (holds a waiver-level week) or yours (nothing)."""
@@ -1607,17 +1640,18 @@ class League:
         """Players' rows in _return()'s arrays (anyone unknown, or None: nobody)."""
         return np.array([self._ix.get(k, len(self._ix)) for k in keys], dtype=int)
 
-    def _return(self, S, Q, n=None):
+    def _return(self, S, Q, n=None, wk=None):
         """What players parked in IL slots add, back from injury: each takes the spot of the weakest active player left
         (effective value) from his return (`back`), the best one first, while he beats him (else he's the one cut).
         S / Q: active and parked players (_ids), padded with nobody, any leading dims; n: at most that many parked.
-        -> weekly totals per leading index. ponytail: punt-free values pick who goes, and the best one back pushes
-        out the weakest, whoever returns first"""
+        -> weekly totals per leading index. wk: a schedule week's arrays (vec()). ponytail: punt-free values pick who
+        goes, and the best one back pushes out the weakest, whoever returns first"""
         n = min(S.shape[-1], Q.shape[-1], n if n is not None else Q.shape[-1])
         S = np.take_along_axis(S, np.argsort(self._ev[S], -1)[..., :n], -1)
         Q = np.take_along_axis(Q, np.argsort(-self._hv[Q], -1)[..., :n], -1)
         on = np.cumprod(self._hv[Q] > self._ev[S], -1).astype(bool)[..., None]
-        return (on * (self._cr[Q] - self._bk[Q][..., None] * self._wk[S])).sum(-2)
+        W, B, C = (self._wk, self._bk, self._cr) if wk is None else wk
+        return (on * (C[Q] - B[Q][..., None] * W[S])).sum(-2)
 
     @property
     def _parked(self):
@@ -1795,6 +1829,10 @@ class League:
         done = round(max(r(t, "w") + r(t, "l") + r(t, "t") for t in teams) / n)
         days = lambda w: ((date.fromisoformat(w["end"]) - date.fromisoformat(w["start"])).days + 1) / 7
         V = np.stack([self.vecs[t] for t in teams])
+        # each later week from the real NBA schedule (M2): players' games that week, from their return dates; without
+        # a schedule, the average week x its days
+        week_v = lambda w: (np.stack([self.vec(self.rosters[t], team=t, wk=self._sched_week(w["start"], w["end"]))
+                                      for t in teams]) if self.sched else days(w) * V)
         live = self._so_far()
         left = []
         for w in weeks[done:]:
@@ -1805,9 +1843,10 @@ class League:
                 rest = np.stack([self.week_vec(*self._week_side(t)) for t in teams])
                 left.append((I, J, *cat_probs(rest[I], rest[J], self.cats, so_far[I], so_far[J], ties=True)))
             else:
-                left.append((I, J, *cat_probs(days(w) * V[I], days(w) * V[J], self.cats, ties=True)))
+                Vw = week_v(w)
+                left.append((I, J, *cat_probs(Vw[I], Vw[J], self.cats, ties=True)))
         post = [w for w in self.snap["schedule"] if not w.get("matchups") and w["start"] > weeks[-1]["end"]]
-        bracket = [cat_probs(days(w) * V[:, None], days(w) * V[None], self.cats, ties=True) for w in post]
+        bracket = [cat_probs((Vw := week_v(w))[:, None], Vw[None], self.cats, ties=True) for w in post]
         seats = min(self.snap["settings"].get("playoff_teams", 6), len(teams))  # 6: Yahoo's default for 12 teams
         made, champ, final = season_sim([r(t, "w") + r(t, "t") / 2 for t in teams], left,
                                          bracket or [cat_probs(V[:, None], V[None], self.cats, ties=True)], seats)

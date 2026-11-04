@@ -16,7 +16,8 @@ his games left that week (checks fresh_plays(): This week's chance for his next 
 python backtest.py news: how often a player who's playing is newly ruled out mid-week, and for how many of the week's
 games (fits HAZARD, ONE_GAME: the add kept for late news, M17).
 python backtest.py availability: each Monday's games-played guess vs the real share, 2024-25 and 2025-26 (fits AVAIL_*).
-python backtest.py playoffs [2025-26]: each Monday's playoff and title odds vs what happened (fits SEASON_SD, WEEK_SD).
+python backtest.py playoffs [2025-26]: each Monday's playoff and title odds vs what happened, with every later week an
+average one and then from the real schedule (M2, scheduled()) (fits SEASON_SD, WEEK_SD).
 python backtest.py recency: replay's error by minutes shrink and recent games' weight, 2022-23 to 2025-26 (fits
 MIN_SHRINK, RECENT).
 
@@ -140,11 +141,13 @@ def guess(out, monday, rng):
             for k, r in out.items()}
 
 
-def team_weeks(games="fixed", leagues=LEAGUES):
+def team_weeks(games="fixed", leagues=LEAGUES, info=None):
     """Each week w: (w, every simulated team's expected totals, the model's view that Monday, and its real totals).
     Teams are league-major (league l's are l * TEAMS + 0..11). Regulars out that Monday (sat()) sit until a noisy
     return (guess()), as League does with ESPN's dates: this week's games from then on (schedule, like This week), or
-    the share of his team's remaining games after it (fixed, like League.avail)."""
+    the share of his team's remaining games after it (fixed, like League.avail). info: a list that gets each Monday's
+    {w, M: availability x per-game line per player, team, back: {player: return}, R: rosters, days: each NBA team's
+    game dates, week1} (playoffs()' schedule mode, M2)."""
     g, base, pre, keys, weeks, actual, team_games, first_team = season_setup()
     idx = {k: i for i, k in enumerate(keys)}
     line0, _ = projections(g, base, pre, keys, 0)
@@ -163,7 +166,11 @@ def team_weeks(games="fixed", leagues=LEAGUES):
         else:  # the real schedule: games the player's team played that week
             n = np.array([team_games.get((t, w), 0) for t in team], float)
         monday = week1 + pd.Timedelta(weeks=w)
-        for k, back in guess(sat(g, line, team, w), monday, rng).items():
+        backs = guess(sat(g, line, team, w), monday, rng)
+        if info is not None:
+            info.append({"w": w, "M": avail[:, None] * line[model.RAW].to_numpy(), "team": team.to_numpy(), "back": backs,
+                         "R": R, "days": days, "week1": week1, "idx": idx})
+        for k, back in backs.items():
             left = days[team[k]][days[team[k]] >= monday]
             if games != "fixed":
                 left = left[left < monday + pd.Timedelta(weeks=1)]
@@ -769,14 +776,38 @@ def round_robin(n=TEAMS):
     return out
 
 
-def playoffs(grid=((0, 0), (0.35, 0), (0, 0.6), (0.25, 0.6), (0.35, 0.6), (0.45, 0.6)), leagues=60, sims=1000):
+def scheduled(v, spans):
+    """M2: each span's expected totals per simulated team from Monday v's view (team_weeks' info): each player's NBA
+    games in the span's weeks (from his return date, if he's out) x availability x per-game line, as League.playoffs
+    does with the real schedule. -> [(teams, RAW)] per span."""
+    week = lambda w: (v["week1"] + pd.Timedelta(weeks=w), v["week1"] + pd.Timedelta(weeks=w + 1))
+    cnt = {}
+    for t, d in v["days"].items():
+        for w in {w for ws in spans for w in ws}:
+            a, b = week(w)
+            cnt[t, w] = int(((d >= a) & (d < b)).sum())
+    out = []
+    for ws in spans:
+        n = np.array([sum(cnt.get((t, w), 0) for w in ws) for t in v["team"]], float)
+        for k, back in v["back"].items():
+            d = v["days"].get(v["team"][v["idx"][k]], np.array([], "datetime64[ns]"))
+            n[v["idx"][k]] = sum(int(((d >= max(week(w)[0], back)) & (d < week(w)[1])).sum()) for w in ws)
+        out.append(v["R"] @ (n[:, None] * v["M"]))
+    return out
+
+
+def playoffs(grid=((0, 0), (0.35, 0), (0, 0.6), (0.25, 0.6), (0.35, 0.6), (0.45, 0.6)), leagues=60, sims=1000,
+             games="fixed"):
     """Each Monday's playoff and title odds (model.season_sim on the model's view that Monday, with each grid's
     (SEASON_SD, WEEK_SD)) vs what happened: the real box scores played out over a round-robin schedule, top SEATS in, a
     reseeded bracket with ties to the higher seed. Log loss and calibration, pooled over Mondays 0-18 and early (0-5).
-    Fitted SEASON_SD and WEEK_SD on 2025-26 (Oct 28). Title odds are hard to judge: each league has one real champion."""
-    E, A = {}, {}
-    for w, exp, act in team_weeks("fixed", leagues):
+    Fitted SEASON_SD and WEEK_SD on 2025-26 (Oct 28). Title odds are hard to judge: each league has one real champion.
+    games: "fixed" (every later week an average one, GAMES_WEEK games a player x weeks in the span) or "schedule" (each
+    span's real NBA games per player, from his return date: scheduled(), as League.playoffs since M2)."""
+    E, A, info = {}, {}, []
+    for w, exp, act in team_weeks("fixed", leagues, info):
         E[w], A[w] = exp, act
+    view = {v["w"]: v for v in info}
     rr, cats = round_robin(), len(model.CATS)
     real = [sum(A[w] for w in ws) for ws in SPANS]
     out = {x: {"made": [], "title": []} for x in grid}
@@ -793,16 +824,23 @@ def playoffs(grid=((0, 0), (0.35, 0), (0, 0.6), (0.25, 0.6), (0.35, 0.6), (0.45,
         made, champ, _ = model.season_sim(wins[-1], [], [(y, (y == 0.5) * 1.0) for y in post], SEATS, 1, l, (0, 0))
         for s0 in range(REGULAR_WEEKS - 1):
             e = E[SPANS[s0][0]][T]
-            weeks = [(I, J, *model.cat_probs(len(SPANS[s]) * e[I], len(SPANS[s]) * e[J], model.CATS, ties=True))
-                     for s, (I, J) in list(enumerate(sched))[s0:]]
-            bracket = [model.cat_probs(e[:, None], e[None], model.CATS, ties=True)]
+            if games == "schedule":
+                ev = [x[T] for x in scheduled(view[SPANS[s0][0]], SPANS[s0:])]
+                weeks = [(I, J, *model.cat_probs(ev[s - s0][I], ev[s - s0][J], model.CATS, ties=True))
+                         for s, (I, J) in list(enumerate(sched))[s0:]]
+                bracket = [model.cat_probs(x[:, None], x[None], model.CATS, ties=True) for x in ev[REGULAR_WEEKS - s0:]]
+            else:
+                weeks = [(I, J, *model.cat_probs(len(SPANS[s]) * e[I], len(SPANS[s]) * e[J], model.CATS, ties=True))
+                         for s, (I, J) in list(enumerate(sched))[s0:]]
+                bracket = [model.cat_probs(e[:, None], e[None], model.CATS, ties=True)]
             for x in grid:
                 m, c, _ = model.season_sim(wins[s0], weeks, bracket, SEATS, sims, s0, x)
                 out[x]["made"].append(m); out[x]["title"].append(c)
             truth["made"].append(made); truth["title"].append(champ); truth["monday"].append(np.full(TEAMS, s0))
     y = {k: np.concatenate(v) for k, v in truth.items()}
     early = y["monday"] <= 5
-    print(f"\n== {SEASON}: playoff odds, {leagues} leagues x {REGULAR_WEEKS - 1} Mondays, top {SEATS} of {TEAMS} ==")
+    print(f"\n== {SEASON}: playoff odds, {leagues} leagues x {REGULAR_WEEKS - 1} Mondays, top {SEATS} of {TEAMS}, "
+          f"games: {games} ==")
     for x in grid:
         p = {k: np.concatenate(v) for k, v in out[x].items()}
         made, title = score(p["made"], y["made"]), score(p["title"], y["title"])
@@ -821,7 +859,8 @@ if __name__ == "__main__":
     elif "availability" in sys.argv:
         availability()
     elif "playoffs" in sys.argv:
-        playoffs()
+        for games in ("fixed", "schedule"):
+            playoffs(games=games, grid=((0.25, 0.6), (0.35, 0.6), (0.45, 0.6), (0.35, 0.5), (0.35, 0.7)))
     elif "gameday" in sys.argv:
         gameday()
     elif "news" in sys.argv:
