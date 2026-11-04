@@ -7,6 +7,8 @@ import json
 import anthropic
 from anthropic import beta_tool
 
+import model
+
 SYSTEM = """You are a sharp, blunt fantasy basketball GM advising the user on their Yahoo league.
 Use the tools for every number you state. Never invent stats or values.
 Player "value" is a per-game z-score sum (9-cat) or fantasy points per game, rest of season; "avail" is the
@@ -40,10 +42,13 @@ when nothing clears the bar. Use this_week for "how's my matchup" and streaming:
 categories won-lost this week (lead with it in a categories league), "win" the chance to win more categories, stream
 "gain" is this week's win % and "season" what keeping him does to the season-long win %, "day" the best day to make
 the add (the drop plays until then). "adds" = adds used and left this week (4 a week in the user's league): "plan"
-is the best way to spend the ones left, and with none left there are no streams. If it returns no opponent,
+is the best way to spend the ones left (its "news": the last add is kept for a player ruled out later in the week
+unless its move beats "worth"), and with none left there are no streams. If it returns no opponent,
 ask who the user plays. Early in the season, small samples swing hard.
 For trades: say who wins, which categories move, the risk (injury, role, age, sample size), and when asked,
-write a short casual pitch the user can paste to the other manager. Keep answers short and concrete."""
+write a short casual pitch the user can paste to the other manager. Keep answers short and concrete.
+When the user spots something the model gets wrong or misses (a number that looks off, a league rule, a player's
+role) or asks for a feature, write it down with the note tool for Claude Code, the developer, and say it's noted."""
 
 
 class GM:
@@ -115,7 +120,8 @@ class GM:
         @beta_tool
         def sell_high_buy_low() -> str:
             """User's players running hot vs their real value over the last 14 days of box scores (sell high) and good
-            players on other teams running cold (buy low). gap = that window's value minus rest-of-season value."""
+            players on other teams running cold (buy low). gap = that window's value minus rest-of-season value. edge /
+            price_rank: Hot & cold's price, which leans on Yahoo's current rank more than trades' market does."""
             return dump(lg.movers(gm.punt))
 
         @beta_tool
@@ -190,7 +196,18 @@ class GM:
                 return f"Error: unknown team. Teams: {list(lg.rosters)}"
             return dump(lg.team_roster(team, gm.punt))
 
-        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, this_week, compare_players, evaluate_move, schedule_planner, roster]
+        @beta_tool
+        def note(text: str = "") -> str:
+            """Write down something for Claude Code, the developer, to fix: a number the user says is wrong, a rule of
+            the league the model misses, a feature the user asks for. One note per issue, with what the user said, the
+            numbers you saw and where they came from. Never ordinary advice. No text: the notes still open.
+
+            Args:
+                text: the note
+            """
+            return dump(model.note(text))
+
+        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, this_week, compare_players, evaluate_move, schedule_planner, roster, note]
 
     def ask(self, text, punt=()):
         self.punt = list(punt)

@@ -38,7 +38,7 @@
     --line-strong: oklch(36% 0.012 260);
     --text: oklch(93% 0.006 260);
     --muted: oklch(72% 0.012 260);
-    --faint: oklch(60% 0.012 260);
+    --faint: oklch(61.5% 0.012 260);
     --accent: oklch(66% 0.17 268);
     --accent-hover: oklch(72% 0.15 268);
     --accent-soft: oklch(30% 0.06 268);
@@ -165,6 +165,9 @@ th.punted-col, tr.punted-col td:first-child { text-decoration: line-through; }
 .rowbtn:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; }
 .rowbtn[aria-pressed="true"] { color: var(--accent-ink); }
 tr.sel td { background: var(--accent-soft); }
+tr.pick { cursor: pointer; }
+tr.sel .rowbtn { color: var(--accent-ink); }
+td .btn { padding-block: 0; }  /* row actions (Try, Load, Find offers) keep rows as short as the rest */
 tr.has-sub td:not([rowspan]), tr.has-sub:nth-last-child(2) td { border-bottom: 0; }
 tr.sub td { padding-top: 0; }
 .rowbtn[aria-expanded="true"] { color: var(--accent-ink); }
@@ -183,8 +186,12 @@ h3.small { margin: 0; font-weight: 650; }
 details > summary { cursor: pointer; margin-top: 10px; color: var(--muted); }
 
 /* matchups */
-.vs { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0; }
-.vs-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.vs { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 0; }
+.vs-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.vs-row > span:last-child { white-space: nowrap; }
+.gone { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 0; }
+.vs-row .rowbtn { display: flex; align-items: baseline; min-width: 0; }
+.vs-row .dot { flex: none; }
 .vs-row .rec { font-weight: 650; }
 .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 7px; vertical-align: 1px; }
 
@@ -400,7 +407,7 @@ function reveal(sel) {  // scroll to a panel (a selector or the element), clear 
 async function loadState() {
   try {
     S.state = await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")) + (S.healthyFa ? "&healthy_fa=1" : ""));
-    S.error = null;
+    S.error = null; S.loaded = Date.now();
   } catch (e) { S.error = e.message; }
   render();
 }
@@ -429,10 +436,11 @@ const howOld = iso => { const m = (Date.now() - new Date(iso)) / 6e4;  // "5 min
 const ago = iso => howOld(iso) === "now" ? "just now" : howOld(iso) + " ago";
 // a cache's state now (model.freshness(): ok / stale / failed / missing); "stale" also once the app has sat past its window
 const freshness = x => x.status === "ok" && (Date.now() - new Date(x.fetched)) / 36e5 > x.hours ? "stale" : x.status;
+const every = x => (x.hours < 1 ? `${x.hours * 60} minutes` : `${x.hours} hours`) + (x.key === "live" ? ", every 5 while a game is on" : "");
 const freshTitle = x => ({ missing: `${x.label}: couldn't be fetched, so the model runs without ${x.lost}.`,
   failed: `${x.label}: the last refresh failed${x.error ? ` (${x.error})` : ""}, so this is the copy fetched ${stop(when(x.fetched))}`,
-  stale: `${x.label}: fetched ${when(x.fetched)}, past its ${x.hours}-hour refresh. Press Refresh to update it.`,
-  ok: `${x.label}: fetched ${stop(when(x.fetched))} Refreshes every ${x.hours} hours.` })[freshness(x)];
+  stale: `${x.label}: fetched ${when(x.fetched)}, past its refresh (every ${every(x)}). Press Refresh to update it.`,
+  ok: `${x.label}: fetched ${stop(when(x.fetched))} Refreshes every ${every(x)}.` })[freshness(x)];
 const oddsColor = v => v > 0.6 ? "var(--pos)" : v < 0.35 ? "var(--neg)" : "var(--faint)";
 const tone = v => v > 0.05 ? "pos" : v < -0.05 ? "neg" : "";
 // with a punt on, trade, waiver and Compare scoring count the punted categories as lost (Q13); My team's header and
@@ -448,7 +456,10 @@ const punted = c => S.punt.includes(c);
 const LABEL = { FG3M: "3PM", TOV: "TO" };
 const lab = c => LABEL[c] || c;
 const mdy = d => new Date(d + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
-const statusTag = p => p.status || p.injury ? `<span class="tag ${OUT.has(p.status) ? "out" : ""}"${p.injury ? ` title="${esc(p.injury)}"` : ""}>${esc(p.status || "News")}${p.return && p.return >= new Date().toISOString().slice(0, 10) ? ` · back ${mdy(p.return)}` : ""}</span>` : "";
+// a game-day listing (probable / questionable / doubtful for one game) leads the tag: "Q Wed", counted at how often
+// players so listed play that game
+const listed = l => `${l.as[0].toUpperCase()} ${new Date(l.day + "T12:00").toLocaleDateString("en-US", { weekday: "short" })}`;
+const statusTag = p => p.status || p.injury || p.listed ? `<span class="tag ${OUT.has(p.status) && !p.listed ? "out" : ""}"${p.injury ? ` title="${esc((p.listed ? `Listed as ${p.listed.as} for ${mdy(p.listed.day)}: players listed that way played ${p.listed.plays}% of the time, so that game counts at ${p.listed.plays}%. ` : "") + p.injury)}"` : ""}>${p.listed ? listed(p.listed) : esc(p.status || "News")}${!p.listed && p.return && p.return >= new Date().toISOString().slice(0, 10) ? ` · back ${mdy(p.return)}` : ""}</span>` : "";
 const gpNote = p => p.gp < 3 ? ` title="Only ${p.gp} games this season"` : "";
 // teammates' injuries: the minutes and shots he picks up while they sit, counted in his lines for those games only.
 // Tables tag a lift of a minute or more (most are smaller, spread over a whole rotation) with how long the biggest one
@@ -456,7 +467,10 @@ const gpNote = p => p.gp < 3 ? ` title="Only ${p.gp} games this season"` : "";
 const TERM = { short: "short-term", medium: "medium-term", long: "long-term" };
 const liftMin = p => (p.lift || []).reduce((s, l) => s + l.MIN, 0);
 const liftWhen = l => `${esc(l.by)} is out (back ${mdy(l.return)}, ${l.games} game${l.games === 1 ? "" : "s"}, ${TERM[l.term]})`;
-const liftTag = p => liftMin(p) >= 1 ? `<span class="tag" title="${p.lift.map(l => `+${l.MIN.toFixed(1)} min${l.PTS >= 0.1 ? `, +${l.PTS.toFixed(1)} pts` : ""} a game while ${liftWhen(l)}`).join("; ")}. Counted in his lines for those games">+${liftMin(p).toFixed(1)} min ${TERM[p.lift.reduce((a, b) => b.MIN > a.MIN ? b : a).term]}</span>` : "";
+// what he really did this season with and without that teammate (the evidence the model's split leans on)
+const nGames = n => `${n} game${n === 1 ? "" : "s"}`;
+const liftSeen = l => l.without ? ` This season without him: ${l.without.MIN.toFixed(1)} min, ${l.without.PTS.toFixed(1)} pts in ${nGames(l.without.games)}; with him: ${l.with.MIN.toFixed(1)} min, ${l.with.PTS.toFixed(1)} pts in ${nGames(l.with.games)}.` : "";
+const liftTag = p => liftMin(p) >= 1 ? `<span class="tag" title="${p.lift.map(l => `+${l.MIN.toFixed(1)} min${l.PTS >= 0.1 ? `, +${l.PTS.toFixed(1)} pts` : ""} a game while ${liftWhen(l)}.${liftSeen(l)}`).join(" ")} Counted in his lines for those games">+${liftMin(p).toFixed(1)} min ${TERM[p.lift.reduce((a, b) => b.MIN > a.MIN ? b : a).term]}</span>` : "";
 // recent form: his value over the last 14 days (this season without box scores). The model arrows it when it's far
 // (about one 14-day standard deviation) from his rest-of-season value
 const formWin = () => S.state.movers?.window || "the last 14 days";
@@ -465,8 +479,12 @@ const trendTag = p => p.trend ? `<svg class="i trend ${p.trend} ${p.trend === "u
 // trade market (Yahoo ranks): a player's value + rank (* = Yahoo hasn't ranked him, the model's rank), a deal's gap
 const mktCell = p => `${Math.round(p.mkt)} <span class="muted small"${p.mkt_model ? ` title="Yahoo hasn't ranked him: the model's own rank"` : ""}>#${p.mkt_rank}${p.mkt_model ? "*" : ""}</span>`;
 const mktTone = d => Math.abs(d) < 5 ? "" : tone(d);
-const mktDeal = m => `<span class="muted small">${Math.round(m.give)} → ${Math.round(m.get)}</span> <span class="${mktTone(m.diff_pct)}">${(m.diff_pct > 0 ? "+" : "") + Math.round(m.diff_pct)}%</span>`;
-const MKT_TIP = "Market value you send → get (100 = the market's top player, from Yahoo's preseason and current ranks), roster spots included. Players traded together count as a package: the best in full, each next one at 70% of the one before, so consolidating costs extra. % = what you gain on market, as a share of the bigger side";
+const mktPair = m => `<span class="muted small">${Math.round(m.give)} → ${Math.round(m.get)}</span> <span class="${mktTone(m.diff_pct)}">${(m.diff_pct > 0 ? "+" : "") + Math.round(m.diff_pct)}%</span>`;
+// a deal's Market column is the plain sums, its Package column what Will they say yes reads (PACKAGE). Offers saved
+// before Nov 2 only have the package
+const mktSum = m => m.sum ? mktPair(m.sum) : `<span class="muted">—</span>`;
+const MKT_TIP = "Market value you send → get, each player added up (100 = the market's top player, from Yahoo's preseason and current ranks), roster spots included. % = what you gain, as a share of the bigger side";
+const PKG_TIP = "The same deal with players traded together counted as a package: the best in full, the next at 70%, the third at 49%, since managers pay for the best player in a deal. The side sending more players shrinks most. Will they say yes reads this one: the more you gain on it, the less likely a yes";
 
 let TBL = 0;  // player tables drawn so far in this render: S.card.t says which one holds the open card
 function playerTable(players, { extra = [], empty = "No players.", dim = [] } = {}) {  // dim: grey these columns too (a build's punt); an extra's cls replaces the numeric "n" (text columns)
@@ -526,7 +544,7 @@ function playerCard() {
       <div class="toolbar">${act}<button class="btn" data-act="cmp-add" data-name="${esc(d.name)}" title="${inCmp ? "Open Compare" : "Add him to Compare (2 to 4 players side by side)"}">${inCmp ? "Open compare" : "Compare"}</button><button class="btn ghost" data-act="card" data-name="${esc(C.name)}" data-t="${C.t}">Close</button></div></div>
     ${d.injury ? `<div class="small">${esc(d.injury)}${d.return ? ` <span class="muted">Expected back ${mdy(d.return)}.</span>` : ""}</div>` : ""}
     ${d.lift ? `<div class="small">${d.lift.map(l => `While ${liftWhen(l)}: ${[["MIN", "min"], ...cats.filter(c => l[c] != null).map(c => [c, lab(c)])]
-      .filter(([c]) => c === "MIN" || Math.abs(l[c]) >= 0.2).map(([c, n]) => `<span class="${punted(c) ? "punted-col" : ""}">${l[c] > 0 ? "+" : ""}${l[c].toFixed(1)} ${n}</span>`).join(", ")} a game.`).join(" ")}
+      .filter(([c]) => c === "MIN" || Math.abs(l[c]) >= 0.2).map(([c, n]) => `<span class="${punted(c) ? "punted-col" : ""}">${l[c] > 0 ? "+" : ""}${l[c].toFixed(1)} ${n}</span>`).join(", ")} a game.${liftSeen(l)}`).join(" ")}
       <span class="muted">His lines count it for those games only.</span></div>` : ""}
     <div class="tw"><table><thead><tr><th>Per game</th><th class="n">GP</th><th class="n">MIN</th>${cats.map(c => `<th class="n ${punted(c) ? "punted-col" : ""}">${lab(c)}</th>`).join("")}</tr></thead>
       <tbody>${lines}</tbody></table></div>
@@ -589,10 +607,14 @@ function viewTeam() {
   const outlook = prof ? `Projected ${ord(prof.rank)} of ${n} · wins ${pct(prof.win)} of ${oneWin() ? "weekly matchups" : "categories"} · ${po ? `${chance(po.playoffs)} to make the playoffs · ` : ""}` : "";
   return `<div class="head"><div><h1>${esc(st.me)}</h1><p class="sub">${outlook}${st.roster.length} players${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}</p></div></div>
     ${strip}${todo}
-    <div class="panel"><div class="panel-h"><div><h2>Roster</h2><p>Category cells are z-scores vs a typical rostered player. Green helps you, red hurts.</p></div></div>${playerTable(st.roster)}</div>
+    <div class="panel"><div class="panel-h"><div><h2>Roster</h2><p>Category cells are z-scores vs a typical rostered player. Green helps you, red hurts.</p></div></div>${playerTable(st.roster)}${ilPlan(st.il_plan)}</div>
     ${newsPanel()}
     ${prof ? strategyPanel() : ""}${vs}`;
 }
+
+// who to cut once the players in your IL slots are back: the best set of players to keep on your build, every way tried
+// (il_plan), and what cutting the lowest-rated instead costs
+const ilPlan = d => d ? `<div class="panel-b small" style="border-top:1px solid var(--line)">When ${and(d.back.map(x => `<b>${esc(x.name)}</b>${x.return ? ` (back ${mdy(x.return)})` : ""}`))} ${d.back.length > 1 ? "are" : "is"} back, cut ${and(d.cut.map(n => `<b>${esc(n)}</b>`))}.${d.gain >= 0.1 ? ` <span class="muted">Every combination tried on your build. Cutting ${and(d.rule.filter(n => !d.cut.includes(n)).map(esc))} instead (lowest-rated) costs ${d.gain.toFixed(1)} win %.</span>` : ""}</div>` : "";
 
 // ---------- news on your players and their NBA teammates (rotation), loaded with My team ----------
 function newsPanel() {
@@ -639,15 +661,15 @@ function strategyPanel() {
   const steps = b.steps.map((s, j) => {
     const prev = j ? b.steps[j - 1].win : d.win;
     const after = (span = "") => `<td class="n val"${span}>${p1(s.win)}</td><td class="n ${tone(s.win - prev)}"${span}>${delta(s.win - prev, "win%")}</td>`;
-    if (!s.trade) return `<tr><td class="muted">Waivers</td><td colspan="6" class="names">${s.free.length ? "Add " + freeList(s.free) : `<span class="muted">No waiver move clears the bar</span>`}</td>${after()}<td></td></tr>`;
+    if (!s.trade) return `<tr><td class="muted">Waivers</td><td colspan="7" class="names">${s.free.length ? "Add " + freeList(s.free) : `<span class="muted">No waiver move clears the bar</span>`}</td>${after()}<td></td></tr>`;
     // its waiver moves (open spots, extra players, the adds it opens up) go on a line below the deal
     const t = s.trade, span = s.add.length || s.drop.length ? ` rowspan="2"` : "";
     const wire = [...(s.add.length ? [`add ${and(s.add.map(esc))}`] : []), ...(s.drop.length ? [`drop ${and(s.drop.map(esc))}`] : [])].join(", ");
     return `<tr${span ? ` class="has-sub"` : ""}><td class="muted"${span}>Trade ${j}</td><td>${esc(t.team)}</td><td class="names">${t.give.map(esc).join(", ")}</td>
       <td class="names">${t.get.map(esc).join(", ")}</td>
-      <td class="n ${tone(t.their_net)}">${delta(t.their_net, "win%")}</td><td class="n">${mktDeal(t.market)}</td><td>${acceptPill(t.accept)}</td>${after(span)}
+      <td class="n ${tone(t.their_net)}">${delta(t.their_net, "win%")}</td><td class="n">${mktSum(t.market)}</td><td class="n">${mktPair(t.market)}</td><td>${acceptPill(t.accept)}</td>${after(span)}
       <td class="n"${span}><button class="btn ghost" data-act="plan-load" data-i="${sel}" data-j="${j}" ${t.later ? `disabled title="Needs the trades before it first: Trades scores a deal on today's rosters"` : `title="Open it in Trades, scored on today's rosters and your punt"`}>Load</button></td></tr>
-      ${span ? `<tr class="sub"><td colspan="6" class="names small muted">Then on waivers: ${wire}</td></tr>` : ""}`;
+      ${span ? `<tr class="sub"><td colspan="7" class="names small muted">Then on waivers: ${wire}</td></tr>` : ""}`;
   }).join("");
   const cats = and(b.punt.map(lab));
   const fit = b.punt.length ? `<div class="panel-b small muted" ${line}>Star fit: ${b.stars.length
@@ -657,7 +679,7 @@ function strategyPanel() {
     <div class="panel-b"><div class="verdict"><span class="pill ${cls}" style="text-transform:none">${pill}</span><span class="small">${why}</span></div></div>
     <div class="panel-b small" ${line}><b>Plan: ${buildName(b.punt)}</b> <span class="muted">· ${planMoves(b)}, ${p1(d.win)} → ${p1(b.win)}</span></div>
     <div class="tw" ${line}><table><thead><tr>${th("Step", "Waiver adds first, then each trade on the rosters the one before leaves", "")}${th("Partner", "Trade partner", "")}<th>You give</th><th>You get</th>
-      ${th("Them", "Change in their " + WIN().of + " from the trade")}${th("Market", MKT_TIP)}${th("Will they say yes", "Mostly the market, a little how it really helps them", "")}
+      ${th("Them", "Change in their " + WIN().of + " from the trade")}${th("Market", MKT_TIP)}${th("Package", PKG_TIP)}${th("Will they say yes", "Mostly the market, a little how it really helps them", "")}
       ${th(WIN().h + " after", "After this step, on real odds: a punted category still counts when you win it")}${th("Change", "From the step before (today, for the waiver adds)")}<th></th></tr></thead>
       <tbody>${steps}</tbody></table></div>${fit}</div>`;
   // the buy list: players other teams own that the market (Yahoo's ranks, every category) prices below their worth to this build
@@ -708,16 +730,22 @@ function viewWeek() {
   const winOdds = `<div><dt title="Chance you win more categories than you lose, from the score so far and the games left">Win odds</dt><dd>${Math.round(w.win)}%</dd></div>`;
   const score = `<div><dt title="Categories you'd expect to win and lose${oneWin() ? "" : ". Each one counts in the standings"}">Expected score</dt><dd>${w.score[0].toFixed(1)}–${w.score[1].toFixed(1)}</dd></div>`;
   const yg = w.yahoo_games;
-  const games = (w.games ? `<div><dt title="Player-games left this week if your best 10 with a game start each day, players in IL slots excluded">Games left</dt><dd>${w.games.you} <span class="muted small">vs ${w.games.them}</span></dd></div>` : "")
+  const games = (w.games ? `<div><dt title="Player-games left this week if your best 10 with a game start each day, players in IL slots from their return">Games left</dt><dd>${w.games.you} <span class="muted small">vs ${w.games.them}</span></dd></div>` : "")
     + (yg ? `<div><dt title="Yahoo's count, from the lineups as they're set now. Lower than ours when bench players could fill in on light days">Yahoo games left</dt><dd>${yg.you.left} <span class="muted small">vs ${yg.them.left}</span></dd></div>` : "");
+  // today's NBA games (M18): under way and final ones count in the score so far, their players locked
+  const tn = w.tonight, clock = iso => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const tonight = tn && (tn.on || tn.final) ? ` · Tonight: ${[tn.on && `${tn.on} under way`, tn.final && `${tn.final} final`, tn.to_come && `${tn.to_come} to come`].filter(Boolean).join(", ")}${tn.fetched ? ` (scores from ${clock(tn.fetched)})` : ""}` : "";
   const advice = [by("chase").length && `Chase ${by("chase").join(", ")}.`, by("lost").length && `Don't chase ${by("lost").join(", ")}: you're unlikely to catch up.`,
     by("safe").length && `You're ahead in ${by("safe").join(", ")}.`].filter(Boolean).join(" ");
   const when = d => d === w.today ? `<span class="muted">now</span>` : esc(dayName(d));
+  // players back from IL slots this week (M21): they start from their first game, in place of who's cut then
+  const back = (b, who) => b?.in.length ? `${who} ${and(b.in.map(x => `${esc(x.name)} (${esc(dayName(x.day))})`))}${b.cut.length ? ` for ${and(b.cut.map(x => esc(x.name)))}` : ""}` : "";
+  const il = [back(w.back?.you, "yours:"), back(w.back?.them, esc(w.opponent) + "'s:")].filter(Boolean);
   const addOn = { h: `<span title="The best day to make the add: your drop plays his games until then">Add on</span>`,
     v: p => when(p.day) + (p.waiver ? `<span class="tag" title="On waivers: he only counts from the day the claim clears">claim by ${esc(p.waiver)}</span>` : "") };
   const streamCols = [{ h: `<span title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}">This week</span>`, v: p => `<span class="val ${tone(p.gain)}">${delta(p.gain, "win%")}</span>` },
     { h: "Drop", v: p => esc(p.drop) }, { h: `<span title="Change in your season-long ${WIN().of} if you keep him">Season</span>`, v: p => `<span class="${tone(p.season)}">${delta(p.season, "win%")}</span>` }, addOn];
-  return head(`Week ends ${end}${w.live ? "" : " · no live score yet"}${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}`) + `
+  return head(`Week ends ${end}${w.live ? tonight : " · no live score yet"}${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}`) + `
     <div class="panel"><div class="panel-h"><div class="verdict"><span class="pill ${verdict[0]}" style="text-transform:none">${verdict[1]}</span>
       <dl class="side-by">${oneWin() ? winOdds + score : score + winOdds}${games}</dl></div></div>
       <div class="tw"><table><thead><tr><th>Category</th><th class="n" title="${w.live ? "So far → projected final" : "Projected final"}">You</th><th class="n">${esc(w.opponent)}</th>
@@ -725,7 +753,7 @@ function viewWeek() {
       ${cats.map(([c, d]) => `<tr class="${punted(c) ? "punted-col" : ""}"><td class="pname">${lab(c)}</td><td class="n">${side(c, d.you)}</td><td class="n">${side(c, d.them)}</td>
         <td class="n val"><span class="dot" style="background:${oddsColor(d.odds / 100)}"></span>${Math.round(d.odds)}%</td>
         <td><span class="tag ${d.call === "safe" ? "safe" : d.call === "lost" ? "out" : d.call}" title="${CALL_TIP[d.call]}">${CALL[d.call]}</span></td></tr>`).join("")}</tbody></table></div>
-      <div class="panel-b small muted" style="border-top:1px solid var(--line)">${advice} ${yg ? `Games played so far: ${yg.you.played} vs ${yg.them.played}.` : ""} Projected = ${w.live ? "the score so far plus " : ""}each player's games left × his per-game line × his chance of playing. Players in IL slots sit.
+      <div class="panel-b small muted" style="border-top:1px solid var(--line)">${advice} ${yg ? `Games played so far: ${yg.you.played} vs ${yg.them.played}.` : ""} Projected = ${w.live ? "the score so far plus " : ""}each player's games left × his per-game line × his chance of playing. Players in IL slots sit until they're back, then start in place of who's cut${il.length ? `: ${il.join("; ")}` : ""}.${tonight && w.live ? ` Games that have tipped off add their live box scores (nba.com) to the score so far, for whoever your best per-game lineup started, and lock those players: Start / sit leaves them be, and a move that drops one waits for tomorrow.` : ""}
         ${w.live ? "" : "No live score yet, so this assumes nothing has been played, which is right on Monday. A new snapshot adds the real score."}</div></div>
     ${lineupPanel(w)}
     <div class="panel"><div class="panel-h"><div><h2>Streaming adds</h2><p>Free agents who most raise your odds this week, each swapped for whichever of your three cheapest healthy players helps most, on his best day: your drop plays until then. Season shows what keeping him does long-term.</p></div></div>
@@ -768,16 +796,16 @@ function lineupPanel(w) {
 function sitDay(x, w, goal) {
   const by = Object.fromEntries(x.options.map(o => [o.name, o]));
   const rows = [...(x.slots.length ? x.slots : x.start.map(n => ["Start", n])), ...x.sit.map(n => ["BN", n])];
-  const alt = o => o.flip == null ? `<span class="muted">No open slot fits him</span>`
+  const alt = o => o.locked ? `<span class="muted">Locked: his game has started, his stats are in the score</span>` : o.flip == null ? `<span class="muted">No open slot fits him</span>`
     : `<span class="val ${tone(o.flip)}">${delta(o.flip, "win%")}</span> <span class="muted small">${o.start ? `sit him${o.with ? `, start ${esc(o.with)}` : ""}` : `start him${o.with ? ` over ${esc(o.with)}` : ""}`}</span>`;
   const unit = goal.length ? `your ${and(goal.map(lab))} odds` : oneWin() ? "your chance to win this week" : "your share of this week's categories";
   const boost = l => !l ? `<span class="muted">—</span>` : `<span title="+${l.MIN.toFixed(1)} min, +${l.PTS.toFixed(1)} pts this game">+${l.MIN.toFixed(1)} min</span> <span class="muted">while ${and(l.out.map(o => `<span title="Back ${mdy(o.return)}, in ${plural(o.days, "day")}">${esc(o.name)}</span>`))} ${l.out.length > 1 ? "are" : "is"} out (${and([...new Set(l.out.map(o => TERM[o.term]))])})</span>`;
-  return `<div class="panel-b small" style="border-top:1px solid var(--line)"><b>${x.date === w.today ? "Today" : esc(dayName(x.date))}</b>: ${plural(x.start.length + x.sit.length, "player")} with a game, ${x.start.length} start. In your lineup's slot order, so you can set it on Yahoo top to bottom.</div>
+  return `<div class="panel-b small" style="border-top:1px solid var(--line)"><b>${x.date === w.today ? "Today" : esc(dayName(x.date))}</b>: ${plural(x.start.length + x.sit.length, "player")} with a game, ${x.start.length} start${(e => e.length ? `, ${e.join(", ")} empty` : "")(x.slots.filter(([, n]) => !n).map(([sl]) => esc(sl)))}. In your lineup's slot order, so you can set it on Yahoo top to bottom.</div>
     <div class="tw"><table><thead><tr><th>Slot</th><th>Player</th><th class="n" title="Chance he plays this game: how often he suits up, cut by an injury tag if he sat his team's last game. His line counts this share of a game">Plays</th>
       <th title="Teammates out that day whose minutes and shots he takes: counted in his line for the games before they're back">Boost</th>
       <th title="Change in ${unit} if you flip his call, with the best swap for it">If you change it${goal.length ? ` <span class="muted">(${and(goal.map(lab))} odds)</span>` : ""}</th></tr></thead><tbody>
-    ${rows.map(([s, n]) => `<tr><td class="muted">${esc(s)}</td><td class="pname">${esc(n)}${x.bench.includes(n) ? `<span class="tag out" title="A starting spot fits him, but his game costs your odds more than it adds">spot open</span>` : ""}</td>
-      <td class="n ${by[n].plays < 70 ? "neg" : by[n].plays < 85 ? "" : "muted"}">${by[n].plays}%</td><td class="small">${boost(by[n].lift)}</td><td>${alt(by[n])}</td></tr>`).join("")}</tbody></table></div>`;
+    ${rows.map(([s, n]) => !n ? `<tr><td class="muted">${esc(s)}</td><td colspan="4" class="muted">Empty: ${x.bench.length ? "left open, see who sits below" : "nobody with a game this day can play it"}</td></tr>` : `<tr><td class="muted">${esc(s)}</td><td class="pname">${esc(n)}${x.bench.includes(n) ? `<span class="tag out" title="A starting spot fits him, but his game costs your odds more than it adds">spot open</span>` : ""}</td>
+      ${by[n].locked ? `<td class="n muted">—</td>` : `<td class="n ${by[n].plays < 70 ? "neg" : by[n].plays < 85 ? "" : "muted"}">${by[n].plays}%</td>`}<td class="small">${boost(by[n].lift)}</td><td>${alt(by[n])}</td></tr>`).join("")}</tbody></table></div>`;
 }
 // adds left this week (Q11) and the best way to spend them: one line for the last add, else the moves in order
 function streamPlan(w) {
@@ -786,14 +814,19 @@ function streamPlan(w) {
   const tip = A && `Yahoo's count in the snapshot${A.listed != null ? ` (${A.listed})` : ""} or the adds and waiver claims in its transaction log since ${mdy(A.week_start)} (${A.counted}), whichever is higher. Moves made after the snapshot aren't counted.`;
   const left = A ? `<b title="${esc(tip)}">${A.left ? `${A.left} of ${A.max} adds left` : "No adds left"}</b> this week (${A.used} used). ` : "";
   const keep = P && P.keep.length ? ` You end the week with ${and(P.keep.map(esc))}: <span class="${tone(P.season)}">${delta(P.season, "win%")}</span> for the season.` : "";
-  if (!m.length) return A?.left ? `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}</div>` : "";
+  // M17: the last add only goes on a move worth more than keeping it for someone ruled out later in the week
+  const N = P?.news, newsTip = "Players who are playing get ruled out for their next game about 7% of the time, more if they often miss games, and about 4 in 10 of those miss the rest of the week (2022-23 to 2025-26 box scores). This is that chance for each of your games left times what a stream into his games wins then, on average.";
+  const hold = !N ? "" : N.kept
+    ? ` <b title="${esc(newsTip)}">Keep your last add for late news</b>: if one of your players is ruled out later this week, an add then is worth <span class="pos">${delta(N.worth, "win%")}</span> on average, more than ${esc(N.move.add)} for ${esc(N.move.drop)} now (<span class="${tone(N.move.gain)}">${delta(N.move.gain, "win%")}</span>).`
+    : ` <span title="${esc(newsTip)}">That last add beats keeping it for late news (<span class="pos">${delta(N.worth, "win%")}</span> on average).</span>`;
+  if (!m.length) return A?.left ? `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}${hold}</div>` : "";
   if (A && A.left === 1) { const x = m[0];
     return `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}Your last one is best spent ${on(x.day)}: add <b>${esc(x.add)}</b> for ${esc(x.drop)} (<span class="pos">${delta(x.gain, "win%")}</span>${x.games != null ? `, ${plural(x.games, "start")}` : ""}).
-      ${x.day > w.today ? `Hold it until then: ${x.kept ? `${esc(x.drop)} starts ${plural(x.kept, "more game")} first` : "waiting costs nothing"}, and the add is still yours if someone gets hurt.` : ""}${keep}</div>`; }
+      ${x.day > w.today ? `Hold it until then: ${x.kept ? `${esc(x.drop)} starts ${plural(x.kept, "more game")} first` : "waiting costs nothing"}, and the add is still yours if someone gets hurt.` : ""}${hold}${keep}</div>`; }
   return `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}${A ? `The best way to spend ${A.left > 1 ? "them" : "it"}` : "The best streams in a row (no weekly add limit)"}, each on top of the one before. A later one can replace an earlier streamer once his games are used.</div>
     <div class="tw" style="border-bottom:1px solid var(--line)"><table><thead><tr><th>Day</th><th>Add</th><th>Drop</th><th class="n" title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, on top of the moves above">This week</th>${m[0].games != null ? `<th class="n" title="Games he starts for you this week">Starts</th>` : ""}</tr></thead><tbody>
-    ${m.map(x => `<tr><td>${x.day === w.today ? "Today" : esc(dayName(x.day))}</td><td class="pname">${esc(x.add)}</td><td>${esc(x.drop)}</td><td class="n val ${tone(x.gain)}">${delta(x.gain, "win%")}</td>${x.games != null ? `<td class="n">${x.games}</td>` : ""}</tr>`).join("")}</tbody></table></div>
-    <div class="panel-b small muted" style="border-bottom:1px solid var(--line)">Together <span class="pos">${delta(P.gain, "win%")}</span> this week.${keep}</div>`;
+    ${m.map(x => `<tr><td>${x.day === w.today ? "Today" : esc(dayName(x.day))}</td><td class="pname">${esc(x.add)}${x.end ? `<span class="tag" title="Cut after this day, when your player in an IL slot is back">until ${esc(dayName(x.end))}</span>` : ""}</td><td>${esc(x.drop)}</td><td class="n val ${tone(x.gain)}">${delta(x.gain, "win%")}</td>${x.games != null ? `<td class="n">${x.games}</td>` : ""}</tr>`).join("")}</tbody></table></div>
+    <div class="panel-b small muted" style="border-bottom:1px solid var(--line)">Together <span class="pos">${delta(P.gain, "win%")}</span> this week.${hold}${keep}</div>`;
 }
 async function loadWeek(opponent) {
   const W = S.week; W.loading = true;
@@ -892,7 +925,7 @@ function viewLeague() {
   const prof = st.profile;
   const order = prof ? Object.keys(prof.standings) : st.teams;
   const list = `<div class="tw"><table><thead><tr>${prof ? `<th class="n">#</th>` : ""}<th>Team</th>${prof ? `<th class="n" title="${cap(WIN().def)}">${WIN().h}</th><th>Weak spots</th><th class="n" title="${oneWin() ? "Your chance to beat them" : "Share of categories you'd take from them"}">You win</th>` : ""}</tr></thead><tbody>
-    ${order.map(t => `<tr${t === team ? ` style="background:var(--accent-soft)"` : ""}>
+    ${order.map(t => `<tr class="pick${t === team ? " sel" : ""}" data-act="open-team" data-team="${esc(t)}"${t === team ? ` aria-current="true"` : ""}>
       ${prof ? `<td class="n muted">${prof.standings[t].rank}</td>` : ""}
       <td><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button>${t === st.me ? ` <span class="tag">you</span>` : ""}</td>
       ${prof ? `<td class="n val">${pct(prof.standings[t].win)}</td><td class="muted">${prof.builds[t].map(lab).join(", ") || "—"}</td>
@@ -903,19 +936,19 @@ function viewLeague() {
   if ((!d || d.team !== team) && S.league.loading !== team) openTeam(team, false);
   const catTable = prof ? `<div class="panel"><div class="panel-h"><div><h2>Category standings</h2><p>Each team's chance to win the category in a typical week, and its rank. Rows follow projected standings.</p></div></div>
     <div class="tw"><table><thead><tr><th>Team</th>${st.cats.map(c => `<th class="n z ${punted(c) ? "punted-col" : ""}" style="text-align:center">${lab(c)}</th>`).join("")}</tr></thead><tbody>
-    ${order.map(t => `<tr${t === st.me ? ` style="background:var(--accent-soft)"` : ""}><td><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button>${t === st.me ? ` <span class="tag">you</span>` : ""}</td>
+    ${order.map(t => `<tr class="pick" data-act="open-team" data-team="${esc(t)}"${t === st.me ? ` style="background:var(--accent-soft)"` : ""}><td><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button>${t === st.me ? ` <span class="tag">you</span>` : ""}</td>
       ${st.cats.map(c => { const p = prof.cat_odds[t][c]; return `<td class="z ${punted(c) ? "punted-col" : ""}" style="--c:${heat((p - 0.5) * 6)}" title="${esc(t)}: ${pct(p)} to win ${lab(c)}, ${ord(prof.ranks[t][c])} in the league"><span>${pct(p)} <small class="muted">${prof.ranks[t][c]}</small></span></td>`; }).join("")}</tr>`).join("")}
     </tbody></table></div></div>` : "";
   const po = prof?.playoffs, race = po ? Object.entries(po.teams).sort((a, b) => b[1].playoffs - a[1].playoffs || b[1].proj[0] - a[1].proj[0]) : [];
   const raceTable = po ? `<div class="panel"><div class="panel-h"><div><h2>Playoff race</h2><p>Top ${po.seats} of ${race.length} make it. Each team's record plus the ${po.weeks_left} week${po.weeks_left === 1 ? "" : "s"} left, simulated with room for every roster to beat or miss its projection.</p></div></div>
     <div class="tw"><table class="race"><thead><tr><th>Team</th><th class="n" title="Categories won, lost and tied so far: the standings">Record</th><th class="n proj" title="Expected final record after the regular season">Projected</th><th class="n" title="Chance to finish in the top ${po.seats}">Playoffs</th><th class="n" title="Chance to win the title: reseeded each round, the higher seed wins a tie">Title</th></tr></thead><tbody>
-    ${race.map(([t, r], i) => `<tr${t === st.me ? ` style="background:var(--accent-soft)"` : ""}${i === po.seats - 1 && i < race.length - 1 ? ` class="cut"` : ""}><td><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button>${t === st.me ? ` <span class="tag">you</span>` : ""}</td>
+    ${race.map(([t, r], i) => `<tr class="pick${i === po.seats - 1 && i < race.length - 1 ? " cut" : ""}" data-act="open-team" data-team="${esc(t)}"${t === st.me ? ` style="background:var(--accent-soft)"` : ""}><td><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button>${t === st.me ? ` <span class="tag">you</span>` : ""}</td>
       <td class="n muted">${r.w}–${r.l}–${r.t}</td><td class="n proj">${Math.round(r.proj[0])}–${Math.round(r.proj[0] + r.proj[1]) - Math.round(r.proj[0])}</td><td class="n val">${chance(r.playoffs)}</td><td class="n">${chance(r.title)}</td></tr>`).join("")}
     </tbody></table></div></div>` : "";
   return `<div class="head"><div><h1>League</h1><p class="sub">${prof ? `Projected standings from every team's ${WIN().of} against the rest of the league. Weak spots are categories a team wins under 35% of weeks.` :"Every roster, valued on your build."}</p></div></div>
     <div class="grid2" style="grid-template-columns: minmax(300px, 420px) 1fr">
       <div class="panel" style="align-self:start">${list}</div>
-      <div class="panel"><div class="panel-h"><div><h2>${esc(team)}</h2><p>${d && d.team === team && d.build.length ? `Weak in ${d.build.map(lab).join(", ")}` : "&nbsp;"}</p></div>
+      <div class="panel" id="team-panel"><div class="panel-h"><div><h2>${esc(team)}</h2><p>${d && d.team === team ? (d.build.length ? `Weak in ${d.build.map(lab).join(", ")}` : "No weak spots") : "&nbsp;"}</p></div>
         ${team === st.me ? "" : `<button class="btn" data-act="trade-with" data-team="${esc(team)}"><svg class="i"><use href="#i-trade"/></svg>Trade with them</button>`}</div>${roster}</div>
     </div>
     ${raceTable}${catTable}`;
@@ -1009,7 +1042,7 @@ function tradeResultOdds(r) {
       <dl class="side-by">
         <div><dt title="${cap(WIN().def)}">Your ${WIN().of}${asLost()}</dt><dd><span class="${tone(r.net)}">${delta(r.net, "win%")}</span> <span class="muted small">${r.win}% → ${r.win_after}%</span></dd></div>
         <div><dt>${them}</dt><dd><span class="${tone(r.their_net)}">${delta(r.their_net, "win%")}</span> <span class="muted small">${r.their_win}% → ${r.their_win_after}%</span></dd></div>
-        <div><dt title="${MKT_TIP}">Market</dt><dd><span class="${mktTone(r.market.diff_pct)}">${cap(r.market.verdict)}</span> <span class="muted small">give ${Math.round(r.market.give)} · get ${Math.round(r.market.get)}</span></dd></div>
+        ${[["Market", MKT_TIP, r.market.sum || r.market], ["Package", PKG_TIP, r.market]].map(([h, tip, m]) => `<div><dt title="${tip}">${h}</dt><dd><span class="${mktTone(m.diff_pct)}">${cap(m.verdict)}</span> <span class="muted small">give ${Math.round(m.give)} · get ${Math.round(m.get)}</span></dd></div>`).join("")}
         <div><dt>Projected finish</dt><dd>${ord(r.rank)} → ${ord(r.rank_after)}</dd></div>
         ${r.playoffs ? `<div><dt title="Chance to make the playoffs: your record so far plus the rest of the season simulated, both rosters updated">Playoff odds</dt><dd><span class="${tone(r.playoffs.you[1] - r.playoffs.you[0])}">${delta(r.playoffs.you[1] - r.playoffs.you[0], "win%")}</span> <span class="muted small">${r.playoffs.you.map(v => chance(v / 100)).join(" → ")} · them ${r.playoffs.them.map(v => chance(v / 100)).join(" → ")}</span></dd></div>` : ""}
         ${r.title ? `<div><dt title="Chance to win the league: the same simulation through the playoff bracket">Title odds</dt><dd><span class="${tone(r.title.you[1] - r.title.you[0])}">${delta(r.title.you[1] - r.title.you[0], "win%")}</span> <span class="muted small">${r.title.you.map(v => chance(v / 100)).join(" → ")} · them ${r.title.them.map(v => chance(v / 100)).join(" → ")}</span></dd></div>` : ""}
@@ -1097,19 +1130,19 @@ function findPanel() {
 function dealTable(list, src) {
   const s = S[src].sort, F = S.find, goal = list.some(x => "score" in x), acc = list.some(x => x.accept), mk = list.some(x => x.market);
   const u = list[0].unit === "win%" ? WIN().of : "value";
-  const v = (x, k) => k === "accept" ? ACC_RANK[x.accept] : k === "mkt" ? x.market.diff_pct : x[k];
+  const v = (x, k) => k === "accept" ? ACC_RANK[x.accept] : k === "mkt" ? (x.market.sum || x.market).diff_pct : k === "pkg" ? x.market.diff_pct : x[k];
   const rows = list.map((x, i) => [x, i]);
   if (s) rows.sort(([a], [b]) => (v(a, s.k) > v(b, s.k) ? 1 : v(a, s.k) < v(b, s.k) ? -1 : 0) * s.dir);
   const th = (k, h, tip, cls = "n") => `<th class="${cls}" title="${esc(tip)}"${s?.k === k ? ` aria-sort="${s.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="sort" data-sort="${k}" data-src="${src}">${esc(h)}${s?.k === k ? `<svg class="i${s.dir > 0 ? " up" : ""}"><use href="#i-caret"/></svg>` : ""}</button></th>`;
   const head = `<tr>${th("team", "Team", "Trade partner", "")}<th>You give</th><th>You get</th>
     ${goal ? th("score", F.goal === "cats" ? F.cats.map(lab).join(" + ") : "vs " + F.vs, F.goal === "cats" ? "Change in your average odds in these categories" : oneWin() ? "Change in your chance to beat them" : "Change in your share of categories vs them") : ""}
     ${th("net", "You", "Change in your " + u + (lostTip() && u !== "value" ? ". " + lostTip() : ""))}${th("their_net", "Them", "Change in their " + u)}
-    ${mk ? th("mkt", "Market", MKT_TIP) : th("their_view", "Looks to them", "On this season's hot and cold starts, what Yahoo's ranks show them")}
+    ${mk ? th("mkt", "Market", MKT_TIP) + th("pkg", "Package", PKG_TIP) : th("their_view", "Looks to them", "On this season's hot and cold starts, what Yahoo's ranks show them")}
     ${acc ? th("accept", "Will they say yes", "Mostly the market, a little how it really helps them", "") : ""}<th></th></tr>`;
   const body = rows.map(([x, i]) => `<tr><td>${esc(x.team)}</td><td class="names">${x.give.map(esc).join(", ")}</td><td class="names">${x.get.map(esc).join(", ")}</td>
     ${goal ? `<td class="n val ${tone(x.score)}">${delta(x.score, "win%")}</td>` : ""}
     <td class="n ${goal ? "" : "val"} ${tone(x.net)}">${delta(x.net, x.unit)}</td><td class="n ${tone(x.their_net)}">${delta(x.their_net, x.unit)}</td>
-    ${mk ? `<td class="n">${mktDeal(x.market)}</td>` : `<td class="n ${tone(x.their_view)}">${sign(x.their_view)}</td>`}${acc ? `<td>${acceptPill(x.accept)}</td>` : ""}
+    ${mk ? `<td class="n">${mktSum(x.market)}</td><td class="n">${mktPair(x.market)}</td>` : `<td class="n ${tone(x.their_view)}">${sign(x.their_view)}</td>`}${acc ? `<td>${acceptPill(x.accept)}</td>` : ""}
     <td class="n"><button class="btn ghost" data-act="load-deal" data-src="${src}" data-i="${i}">Load</button><button class="btn ghost" data-act="save-deal" data-src="${src}" data-i="${i}" ${isSaved(x) ? "disabled" : ""}>${isSaved(x) ? "Saved" : "Save"}</button></td></tr>`).join("");
   return `<div class="tw deals"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
 }
@@ -1123,25 +1156,29 @@ function improvePanel() {
     <div class="seg" role="group" aria-label="Improve this deal">${[["throw", "Throw-ins"], ["swap", "Swaps"]].map(([k, h]) => `<button data-act="improve" data-kind="${k}" aria-pressed="${I.kind === k}" ${I.busy ? "disabled" : ""}>${h}</button>`).join("")}</div></div>${body}</div>`;
 }
 function savedPanel() {
-  const L = S.saved.list, E = S.saved.evals;
-  if (!L.length) return "";
-  if (!S.saved.loading && L.some(s => !E[dealKey(s)])) loadSaved();
+  const all = S.saved.list, E = S.saved.evals;
+  if (!all.length) return "";
+  if (!S.saved.loading && all.some(s => !E[dealKey(s)])) loadSaved();
+  // deals that can't be made any more (a player moved) get one line under the table, not a column of dashes
+  const L = all.filter(s => !E[dealKey(s)]?.error), stale = all.filter(s => E[dealKey(s)]?.error), at = s => all.indexOf(s);
+  const gone = stale.length ? `<div class="panel-b small" style="padding:10px 16px;${L.length ? "border-top:1px solid var(--line)" : ""}">${stale.map(s =>
+    `<div class="gone"><span><b>${esc(s.team || "Saved trade")}</b> <span class="muted">· give ${s.give.map(esc).join(", ")}, get ${s.get.map(esc).join(", ")}</span> <span class="neg">${esc(E[dealKey(s)].error)}</span></span><button class="btn ghost" data-act="unsave" data-i="${at(s)}">Remove</button></div>`).join("")}</div>` : "";
   const row = (h, f, cls = "") => `<tr class="${cls}"><td>${h}</td>${L.map(s => { const r = E[dealKey(s)];
-    return `<td>${!r ? `<div class="skel" style="margin:3px 0"></div>` : r.error ? (h === "You" ? `<span class="neg small">${esc(r.error)}</span>` : `<span class="muted">—</span>`) : f(r)}</td>`; }).join("")}</tr>`;
+    return `<td>${!r ? `<div class="skel" style="margin:3px 0"></div>` : f(r)}</td>`; }).join("")}</tr>`;
   const names = ks => ks.map(esc).join(", ") || "Nobody";
   return `<div class="panel"><div class="panel-h"><div><h2>Saved trades</h2><p>Scored fresh against today's rosters and your build, so the numbers never go stale. Category rows are the change in your odds of winning each one.</p></div></div>
-    <div class="tw"><table class="compare"><thead><tr><th></th>${L.map(s => `<th>${esc(s.team || "")}</th>`).join("")}</tr></thead><tbody>
+    ${L.length ? `<div class="tw"><table class="compare"><thead><tr><th></th>${L.map(s => `<th>${esc(s.team || "")}</th>`).join("")}</tr></thead><tbody>
       <tr><td>You give</td>${L.map(s => `<td>${names(s.give)}</td>`).join("")}</tr><tr><td>You get</td>${L.map(s => `<td>${names(s.get)}</td>`).join("")}</tr>
       ${row("You", r => `<span class="val ${tone(r.net)}">${delta(r.net, r.unit)}</span>${r.win != null ? ` <span class="muted small">${r.win}% → ${r.win_after}%</span>` : ""}`)}
       ${row("Them", r => `<span class="${tone(r.their_net)}">${delta(r.their_net, r.unit)}</span>`)}
-      ${isPoints() ? row("Looks to them", r => `<span class="${tone(r.their_view)}">${sign(r.their_view)}</span>`) : row("Market", r => mktDeal(r.market))}
+      ${isPoints() ? row("Looks to them", r => `<span class="${tone(r.their_view)}">${sign(r.their_view)}</span>`) : row("Market", r => mktSum(r.market))}${isPoints() ? "" : row("Package", r => mktPair(r.market))}
       ${row("Projected finish", r => r.rank ? `${ord(r.rank)} → ${ord(r.rank_after)}` : "—")}
       ${row("Playoff odds", r => r.playoffs ? r.playoffs.you.map(v => chance(v / 100)).join(" → ") : "—")}
       ${row("Title odds", r => r.title ? r.title.you.map(v => chance(v / 100)).join(" → ") : "—")}
       ${row("Will they say yes", r => r.accept ? acceptPill(r.accept) : "—")}
       ${S.state.cats.map(c => row(lab(c), r => { const d = (r.unit === "win%" ? r.odds : r.cats)[c]; return `<span class="${tone(d)}">${delta(d, r.unit)}</span>`; }, punted(c) ? "punted-col" : "")).join("")}
-      <tr><td></td>${L.map((s, i) => `<td><button class="btn ghost" data-act="load-saved" data-i="${i}">Load</button><button class="btn ghost" data-act="unsave" data-i="${i}">Remove</button></td>`).join("")}</tr>
-    </tbody></table></div></div>`;
+      <tr><td></td>${L.map(s => `<td><button class="btn ghost" data-act="load-saved" data-i="${at(s)}">Load</button><button class="btn ghost" data-act="unsave" data-i="${at(s)}">Remove</button></td>`).join("")}</tr>
+    </tbody></table></div>` : ""}${gone}</div>`;
 }
 function offersPanel() {
   if (!S.offers) { loadOffers(); return ""; }
@@ -1149,10 +1186,10 @@ function offersPanel() {
   if (!L.length) return "";
   const ans = (o, v, h) => `<button data-act="offer-set" data-id="${o.id}" data-v="${v}" aria-pressed="${o.outcome === v}">${h}</button>`;
   return `<div class="panel"><div class="panel-h"><div><h2>Offers sent</h2><p>Every offer you copied, with what the app predicted then. Mark their answer: it's the only real data for tuning “Will they say yes”.</p></div></div>
-    <div class="tw"><table><thead><tr><th>Sent</th><th>Team</th><th>You give</th><th>You get</th><th class="n" title="${MKT_TIP}">Market</th><th title="What the app predicted when you copied it">Predicted</th><th>Their answer</th><th></th></tr></thead><tbody>
+    <div class="tw"><table><thead><tr><th>Sent</th><th>Team</th><th>You give</th><th>You get</th><th class="n" title="${MKT_TIP}">Market</th><th class="n" title="${PKG_TIP}">Package</th><th title="What the app predicted when you copied it">Predicted</th><th>Their answer</th><th></th></tr></thead><tbody>
     ${L.map(o => `<tr><td class="muted">${new Date(o.sent).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</td><td>${esc(o.team || "")}</td>
       <td class="names">${o.give.map(esc).join(", ")}</td><td class="names">${o.get.map(esc).join(", ")}</td>
-      <td class="n">${o.market ? mktDeal(o.market) : "—"}</td><td>${o.accept ? acceptPill(o.accept) : "—"}</td>
+      <td class="n">${o.market ? mktSum(o.market) : "—"}</td><td class="n">${o.market ? mktPair(o.market) : "—"}</td><td>${o.accept ? acceptPill(o.accept) : "—"}</td>
       <td><div class="seg" role="group" aria-label="Their answer">${ans(o, "yes", "Accepted")}${ans(o, "no", "Declined")}</div></td>
       <td class="n"><button class="btn ghost" data-act="offer-del" data-id="${o.id}">Remove</button></td></tr>`).join("")}</tbody></table></div></div>`;
 }
@@ -1244,7 +1281,10 @@ async function improve(kind) {
 async function loadSaved() {
   const E = S.saved.evals;  // replaced on punt change / refresh, so late answers land in the old object
   S.saved.loading = true;
+  const mine = new Set(S.state.roster.map(p => p.name));
   await Promise.all(S.saved.list.filter(s => !E[dealKey(s)]).map(async s => {
+    const gone = s.give.filter(n => !mine.has(n));  // traded or dropped since: no need to ask (it'd answer 400)
+    if (gone.length) return E[dealKey(s)] = { error: `Not on your roster: ${gone.join(", ")}` };
     try { E[dealKey(s)] = await api("/api/trade", { give: s.give, get: s.get, free: S.find.mine, their_free: S.find.theirs }); } catch (e) { E[dealKey(s)] = { error: e.message }; }
   }));
   S.saved.loading = false;
@@ -1282,7 +1322,7 @@ function viewWaivers() {
   // Try: load a move into Try a move (a side left undefined keeps what's there; a null drop is the open spot)
   const tryBtn = (add, drop) => `<button class="btn ghost" data-act="mv-try"${add === undefined ? "" : ` data-add="${esc(add)}"`}${drop === undefined ? "" : ` data-drop="${esc(drop || "")}"`} title="Score ${add === undefined ? "dropping him" : drop === undefined ? "adding him" : "this move"} under Try a move">Try</button>`;
   const moves = w.moves.length ? `<div class="tw"><table><thead><tr><th>Add</th><th>Drop</th><th class="n"${odds && lostTip() ? ` title="${lostTip()}"` : ""}>${odds ? WIN().h : "Gain"}</th><th></th></tr></thead><tbody>
-    ${w.moves.map(m => `<tr><td class="pname">${esc(m.add)}</td><td>${m.drop ? esc(m.drop) : `<span class="muted">Open spot</span>`}</td><td class="n pos val">${delta(m.gain, m.unit)}</td><td class="n">${tryBtn(m.add, m.drop)}</td></tr>`).join("")}</tbody></table></div>`
+    ${w.moves.map(m => `<tr><td class="pname">${esc(m.add)}</td><td>${m.drop ? esc(m.drop) : `<span class="muted">Open spot</span>`}${m.sell ? `<div class="small muted" title="The model would drop ${esc(m.sell)} here, but the market rates him as a trade piece: sell him instead of cutting him">Keeps ${esc(m.sell)}: sell him instead</div>` : ""}</td><td class="n pos val">${delta(m.gain, m.unit)}</td><td class="n">${tryBtn(m.add, m.drop)}</td></tr>`).join("")}</tbody></table></div>`
     : `<div class="empty"><b>No clear upgrades</b>Nobody on waivers beats your weakest healthy player by enough to bother.</div>`;
   const tryCol = { h: "", v: p => tryBtn(p.name) }, dropCol = { h: "", v: p => tryBtn(undefined, p.name) };
   const A = S.state.adds, addsLeft = !A ? "" : A.left ? ` ${A.left} of ${A.max} adds left this week.` : ` You've used all ${A.max} adds this week: these moves wait until ${esc(dayName(A.resets))}.`;
@@ -1378,14 +1418,14 @@ function pickMove(q, exact) {
 function viewMovers() {
   const m = S.state.movers, gap = { h: "Gap", v: p => `<span class="${tone(p.gap)} val">${sign(p.gap)}</span>` };
   const owner = { h: "Team", v: p => esc(p.team) };
-  const price = { h: `<span title="The market's price for him (Mkt) against what he's worth to you: his rank on your build, priced on the same scale">Price</span>`,
-    v: p => `<span class="pos val">${p.edge > 0 ? "+" : "−"}${Math.abs(p.edge).toFixed(0)}%</span>` };
+  const price = { h: `<span title="His price here against what he's worth to you (his rank on your build, on the same scale). The price leans on Yahoo's current rank, which your league goes by, mixed with preseason; # is his rank on it. Trades use the steadier trade price (Mkt)">Price</span>`,
+    v: p => `<span class="pos val">${p.edge > 0 ? "+" : "−"}${Math.abs(p.edge).toFixed(0)}%</span> <span class="muted small">#${p.price_rank}</span>` };
   const added = { h: "If added", v: p => `<span class="${tone(p.gain)} val">${delta(p.gain, m.unit)}</span>` };
   const offers = { h: "", v: p => `<button class="btn ghost" data-act="offers" data-name="${esc(p.name)}" data-team="${esc(p.team)}">${isPoints() ? "Trade for him" : "Find offers"}</button>` };
-  return `<div class="head"><div><h1>Hot &amp; cold</h1><p class="sub">Gap = value on your build over ${esc(m.window)} minus rest-of-season value. ${esc(m.note || "")} A run only makes the list when there's something in it for you.</p></div></div>
-    <div class="panel"><div class="panel-h"><div><h2>Sell high</h2><p>Your players running hot that the market prices at least 15% above what they're worth to you (Price).</p></div></div>
-      ${playerTable(m.sell_high, { extra: [gap, price], empty: "<b>Nobody to sell high</b>None of your hot players is priced above what he's worth to you. Early in the season the market still runs mostly on preseason ranks, so a hot run barely moves it." })}</div>
-    <div class="panel"><div class="panel-h"><div><h2>Buy low</h2><p>Players on other teams running cold, still worth more than the best free agents, that the market prices at least 15% below what they're worth to you (Price).</p></div></div>
+  return `<div class="head"><div><h1>Hot &amp; cold</h1><p class="sub">Gap = value on your build over ${esc(m.window)} minus rest-of-season value. ${esc(m.note || "")} A run only makes the list when there's something in it for you. Prices here lean on Yahoo's current ranks, mixed with preseason, since that's what managers look at; Trades use the steadier trade price, so an offer there can price him lower.</p></div></div>
+    <div class="panel"><div class="panel-h"><div><h2>Sell high</h2><p>Your players running hot that this page's price puts at least 15% above what they're worth to you (Price).</p></div></div>
+      ${playerTable(m.sell_high, { extra: [gap, price], empty: "<b>Nobody to sell high</b>None of your hot players is priced above what he's worth to you." })}</div>
+    <div class="panel"><div class="panel-h"><div><h2>Buy low</h2><p>Players on other teams running cold, still worth more than the best free agents, that this page's price puts at least 15% below what they're worth to you (Price).</p></div></div>
       ${playerTable(m.buy_low, { extra: [owner, gap, price, offers], empty: "<b>Nobody to buy low</b>No cold player is priced well under what he's worth to you." })}</div>
     <div class="panel"><div class="panel-h"><div><h2>Hot pickups</h2><p>Free agents running hot who'd raise your ${WIN().of}, added for the player you'd miss least (as Waivers scores it). Value is what they should do from here.</p></div></div>
       ${playerTable(m.pickups || [], { extra: [gap, added], empty: `<b>No hot pickup would help</b>Free agents running hot are below what your roster already has, by what they should do from here.` })}</div>`;
@@ -1570,8 +1610,9 @@ function render() {
   const demo = S.state.demo && S.view === "team" ? `<div class="notice">This is a demo league drafted from real stats. Connect your Yahoo league with <code>python yahoo.py</code> (see README) to see your real team.</div>` : "";
   const st = S.state, age = st.pulled ? (Date.now() - new Date(st.pulled)) / 864e5 : 0;
   const stale = st.rolled || age > 1 ? `<div class="notice">Your snapshot ${st.rolled ? "is from last week's matchup" : `is ${Math.floor(age)} day${age >= 2 ? "s" : ""} old`} (pulled ${when(st.pulled)}), so the score and recent moves aren't in. Drop a new snapshot in the project folder and press Refresh.</div>` : "";
-  // a cache that failed to refresh or never loaded (news aside: it never moves a number), on every view like the snapshot's
-  const bad = (st.sources || []).filter(x => x.key !== "news" && ["failed", "missing"].includes(x.status));
+  // a cache that failed to refresh or never loaded, on every view like the snapshot's. Not news (it never moves a number)
+  // or live scores (only on game nights: This week says when its scores are from, the sidebar flags them)
+  const bad = (st.sources || []).filter(x => !["news", "live"].includes(x.key) && ["failed", "missing"].includes(x.status));
   const old = bad.filter(x => x.status === "failed"), none = bad.filter(x => x.status === "missing");
   const lower = x => x.label.toLowerCase();
   const offline = bad.length ? `<div class="notice">${old.length ? `Couldn't refresh ${and(old.map(x => `${esc(lower(x))} (using the copy from ${when(x.fetched)})`))}. ` : ""}${none.length ? `No ${and(none.map(x => esc(lower(x))))}, so the numbers leave out ${none.map(x => esc(x.lost)).join("; ")}. ` : ""}Press Refresh to try again.</div>` : "";
@@ -1583,7 +1624,7 @@ function render() {
 function setView(v) { S.view = v; S.card = {}; store.set("view", v); history.replaceState(null, "", "#" + v); render(); window.scrollTo(0, 0); }
 
 document.addEventListener("click", async e => {
-  const t = e.target.closest("button, [data-pick]"); if (!t) return;
+  const t = e.target.closest("button, [data-pick], tr[data-act]"); if (!t) return;
   if (t.dataset.view) return setView(t.dataset.view);
   if (t.dataset.go) return setView(t.dataset.go);
   if (t.dataset.punt) {
@@ -1622,7 +1663,11 @@ document.addEventListener("click", async e => {
   if (act === "cmp-clear") { setCompare([]); history.replaceState(null, "", "#compare"); return render(); }
   if (act === "cmp-retry") { S.compare.error = null; return render(); }
   if (act === "cmp-line") { S.compare.line = t.dataset.line; return render(); }
-  if (act === "open-team") return openTeam(t.dataset.team);
+  if (act === "open-team") {
+    const p = openTeam(t.dataset.team);
+    $("#team-panel")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    return p;
+  }
   if (act === "trade-with") { S.trade.team = t.dataset.team; S.trade.get.clear(); S.trade.result = null; return setView("trades"); }
   if (act === "shop" || act === "offers") {  // Find a buyer (My team) / buy-low rows (Hot & cold)
     const mine = act === "shop", name = [t.dataset.name];
@@ -1746,14 +1791,33 @@ document.addEventListener("keydown", e => {
   if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest("input, textarea, select, [contenteditable]")) { e.preventDefault(); $("#top-player").focus(); }
   if (e.target.id === "chat-in" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chat-form").requestSubmit(); }
 });
+// new numbers in S.state (Refresh, or the server's own injury refetch): drop every view's cached answers
+const fresh = st => { S.state = st; S.league.data = null; S.trade.roster = null; S.find.list = null; S.saved.evals = {}; S.players = null; S.week = {}; S.sched = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names); S.move.result = null; S.loaded = Date.now(); };
 $("#refresh").addEventListener("click", async e => {
   const b = e.currentTarget; b.classList.add("busy"); b.disabled = true;
   try {
-    S.state = await api("/api/refresh", {}); S.league.data = null; S.trade.roster = null; S.find.list = null; S.saved.evals = {}; S.players = null; S.week = {}; S.sched = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names); S.move.result = null;
+    fresh(await api("/api/refresh", {}));
     toast("League refreshed");
   } catch (err) { toast("Refresh failed: " + err.message); }
   b.classList.remove("busy"); b.disabled = false; render();
 });
+// back on the tab after 10+ minutes: the server refetches ESPN's injuries every 30, so pull its numbers again
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible" || !S.state || Date.now() - (S.loaded || 0) < 10 * 60e3) return;
+  try {
+    fresh(await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")) + (S.healthyFa ? "&healthy_fa=1" : "")));
+    render();
+  } catch (e) { /* offline or restarting: keep what's on screen */ }
+});
+// games under way (M18): the server rebuilds on live scores every 5 minutes, so This week follows them while it's in view
+setInterval(async () => {
+  if (document.visibilityState !== "visible" || S.view !== "week" || !S.week.data?.tonight?.on) return;
+  try {
+    const st = await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")) + (S.healthyFa ? "&healthy_fa=1" : ""));
+    const w = await api("/api/week", {});
+    fresh(st); S.week = { data: w }; render();
+  } catch (e) { /* offline or restarting: keep what's on screen */ }
+}, 5 * 60e3);
 render();
 if (S.view === "compare" && link.has("players")) setCompare(link.get("players").split(",").filter(Boolean));
 loadState().then(() => {

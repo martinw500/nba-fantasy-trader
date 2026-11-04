@@ -156,8 +156,11 @@ def parse_text(text):
                 # games under way at pull time are in the totals, so the rest of the week starts the next day.
                 # "No Oct 27 games had started ... earlier games were final" / "No games were in progress ... All
                 # Oct 31 games were final": today still counts (a "final" only counts for today's games, Nov 1).
+                # "A game was in progress ... totals are frozen at the pre-game baseline" (Nov 2): today isn't in the
+                # totals, so it still counts.
                 # ponytail: 7 PM ET is the usual first tip-off; weekend matinees start earlier
-                started = not re.search(r"\bno\b[^.;]*\b(started|in progress|under ?way)", line, re.I) and (
+                started = not re.search(r"\bpre-?game\b", line, re.I) and not re.search(
+                    r"\bno\b[^.;]*\b(started|in progress|under ?way)", line, re.I) and (
                     bool(re.search(r"\b(started|in progress|under ?way)\b", line, re.I))
                     or bool(re.search(rf"\b{at:%b} {at.day}\b[^.;]*\bfinal", line))
                     or at >= datetime.combine(at.date(), time(19), ET))

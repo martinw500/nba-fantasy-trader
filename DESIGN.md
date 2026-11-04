@@ -27,7 +27,7 @@ colors:
   line-strong-dark: "oklch(36% 0.012 260)"
   text-dark: "oklch(93% 0.006 260)"
   muted-dark: "oklch(72% 0.012 260)"
-  faint-dark: "oklch(60% 0.012 260)"
+  faint-dark: "oklch(61.5% 0.012 260)"
   accent-dark: "oklch(66% 0.17 268)"
   accent-hover-dark: "oklch(72% 0.15 268)"
   accent-soft-dark: "oklch(30% 0.06 268)"
@@ -210,7 +210,7 @@ Sidebar buttons with an 18px stroke icon (custom SVG, 1.7 stroke). The current i
 Category cells are centered numbers on an inset 4px-rounded fill (`--c`) whose strength follows |z|. Punted columns get `opacity .3` + grayscale and a struck-through header. "Now" is green or red against "Value" to show hot or cold starts. A small green up or red down arrow (`i-arrow`) before "Value" marks a player whose last 14 days run far from it.
 
 ### Selectable rows
-A table row that picks what another panel shows (Strategy's Every build) gets an `accent-soft` fill and `accent-ink` name. A step row's follow-up line (a trade's waiver moves) sits under it in a muted sub-row, with the step's result cells spanning both.
+A table row that picks what another panel shows (Strategy's Every build, League's standings) is clickable as a whole (`tr.pick`, pointer cursor; its name stays a button for the keyboard) and, when picked, gets an `accent-soft` fill and `accent-ink` name (`tr.sel`). Row actions inside tables (Try, Load, Find offers) are ghost buttons with no vertical padding, so a row with one is as short as one without. A step row's follow-up line (a trade's waiver moves) sits under it in a muted sub-row, with the step's result cells spanning both.
 
 ### Player card from the top bar
 The top bar's player search opens the card under the player's row when a player table on screen holds him. Otherwise the same card sits in its own panel at the top of the view (`.card-panel`, first in the column, under the top bar), closed by its Close button or a tab change. Never a modal or a popover.

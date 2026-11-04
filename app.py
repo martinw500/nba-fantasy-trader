@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import traceback
 import uuid
 import webbrowser
@@ -37,9 +38,15 @@ the app keeps data/league.json current, so skip step 1; the only command you can
 there's no humanizer skill here, so write pitches short and casual yourself; and the chat shows replies as plain text,
 so no markdown (no tables, headers, bold or backticks). Keep answers short.
 """
-WEB = """You can also search the web (WebSearch) for news model.py can't see: injuries, minutes and role changes, trades.
-Search when the question needs fresh news, name the site you got it from, and still take every number from model.py.
+WEB = """You can also search the web (WebSearch) and read a page (WebFetch) for news model.py can't see: injuries,
+minutes and role changes, trades. On game days, who's expected to play is on RotoWire's lineups page
+(https://www.rotowire.com/basketball/nba-lineups.php) and the NBA's official injury report (official.nba.com, "NBA Injury
+Report"). Look when the question needs fresh news or tonight's lineups, name the site, and still take every number from
+model.py; when a page contradicts the model (a player ruled out it still counts), say so and write a note.
 """
+# ESPN's injury feed is refetched this often while the app runs (live()): game-day statuses change by the hour. On game
+# nights live() also wakes a minute after each tip-off and every model.LIVE_POLL minutes while a game is on (M18)
+LIVE_MIN = 30
 # the Python the AI GM runs model.py with: SKILL.md says .venv/bin/python (Mac), Windows venvs keep it in Scripts
 PY = next((p for p in (".venv/bin/python", ".venv/Scripts/python.exe") if (ROOT / p).exists()), "python")
 # the chat settings the AI GM tab can pick (the first of each is the default). Fable needs usage credits on a Pro plan.
@@ -55,7 +62,7 @@ def claude_chat(message, punt, session=None, model=None, effort=None, web=True, 
     flag = f'add --punt "{",".join(punt)}" to every model.py command' if punt else "no --punt"
     if opts:
         flag += f", and the app's Waivers / Trades settings: add {' '.join(opts)} to waivers, trade, search and strategy"
-    web = ["WebSearch"] if web else []
+    web = ["WebSearch", "WebFetch"] if web else []
     cmd = [shutil.which("claude"), "-p", "--output-format", "json", "--safe-mode",
            "--model", model if model in MODELS else MODELS[0], "--effort", effort if effort in EFFORTS else EFFORTS[0],
            "--system-prompt", (GM_PROMPT + (WEB if web else "") + skill).replace(".venv/bin/python", PY),
@@ -192,7 +199,7 @@ def api(path, q, body):
             newest = max(ROOT.glob("*snapshot*.txt"), key=lambda p: (day(p), p.stat().st_mtime),
                          default=lg.snap["text"])
             yahoo.from_text(newest, lg.me)
-            refetch = ("injuries", "stats")  # offline, the old copies stay (the sidebar says so)
+            refetch = ("injuries", "stats", "live")  # offline, the old copies stay (the sidebar says so)
         else:
             yahoo.demo()
         lg, gm = model.load(refetch=refetch), None
@@ -227,6 +234,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-cache")  # a restarted app's new page, not the browser's old copy
         self.end_headers()
         self.wfile.write(raw)
 
@@ -256,7 +264,32 @@ class Handler(BaseHTTPRequestHandler):
 API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/compare", "/api/move", "/api/schedule", "/api/news",
        "/api/players", "/api/me", "/api/week", "/api/lineup", "/api/refresh", "/api/chat", "/api/chats", "/api/offers"}
 
+def live():
+    """Every LIVE_MIN minutes, ESPN's injury feed again (and any other cache past its window: news, box scores...),
+    the league rebuilt on the same snapshot (Martin, Nov 3: "it should be constantly updating"). On game nights (M18)
+    also a minute after each tip-off, so its players lock on time, and every model.LIVE_POLL minutes while a game is on
+    (model.next_poll()): load() refetches the live scores then (their own window), and this season's stats and box
+    scores once a game goes final; the injury feed stays on its LIVE_MIN clock. Requests already running finish on the
+    old copy; offline, the old copies stay and the sidebar says so. Rosters and the snapshot's totals still come from
+    the snapshot (Yahoo's API is closed)."""
+    global lg, gm
+    feed = time.time()  # the injury feed's last forced refetch
+    while True:
+        time.sleep(model.next_poll(lg.live, LIVE_MIN * 60))
+        due = time.time() - feed >= LIVE_MIN * 60 - 60
+        try:
+            new = model.load(refetch=("injuries",) if due else ())
+        except Exception:
+            traceback.print_exc()
+            continue
+        feed = time.time() if due else feed
+        lg = new
+        if gm is not None:  # the API-key chat keeps its conversation on the new numbers
+            gm.lg, gm.tools = new, gm._tools()
+
+
 if __name__ == "__main__":
+    threading.Thread(target=live, daemon=True).start()
     # ponytail: localhost-only, single user; no auth because it never listens on the network
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print(f"Running on http://localhost:{PORT}  ({lg.snap.get('name')}, you = {lg.me})")

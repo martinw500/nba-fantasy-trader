@@ -1,6 +1,13 @@
 """Backtest the 9-cat matchup model on a real NBA season, no Yahoo needed:  python backtest.py [2025-26]
 python backtest.py replay [2025-26]: rest-of-season error by expert-projection weight instead (fits PROJ_W).
 python backtest.py teammates [2025-26]: next week's error with and without teammates' injuries (fits SHARE, USAGE).
+python backtest.py onoff [2025-26]: the same by how far each team's own split counts (fits ONOFF_K).
+python backtest.py rates [2025-26]: next week's and rest of season's stats error with a per-minute on/off split by stat
+group (M22, measured Nov 3, not shipped: no better).
+python backtest.py gameday: how often players listed probable / questionable / doubtful for a game played it (fits
+GAMEDAY), from the archived ESPN feeds and this season's box scores.
+python backtest.py news: how often a player who's playing is newly ruled out mid-week, and for how many of the week's
+games (fits HAZARD, ONE_GAME: the add kept for late news, M17).
 python backtest.py availability: each Monday's games-played guess vs the real share, 2024-25 and 2025-26 (fits AVAIL_*).
 python backtest.py playoffs [2025-26]: each Monday's playoff and title odds vs what happened (fits SEASON_SD, WEEK_SD).
 python backtest.py recency: replay's error by minutes shrink and recent games' weight, 2022-23 to 2025-26 (fits
@@ -15,6 +22,7 @@ Prints calibration (predicted vs actual win rates), log loss and Brier score for
 """
 import itertools
 import random
+import re
 import sys
 
 import numpy as np
@@ -22,7 +30,8 @@ import pandas as pd
 
 import model
 
-ARGS = [a for a in sys.argv[1:] if a not in ("replay", "teammates", "availability", "playoffs", "recency")]
+ARGS = [a for a in sys.argv[1:]
+        if a not in ("replay", "teammates", "onoff", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
@@ -252,7 +261,7 @@ def mondays():
         team = past.sort_values("GAME_DATE").groupby("key")[T].last().combine_first(first)
         regs, out = line.index[line.MIN >= model.REGULAR], sat(g, line, team, w)
         yield {"pre": pre, "past": past, "cur": cur, "line": line, "team": team, "regs": regs, "out": out, "nxt": nxt,
-               "expert": ex.index, "monday": monday(g, w)}
+               "rest": g[g.week >= w], "expert": ex.index, "monday": monday(g, w)}
 
 
 def lifted(m, deboost=True):
@@ -262,13 +271,15 @@ def lifted(m, deboost=True):
     over a player's games in each stretch."""
     pool = m["line"][m["line"].index.isin(m["cur"].index) | m["line"].index.isin(m["regs"])]
     line = m["line"]
+    adj = model.onoff(m["past"], m["team"], pool, m["regs"], m["monday"]) if model.ONOFF_K else None
     if deboost:
-        h = model.had(m["past"], m["team"], pool, m["regs"], m["monday"]).reindex(m["cur"].index).dropna()
+        h = model.had(m["past"], m["team"], pool, m["regs"], m["monday"], adj).reindex(m["cur"].index).dropna()
         full = m["cur"].copy()
         full.loc[h.index, h.columns] = (full.loc[h.index, h.columns] - h).clip(lower=0)
         line = model.ros(m["pre"], full)
     spans = model.stretches(m["out"], m["team"], m["nxt"].GAME_DATE.min())
-    lift = model.priced_in(model.lifts(pool, m["team"], [s for _, _, s in spans]), m["cur"].index, m["cur"].GP, m["expert"])
+    lift = model.priced_in(model.lifts(pool, m["team"], [s for _, _, s in spans], adj), m["cur"].index, m["cur"].GP,
+                           m["expert"])
     games = m["nxt"][["key", "GAME_DATE"]].merge(lift.index.to_frame(index=False), on="key")
     games["on"] = [spans[s][0] <= d < spans[s][1] for s, d in zip(games["set"], games.GAME_DATE)]
     share = games.groupby(["key", "by", "set"]).on.mean()
@@ -276,20 +287,24 @@ def lifted(m, deboost=True):
     return line, boost[boost.MIN > 0]
 
 
-def teammates(grid=((model.SHARE, model.USAGE),)):
+def teammates(grid=((model.SHARE, model.USAGE),), ks=(model.ONOFF_K,)):
     """Next week's per-game lines without teammates' injuries (off), with them (on: model.lifts net of model.had) and
     with lifts but no had() correction (fwd), vs what players did that week, as in replay(), plus the minutes bias
     (actual - line). Scored on players who played every one of their team's games that week: one who missed some (hurt
     mid-game, back on a minutes limit, in and out of the rotation) averaged 3.6 minutes under his line in the games he
     did play, which availability covers, not the line (2025-26: -1.1 min over everyone, +0.5 over full weeks). 20+:
     projected 20+ minutes, where playing every game is about health rather than teammates. All weeks: the partial ones
-    too. Fitted SHARE and USAGE on 2025-26."""
-    weeks, cols = list(mondays()), ["MIN"] + model.RAW
+    too. Fitted SHARE and USAGE on 2025-26; ks: each ONOFF_K (0: the rule alone, no team's own split; fitted on
+    2025-26 and 2024-25, M13)."""
+    weeks, cols, k0 = list(mondays()), ["MIN"] + model.RAW, model.ONOFF_K
+    model.ONOFF_K = 0  # injured teammate: the players the rule lifts, the same group whatever ONOFF_K
+    hits = [lifted(m)[1].index for m in weeks]
+    model.ONOFF_K = k0
     print(f"\n== {SEASON}: next week's lines with teammates' injuries ==")
-    for share, usage in grid:
-        model.SHARE, model.USAGE = share, usage
+    for share, usage, k in [(s, u, k) for s, u in grid for k in ks]:
+        model.SHARE, model.USAGE, model.ONOFF_K = share, usage, k
         rows = {k: [] for k in ("act", "off", "on", "fwd", "hit", "full")}
-        for m in weeks:
+        for m, lift_rule in zip(weeks, hits):
             act = per_game(m["nxt"])
             act = act[act.index.isin(m["line"].index)]
             on, boost = lifted(m)
@@ -298,11 +313,11 @@ def teammates(grid=((model.SHARE, model.USAGE),)):
             games = m["team"].reindex(act.index).map(m["nxt"].groupby("TEAM_ABBREVIATION").GAME_ID.nunique())
             rows["act"].append(act[cols]); rows["off"].append(m["line"].loc[act.index, cols])
             rows["on"].append(on.loc[act.index, cols] + add); rows["fwd"].append(fwd.loc[act.index, cols] + add)
-            rows["hit"].append(pd.Series(act.index.isin(boost.index), index=act.index))
+            rows["hit"].append(pd.Series(act.index.isin(lift_rule), index=act.index))
             rows["full"].append(act.GP >= games.fillna(np.inf))
         act, hit, full = pd.concat(rows["act"]), pd.concat(rows["hit"]).to_numpy(), pd.concat(rows["full"]).to_numpy()
         big = (pd.concat(rows["off"]).MIN >= 20).to_numpy()
-        print(f"  SHARE {share} USAGE {usage}")
+        print(f"  SHARE {share} USAGE {usage} ONOFF_K {k}")
         for name, sub in (("injured teammate", hit & full), ("  20+ min", hit & full & big), ("everyone", full),
                           ("  20+ min", full & big), ("injured, all weeks", hit)):
             a = act[sub]
@@ -310,6 +325,94 @@ def teammates(grid=((model.SHARE, model.USAGE),)):
             out = {v: (err(pd.concat(rows[v])), (a - pd.concat(rows[v])[sub]).MIN.mean()) for v in ("off", "on", "fwd")}
             print(f"    {name:18} n {sub.sum():5}  " + "   ".join(
                 f"{v} MIN {e.MIN:.4f} stats {e[model.RAW].mean():.4f} bias {b:+.2f}" for v, (e, b) in out.items()))
+
+
+LIFTS = model.lifts
+
+
+def rates(m, pool, k):
+    """M22 (measured Nov 3, not shipped): each receiver's production per minute in the games each regular sat vs his
+    games with him, beyond the per-minute change lifts() already makes (USAGE), as {(receiver, sitter): per-minute
+    change to RAW}. Per receiver in the rotation, a ridge like model.onoff()'s on per-minute stats, each game weighted
+    by recent()'s weight x its minutes, each sitter's effect pulled toward lifts()' as if that were k more games at his
+    minutes. pool: lifted()'s."""
+    T, RAW, logs, team = "TEAM_ABBREVIATION", model.RAW, m["past"], m["team"]
+    s = model.sat(logs, team, m["regs"])
+    if not len(s):
+        return None
+    rot = pool.loc[pool.MIN >= 10, ["MIN"] + RAW].astype(float)
+    one = LIFTS(pool, team, [frozenset([j]) for j in s.by.unique()]).droplevel("set")  # each sitter alone
+    r = rot.loc[one.index.get_level_values("key")]
+    rule = pd.DataFrame((one[RAW].to_numpy() - one[["MIN"]].to_numpy() * r[RAW].div(r.MIN, axis=0).to_numpy())
+                        / (r.MIN.to_numpy() + one.MIN.to_numpy())[:, None], index=one.index, columns=RAW)
+    out = {}
+    for t, st in s.groupby(T):
+        by = list(st.by.unique())
+        g = logs[(logs[T] == t) & logs.key.isin(rot.index) & (logs.key.map(team) == t)]
+        x = pd.crosstab(st.GAME_ID, st.by).reindex(index=g.GAME_ID, columns=by, fill_value=0).clip(upper=1).to_numpy(float)
+        age, mins = model.age_wt(g.GAME_DATE, m["monday"]).to_numpy(), g.MIN.to_numpy(float)
+        y = g[RAW].to_numpy(float) / np.maximum(mins, 1)[:, None]
+        for i, rows in g.groupby("key").indices.items():
+            cols, w = [c for c, j in enumerate(by) if j != i and x[rows, c].any()], age[rows] * mins[rows]
+            if not cols or w.sum() <= 0:
+                continue
+            X = np.column_stack([np.ones(len(rows)), x[rows][:, cols]])
+            p = np.vstack([np.zeros(len(RAW)), rule.reindex(pd.MultiIndex.from_tuples([(i, by[c]) for c in cols])).fillna(0)])
+            pen = np.diag([0.0] + [k * w.sum() / age[rows].sum()] * len(cols))
+            beta = np.linalg.solve(X.T @ (w[:, None] * X) + pen, X.T @ (w[:, None] * y[rows]) + pen @ p)
+            out.update({(i, by[c]): d for c, d in zip(cols, beta[1:] - p[1:])})
+    return pd.DataFrame(list(out.values()), index=pd.MultiIndex.from_tuples(list(out)), columns=RAW) if out else None
+
+
+def rated(radj):
+    """model.lifts plus rates()' per-minute change on a receiver's minutes while that sitter sits (his line's and the
+    lift's), so had() and the lifts both carry it."""
+    def lifts(line, team, sets, adj=None):
+        out = LIFTS(line, team, sets, adj)
+        if radj is None or not len(out):
+            return out
+        kb = out.index.droplevel("set")
+        out = out.copy()
+        out[model.RAW] += radj.reindex(kb).fillna(0).to_numpy() * (
+            line.MIN.reindex(kb.get_level_values("key")).to_numpy() + out.MIN.to_numpy())[:, None]
+        return out
+    return lifts
+
+
+def ratesplit(ks=(None, 10, 20, 40, 80)):
+    """M22 (Nov 3, not shipped): stats error as in teammates() by stat group with rates()' per-minute split at each k
+    (None: off, the shipped model), over everything lifted() does: next week (full weeks; lifted: players the shipped
+    model lifts) and rest of season (10+ games left, the boost over all of them, as replay() scores)."""
+    groups = {"shooting": model.RAW[:5] + ["PTS"], "REB": ["REB"], "AST/TOV": ["AST", "TOV"], "STL/BLK": ["STL", "BLK"]}
+    act, pred, lift = {"wk": [], "ros": []}, {(k, s): [] for k in ks for s in ("wk", "ros")}, []
+    for m in mondays():
+        wk = per_game(m["nxt"])
+        wk = wk[wk.index.isin(m["line"].index)]
+        games = m["team"].reindex(wk.index).map(m["nxt"].groupby("TEAM_ABBREVIATION").GAME_ID.nunique())
+        wk = wk[wk.GP >= games.fillna(np.inf)]
+        ros = per_game(m["rest"]).query("GP >= 10")
+        ros = ros[ros.index.isin(m["line"].index)]
+        act["wk"].append(wk); act["ros"].append(ros)
+        pool = m["line"][m["line"].index.isin(m["cur"].index) | m["line"].index.isin(m["regs"])]
+        for k in ks:
+            model.lifts = rated(rates(m, pool, k) if k else None)
+            try:
+                for s, a, nxt in (("wk", wk, m["nxt"]), ("ros", ros, m["rest"])):
+                    line, boost = lifted({**m, "nxt": nxt})
+                    pred[k, s].append(line.loc[a.index, model.RAW] + boost.reindex(a.index).fillna(0)[model.RAW])
+                    if k is None and s == "wk":
+                        lift.append(pd.Series(a.index.isin(boost.index), index=a.index))
+            finally:
+                model.lifts = LIFTS
+    lift = pd.concat(lift).to_numpy()
+    print(f"\n== {SEASON}: stats error by per-minute split shrink (games), M22 ==")
+    for name, s, sub in (("next week", "wk", None), ("  lifted", "wk", lift), ("rest of season", "ros", None)):
+        a = pd.concat(act[s])[model.RAW]
+        sub = np.ones(len(a), bool) if sub is None else sub
+        print(f"  {name} (n {sub.sum()})")
+        for k in ks:
+            e = ((pd.concat(pred[k, s])[sub] - a[sub]).abs() / a[sub].mean()).mean()
+            print(f"    k {k or 'off':<4} all {e.mean():.5f}  " + "  ".join(f"{g} {e[c].mean():.5f}" for g, c in groups.items()))
 
 
 def mondays_played(season):
@@ -385,6 +488,140 @@ def availability(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
                                  observed=True).apply(ratio).T, ratio(sat).rename("all")], axis=1).round(3).to_string())
 
 
+def news(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
+    """Late news (M17): how often a player who's playing is newly ruled out mid-week. Each Monday from week 1 to 4 weeks
+    from the end, the 156 best players on that Monday's line who played their team's last game; then each of his
+    team's games that week after one he played: did he sit it (a new absence), and if so how many of the week's games
+    left he missed. Fits model.HAZARD (new absences per game / (1 - availability()), as mondays_played() guesses it)
+    and model.ONE_GAME (each absence either that one game or the rest of the week: the share of one-game ones that
+    matches the games missed, least squares over absences with 2+ games left)."""
+    rows = []
+    for season in seasons:
+        prev, prev2 = (f"{int(season[:4]) - n}-{int(season[2:4]) - n + 1:02d}" for n in (1, 2))
+        g, T = logs(season), "TEAM_ABBREVIATION"
+        base, first = model.baseline(model.fetch(prev), model.fetch(prev2)), g.sort_values("GAME_DATE").groupby("key")[T].first()
+        days, played = g.groupby(T).GAME_DATE.unique().map(sorted), set(zip(g.key, g.GAME_DATE))
+        for w in range(1, int(g.week.max()) - 3):
+            past, mon = g[g.week < w], monday(g, w)
+            cur, games = per_game(past), past.groupby(T).GAME_DATE.nunique()
+            team = past.sort_values("GAME_DATE").groupby("key")[T].last().combine_first(first)
+            pool = model.zscores(model.ros(base, cur).dropna(subset=["MIN"]), TEAMS * ROSTER).sum(axis=1).nlargest(TEAMS * ROSTER)
+            on = [k for k in pool.index if team.get(k) in days.index]
+            av = model.availability(base.GP.reindex(on), cur.GP.reindex(on).fillna(0), team[on].map(games).fillna(0))
+            for k in on:
+                before = [d for d in days[team[k]] if d < mon]
+                wk = [(k, d) in played for d in days[team[k]] if mon <= d < mon + pd.Timedelta(days=7)]
+                if not before or (k, before[-1]) not in played:
+                    continue
+                for j, p in enumerate(wk):
+                    if j == 0 or wk[j - 1]:
+                        rows.append((season, 1 - av[k], not p, len(wk) - j, 0 if p else len(wk) - j - sum(wk[j:])))
+    d = pd.DataFrame(rows, columns=["season", "miss", "new", "left", "missed"])
+    fifth = pd.qcut(d.miss, 5, labels=False)
+    n = d[d.new & (d.left > 1)]
+    print(f"\n== new absences: {len(d)} player-games after a game played, {int(d.new.sum())} sat ==")
+    for s, x in [*d.groupby("season"), ("all", d)]:
+        m = n if s == "all" else n[n.season == s]
+        z, f = (m.left - 1) / m.left, m.missed / m.left
+        print(f"{s:8} {len(x):6} games, sat {x.new.mean():.3f}, HAZARD {x.new.sum() / x.miss.sum():.3f}, ONE_GAME "
+              f"{((1 - f) * z).sum() / (z ** 2).sum():.3f} (missed one {(m.missed == 1).mean():.3f}, the rest of the "
+              f"week {(m.missed == m.left).mean():.3f}, of {len(m)} with 2+ games left)")
+    print("by availability fifth (1 - availability, sat, sat / (1 - availability)):")
+    print(d.groupby(fifth).apply(lambda x: pd.Series({"1-avail": x.miss.mean(), "sat": x.new.mean(),
+                                                     "HAZARD": x.new.sum() / x.miss.sum()})).round(3).to_string())
+    print("model.HAZARD, ONE_GAME:", model.HAZARD, model.ONE_GAME)
+
+
+def ahead(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
+    """Tomorrow's game at tomorrow's odds (M27): from every day of the week (today, as the app sees it before tip-off),
+    the 156 best players on that Monday's line who played their team's last game, each of his team's games left that
+    week (to Sunday): did he play it, by days ahead (0 = today) and by game (1 = his team's next), against rate_week
+    (1 - WEEK_K x (1 - availability()) as League has it that day) and the rest of the week's games played against
+    rate_week's sum, by weekday. (1 - played) / (1 - availability()) is the K a game that far ahead would need."""
+    rows = []
+    for season in seasons:
+        prev, prev2 = (f"{int(season[:4]) - n}-{int(season[2:4]) - n + 1:02d}" for n in (1, 2))
+        g, T = logs(season), "TEAM_ABBREVIATION"
+        base, first = model.baseline(model.fetch(prev), model.fetch(prev2)), g.sort_values("GAME_DATE").groupby("key")[T].first()
+        days, played = g.groupby(T).GAME_DATE.unique().map(sorted), set(zip(g.key, g.GAME_DATE))
+        for w in range(1, int(g.week.max()) - 3):
+            mon = monday(g, w)
+            cur = per_game(g[g.week < w])
+            team = g[g.week < w].sort_values("GAME_DATE").groupby("key")[T].last().combine_first(first)
+            pool = model.zscores(model.ros(base, cur).dropna(subset=["MIN"]), TEAMS * ROSTER).sum(axis=1).nlargest(TEAMS * ROSTER)
+            on = [k for k in pool.index if team.get(k) in days.index]
+            for t in (mon + pd.Timedelta(days=i) for i in range(7)):
+                past = g[g.GAME_DATE < t]
+                n = past.groupby("key").GAME_ID.count().reindex(on).fillna(0)
+                av = model.availability(base.GP.reindex(on), n, team[on].map(past.groupby(T).GAME_DATE.nunique()).fillna(0))
+                for k in on:
+                    before = [d for d in days[team[k]] if d < t]
+                    if not before or (k, before[-1]) not in played:
+                        continue
+                    left = [d for d in days[team[k]] if t <= d < mon + pd.Timedelta(days=7)]
+                    for j, d in enumerate(left):
+                        rows.append((season, t.weekday(), (d - t).days, j + 1, 1 - av[k], (k, d) in played))
+    d = pd.DataFrame(rows, columns=["season", "dow", "ahead", "game", "miss", "played"])
+    d["rw"] = 1 - model.WEEK_K * d.miss
+    tab = lambda x: pd.Series({"n": len(x), "played": x.played.mean(), "rate_week": x.rw.mean(),
+                               "K": (1 - x.played).sum() / x.miss.sum()})
+    print(f"\n== {len(d)} player-games from each day of the week, after he played his team's last game ==")
+    print("by days ahead (0 = today):")
+    print(d.groupby("ahead").apply(tab).round(3).to_string())
+    print("by game (1 = his team's next):")
+    print(d.groupby("game").apply(tab).round(3).to_string())
+    print("by season, today's game / next game (K):")
+    print(pd.DataFrame({"today": d[d.ahead == 0].groupby("season").apply(tab).K,
+                        "next": d[d.game == 1].groupby("season").apply(tab).K,
+                        "later": d[d.game > 1].groupby("season").apply(tab).K}).round(3).to_string())
+    print("next game's K by availability fifth:")
+    print(d[d.game == 1].groupby(pd.qcut(d.miss, 5)).apply(tab).round(3).to_string())
+    print("rest of the week from each weekday (0 = Monday): games played / rate_week's sum")
+    print(d.groupby("dow").apply(lambda x: pd.Series({"games": len(x), "played": x.played.sum(), "rate_week": x.rw.sum(),
+                                                      "ratio": x.played.sum() / x.rw.sum()})).round(3).to_string())
+    print("model.WEEK_K, HAZARD:", model.WEEK_K, model.HAZARD)
+    return d
+
+
+def gameday():
+    """How often players ESPN listed for a game (probable / questionable / doubtful, and out) played it: every note in
+    the daily feeds (data/injuries_<date>.json from Oct 28: the first day's notes can name earlier games) and the note
+    log (data/injury_notes.jsonl, from Nov 3, with ESPN's note time), resolved to the game it names as League does,
+    against this season's box scores. Fits model.GAMEDAY (Nov 3: 104 player-games). A note's game is his team's first
+    on that weekday from the day before it was written (or first seen), within a week; each player-game counts once."""
+    import glob
+    import json
+    from datetime import date, timedelta
+    lg = model.load()
+    done, played = lg.logs.GAME_DATE.max().date(), set(zip(lg.logs.key, lg.logs.GAME_DATE.dt.date))
+    pat = re.compile(r"\b(probable|questionable|doubtful|game-time decision|out|ruled out|won't play|will not play)\b"
+                     r"[^.]{0,60}?\b(" + "|".join(model.DAYS) + r")'s\b", re.I)
+    seen = {}  # (name, note) -> the day it was written (ESPN's time) or first seen
+    for f in sorted(glob.glob(str(model.DATA / "injuries_2026-*.json"))):
+        day = date.fromisoformat(f[-15:-5])
+        for name, i in json.loads(open(f, encoding="utf-8").read()).items():
+            seen.setdefault((name, i.get("note", "")), (i.get("date") or "")[:10] or (None if day == date(2026, 10, 27) else str(day)))
+    log = model.DATA / "injury_notes.jsonl"
+    for r in (map(json.loads, log.read_text(encoding="utf-8").splitlines()) if log.exists() else ()):
+        seen[r["name"], r["note"]] = (r.get("date") or r["seen"])[:10]
+    rows = {}
+    for (name, note), when in seen.items():
+        if not when or not (m := pat.search(note)) or not (k := lg.find(name, strict=False)):
+            continue
+        lo, want = date.fromisoformat(when) - timedelta(1), model.DAYS.index(m[2].lower())
+        g = next((date.fromisoformat(d) for d in lg.sched.get(lg.nba.get(k), ()) if lo <= date.fromisoformat(d) <= lo + timedelta(7)
+                  and date.fromisoformat(d).weekday() == want), None)
+        if g and g <= done:
+            a = m[1].lower()
+            rows.setdefault((k, g), "questionable" if a == "game-time decision" else "out" if a not in model.GAMEDAY else a)
+    d = pd.DataFrame([{"as": a, "played": (k, g) in played} for (k, g), a in rows.items()])
+    t = d.groupby("as").played.agg(["count", "sum"])
+    t["rate"], t["jeffreys"] = (t["sum"] / t["count"]).round(3), ((t["sum"] + 0.5) / (t["count"] + 1)).round(2)
+    print(f"\n== game-day listings vs box scores through {done}: {len(d)} player-games ==")
+    print(t.to_string())
+    print("model.GAMEDAY:", model.GAMEDAY)
+
+
 # 2026-27's season on 2025-26's NBA weeks: 20 matchups (weeks 7 and 17 run two NBA weeks, 6-7 and 16-17), then three
 # one-week playoff rounds (NBA weeks 22-24, Mar 23 - Apr 12)
 SPANS = [[w] for w in range(6)] + [[6, 7]] + [[w] for w in range(8, 16)] + [[16, 17]] + [[w] for w in range(18, 25)]
@@ -453,6 +690,16 @@ if __name__ == "__main__":
         availability()
     elif "playoffs" in sys.argv:
         playoffs()
+    elif "gameday" in sys.argv:
+        gameday()
+    elif "news" in sys.argv:
+        news()
+    elif "ahead" in sys.argv:
+        ahead()
+    elif "rates" in sys.argv:
+        ratesplit()
+    elif "onoff" in sys.argv:
+        teammates(ks=(0, 1, 2, 4, 8, 16))
     elif "teammates" in sys.argv:
         teammates([(s, u) for s in (0.25, 0.37, 0.5) for u in (0, 0.25, 0.5)])
     else:
