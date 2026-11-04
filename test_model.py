@@ -424,6 +424,26 @@ def test_all():
     assert found and not [x for x in found if x["give"] == junk[0] and sorted(x["get"]) == junk[1]]
     r = lg.trade(*junk, free=False)
     assert set(r["you_drop"]) & set(junk[1]) and any(f.startswith("You'd drop Player 151") for f in r["flags"])
+    # M24: a trade's forced drop is never a trade chip while someone else can go (Yahoo has the manager pick, and
+    # nobody cuts one; free_moves()' rule): with the cheapest drop of a 1-for-3 a chip, the next two go, and search
+    # scores the deal the same. Everyone a chip: the deal only fits by cutting one, trade() says so and search leaves
+    # it out
+    deal = (["Player 198"], ["Player 187", "Player 191", "Player 195"])
+    keys = [k for k in lg.rosters["Me"] if k != "player 198"] + ["player 187", "player 191", "player 195"]
+    c = lg._contrib("Me", keys)
+    first = sorted(keys, key=c.get)[0]
+    found = lambda: [x for x in lg.search(*deal, size=3, tier="hard", free=False, limit=5000)
+                     if x["give"] == deal[0] and sorted(x["get"]) == deal[1]]
+    assert first in lg.rosters["Me"] and not set(sorted(keys, key=c.get)[:3]) & {"player 187", "player 191", "player 195"}
+    lg.chips = lambda ks: {first} & set(ks)
+    r = lg.trade(*deal, free=False)
+    assert r["you_drop"] == lg.names(sorted(set(keys) - {first}, key=c.get)[:2]) and not any("trade chip" in f for f in r["flags"])
+    assert [(x["net"], x["their_net"], x["market"]) for x in found()] == [(r["net"], r["their_net"], r["market"])]
+    lg.chips = lambda ks: set(ks)
+    r = lg.trade(*deal, free=False)
+    assert r["you_drop"] == lg.names(sorted(keys, key=c.get)[:2]) and not set(r["you_drop"]) & set(deal[1])
+    assert any(f.startswith("To fit this you'd have to drop") for f in r["flags"]) and found() == []
+    del lg.chips
     model.TIERS["hard"] = hard
 
     # IL slots (N5): a parked player holds no active spot and nobody covers his missed games, so he counts for less

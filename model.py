@@ -167,6 +167,7 @@ EVEN = 5  # market gap (%) that still reads as "even"
 # every trade and plan was scored on top of it). Waivers' Suggested moves skip him too and say "sell him instead".
 # ponytail: a rank cutoff; tune if chips pile up
 CHIP = 8
+CHIPPED = 1e6  # search()'s drop order: a chip's value plus this, so he's cut last (and a deal cutting one is skipped)
 # Trade search difficulty: (min gain for you, min gain for them, both win %; market gap range, % you gain on market).
 # easy: they win on market and you still gain. fair: market within 15%, an offer that looks even. finesse: market even
 # or in their favour, but the fit is strongly yours. hard: you win on market, needs a pitch (or FAIR_FIT, below).
@@ -1784,9 +1785,10 @@ class League:
     def _after(self, team, out, inn, punt=(), skip=()):
         """Roster after a trade, keeping its number of active players: injured players coming in take its free IL slots
         (longest out first), extra active players fill its open active spots (_room) and past those mean dropping
-        whoever costs the least win % (an injured one coming in isn't dropped), spots the trade opens get the best free
-        agents (one it already had stays open: filling it isn't the trade), never one in `skip` (the other side's
-        pickups: you pick first). Players parked in IL slots hold no active spot. -> (keys, dropped, added, parked)"""
+        whoever costs the least win % (an injured one coming in isn't dropped; a trade chip only when nobody else is
+        left, M24: Yahoo has the manager pick the drop, and nobody cuts one, as in free_moves()), spots the trade opens get
+        the best free agents (one it already had stays open: filling it isn't the trade), never one in `skip` (the other
+        side's pickups: you pick first). Players parked in IL slots hold no active spot. -> (keys, dropped, added, parked)"""
         hurt = sorted((k for k in inn if self.meta.get(k, {}).get("status", "") in OUT), key=lambda k: (self.back[k], k))
         il = [k for k in self.il[team] if k not in out]
         il += hurt[:max(self.il_n - len(il), 0)]
@@ -1796,7 +1798,8 @@ class League:
         dropped, added = [], []
         if n > 0:
             c = self._contrib(team, [k for k in keys if k not in il and k not in hurt], punt)
-            dropped = sorted(c, key=c.get)[:n]
+            chip = self.chips(c)
+            dropped = sorted(c, key=lambda k: (k in chip, c[k]))[:n]
             keys = [k for k in keys if k not in dropped]
         elif n < 0 and self.fa:
             added = self.best_fa(-n, skip=[*keys, *skip], punt=punt)
@@ -1908,6 +1911,13 @@ class League:
         if cut := [k for k in td if k in give]:
             flags.append(f"They'd drop {' and '.join(name(cut))} as soon as he arrives: leave him out. It's the same deal "
                          "for them, and you keep him.")
+        # a drop the deal forces that's a trade chip (M24): nobody else was left to cut, so the deal gives him away
+        if cut := [k for k in self.chips(md) if k not in get]:
+            flags.append(f"To fit this you'd have to drop {' and '.join(name(cut))}, a trade chip: put him in the deal "
+                         "(or another one) instead of cutting him.")
+        if cut := [k for k in self.chips(td) if k not in give]:
+            flags.append(f"To fit this they'd have to drop {' and '.join(name(cut))}, a trade chip: they won't. Take "
+                         "fewer players or send more.")
         flags += [f"{t} gains more than you ({100 * (sa[t]['win'] - sb[t]['win']):+.1f}% vs {100 * mine_d:+.1f}%)"
                   + (", and they're your trade partner." if t == other else f", and they're projected {sb[t]['rank']}.")
                   for t in sorted(rival, key=lambda t: sb[t]["rank"])]
@@ -2038,7 +2048,8 @@ class League:
         tier:  how likely they say yes (TIERS: your gain, theirs, and the market gap). easy: they win on market, you
                still gain. fair: market within 15%. finesse: market even or in their favour, the fit strongly yours.
                hard: you win on market (up to 30% when both gain). max_overpay (%): tightens the tier's market floor.
-               No deal has a player the side taking him would cut on arrival (the deal without him is the same).
+               No deal has a player the side taking him would cut on arrival (the deal without him is the same), or
+               fits only by a side cutting a trade chip (M24: chips go last, trade() flags it).
         goal:  "win" (weekly win %), "cats" (your odds in goal_cats) or "team" (head-to-head vs goal_team).
                The last two skip deals that cost you more than GUARD win %.
         shape: "consolidate" (you send more players) or "depth" (you get more).
@@ -2076,6 +2087,7 @@ class League:
         cv, pv = self.perceived()
         vg, vc, vm = self.value().to_dict(), pv.to_dict(), self.value(punt=punt).to_dict()
         mv = self.market["value"].to_dict()
+        chip = self.chips(self.market.index)
 
         def combos(keys, pins, v, skip=()):
             free = sorted((k for k in keys if k not in lock and k not in pins and k not in skip), key=lambda k: -v[k])
@@ -2125,17 +2137,18 @@ class League:
             return self._return(S, np.concatenate([b(park), np.where(j < n_park[..., None], b(hurt), nobody)], -1), L)
 
         def low(groups, c):  # per group: the `size` players the team would miss least (padded with inf), vectors,
-            # market, _ids
+            # market, _ids. A trade chip goes last (CHIPPED on top of his value: _after()'s rule, M24)
             vals, vecs, mk = (np.full((len(groups), size), np.inf), np.zeros((len(groups), size, len(RAW))),
                               np.zeros((len(groups), size)))
-            low = [sorted(g, key=c.get)[:size] for g in groups]
+            low = [sorted(g, key=lambda k: (k in chip, c[k]))[:size] for g in groups]
             for i, g in enumerate(low):
                 for j, k in enumerate(g):
-                    vals[i, j], vecs[i, j], mk[i, j] = c[k], self.rows[k], mv[k]
+                    vals[i, j], vecs[i, j], mk[i, j] = c[k] + CHIPPED * (k in chip), self.rows[k], mv[k]
             return vals, vecs, mk, pad(low, size)
 
         def drops(A, B, n, inn):  # vector and market value of the n cheapest of A's (per give combo) and B's (per get
-            # combo), whether one of them is a player coming in (inn: "A" or "B"), cut as soon as he arrives, and who
+            # combo), whether one of them is a player coming in (inn: "A" or "B"), cut as soon as he arrives, or a trade
+            # chip (M24: the deal only fits by cutting one), and who
             a, b = len(A[0]), len(B[0])
             pair = lambda x, y: np.concatenate([np.broadcast_to(x[:, None], (a, b) + x.shape[1:]),
                                                 np.broadcast_to(y[None], (a, b) + y.shape[1:])], 2)
@@ -2143,9 +2156,11 @@ class League:
             pick = np.argsort(vals, -1)[..., :size]
             cut, mk = np.take_along_axis(pair(A[1], B[1]), pick[..., None], 2), np.take_along_axis(pair(A[2], B[2]), pick, 2)
             on = np.arange(size) < n[..., None]
-            new = on & np.isfinite(np.take_along_axis(vals, pick, 2)) & ((pick >= size) == (inn == "B"))
+            v = np.take_along_axis(vals, pick, 2)
+            new = on & np.isfinite(v) & ((pick >= size) == (inn == "B"))
+            chipped = on & np.isfinite(v) & (v >= CHIPPED / 2)
             who = np.where(on, np.take_along_axis(pair(A[3], B[3]), pick, 2), nobody)
-            return (on[..., None] * cut).sum(2), (on * mk).sum(2), new.any(-1), who
+            return (on[..., None] * cut).sum(2), (on * mk).sum(2), new.any(-1) | chipped.any(-1), who
 
         def fills(p, skip=()):  # the best 0..size free agents' vectors summed, for open spots: yours on your build,
             f, ks = np.zeros((size + 1, len(RAW))), self.best_fa(size, skip=skip, punt=p)  # theirs real; and who
@@ -2231,7 +2246,8 @@ class League:
             else:
                 score = dme
             # a player cut on arrival adds nothing to the side taking him and hands the other a roster spot (a waiver
-            # move it could make anyway): the deal without him is the real one
+            # move it could make anyway): the deal without him is the real one. A deal that only fits by cutting a
+            # trade chip (M24) is out too: trade() flags it
             ok = self._tier(tier, score, dthem, mkt, max_overpay) & ~my_cut & ~their_cut
             if goal != "win":
                 ok &= dme > -GUARD * self.s
