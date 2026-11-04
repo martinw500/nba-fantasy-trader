@@ -62,6 +62,17 @@ def test_all():
     el = {n: {"MIN": 20.0, "PTS": 8.0, "REB": 5.0, "AST": 1.0} for n in yl}
     ex = model.experts(yl, el, base, base.index)
     assert ex.at["player 100", "src"] == "ESPN" and ex.at["player 101", "src"] == "Yahoo"
+    # ...and with no ESPN line, one under half of the baseline's or this season's (3+ games) is the same junk (Nov 4
+    # audit: Kobe Sanders 1.9 points, 11.0 this season): no expert line at all, so prior()'s bench line
+    yl = {"Player 102": {"PTS": 2.0, "REB": 0.8, "AST": 0.2},   # baseline ~24: junk
+          "Player 103": {"PTS": 9.0, "REB": 3.0, "AST": 1.0},   # baseline-sized, but 33 a game in 3 games this season
+          "Player 104": {"PTS": 9.0, "REB": 3.0, "AST": 1.0},   # the same in 2 games: too few to say
+          "Player 105": {"PTS": 14.0, "REB": 5.0, "AST": 3.0}}
+    c3 = model.keyed(pd.DataFrame([line("Player 103", 103, gp=3, PTS=25, REB=5, AST=3),
+                                   line("Player 104", 104, gp=2, PTS=25, REB=5, AST=3)]))
+    ex = model.experts(yl, {}, base, base.index, c3)
+    assert "player 102" not in ex.index and "player 103" not in ex.index, ex.index.tolist()
+    assert ex.loc[["player 104", "player 105"], "src"].eq("Yahoo").all()
 
     # trades: upgrade accepted, downgrade declined, 2 scrubs for a star declined (replacement adjustment)
     assert lg.trade(["Player 150"], ["Player 199"])["verdict"] == "accept"

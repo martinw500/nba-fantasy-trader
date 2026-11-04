@@ -594,13 +594,18 @@ def availability(best, played, games):
     return a.where(best.notna(), (played + AVAIL_K * 0.85) / (games + AVAIL_K))
 
 
-def experts(yahoo, espn, base, keys=()):
+def experts(yahoo, espn, base, keys=(), cur=None):
     """One expert per-game line per player, with its source: Yahoo's (the snapshot's, updated in-season) where it has
     him, else ESPN's. A Yahoo line under half of ESPN's (points + rebounds + assists) isn't a per-game line (Oct 30:
-    Jaxson Hayes 1.7 points while playing 27 minutes a game, Capela 0.4; games missed look baked in), so ESPN's wins. Names are matched to `keys` (the stats' players) like League.find, so a spelling variant lands on
-    the player it means; the rest are rookies yet to play. Yahoo shows no minutes, so his are ESPN's (else the
-    baseline's) scaled by how much more or less Yahoo has him scoring, rebounding and assisting: a role change moves
-    minutes, not rates. A stat a source leaves out is 0: ESPN drops zeros (Duren: no 3PM, PTS = 2 FGM + FTM)."""
+    Jaxson Hayes 1.7 points while playing 27 minutes a game, Capela 0.4; games missed look baked in), so ESPN's wins.
+    With no ESPN line, under half of the baseline's or of this season's (`cur`, 3+ games) is the same junk (Nov 4 audit:
+    Kobe Sanders 1.9 points, 11.0 this season; Brandon Williams, Quenton Jackson, Huff, Bamba), and the player goes on
+    as one no expert projects (prior()'s BENCH_MIN). Checked on the Oct 26-31 snapshots against the games after each:
+    those players' error -2.0% (40 of 70 player-weeks better), everyone else's unchanged. Names are matched to `keys`
+    (the stats' players) like League.find, so a spelling variant lands on the player it means; the rest are rookies yet
+    to play. Yahoo shows no minutes, so his are ESPN's (else the baseline's) scaled by how much more or less Yahoo has
+    him scoring, rebounding and assisting: a role change moves minutes, not rates. A stat a source leaves out is 0:
+    ESPN drops zeros (Duren: no 3PM, PTS = 2 FGM + FTM)."""
     def frame(d):
         df = pd.DataFrame([{"PLAYER_NAME": n, **x} for n, x in d.items()], columns=["PLAYER_NAME", "MIN"] + RAW)
         df[RAW] = df[RAW].fillna(0)
@@ -608,7 +613,9 @@ def experts(yahoo, espn, base, keys=()):
         return df.drop_duplicates("key").set_index("key").astype({c: float for c in ["MIN"] + RAW})
     y, e = frame(yahoo), frame(espn)
     vol = lambda d: d[["PTS", "REB", "AST"]].sum(axis=1)
-    y = y[~(vol(y) < 0.5 * vol(e).reindex(y.index))]
+    seen = vol(cur).where(cur.GP >= 3) if cur is not None else pd.Series(dtype=float)
+    own = pd.concat([vol(base).reindex(y.index), seen.reindex(y.index)], axis=1).max(axis=1)  # under half of either
+    y = y[~(vol(y) < 0.5 * vol(e).reindex(y.index).fillna(own))]
     ref = e.reindex(y.index).combine_first(base.reindex(y.index))
     y["MIN"] = ref.MIN * vol(y) / vol(ref).clip(lower=1)
     return pd.concat([y.dropna(subset=["MIN"]).assign(src="Yahoo"),  # a rookie only Yahoo projects: no minutes to go on
@@ -984,7 +991,7 @@ class League:
         pool = self.teams_n * self.roster_n
         self.today = (today or date.today()).isoformat()
         # expert projections: the snapshot's (Yahoo), and ESPN's (proj, from load()) for players Yahoo doesn't list
-        self.proj = experts(snap.get("projections", {}), proj or {}, base, base.index.union(cur.index))
+        self.proj = experts(snap.get("projections", {}), proj or {}, base, base.index.union(cur.index), cur)
         pre = prior(base, self.proj)
         # this season from the box scores, recent games weighing more (recent()), where they hold the games fetch()
         # counts (a stale cache either side: fetch()'s line). Regulars come from it too, as in backtest.py's mondays()

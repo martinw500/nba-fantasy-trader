@@ -1,6 +1,7 @@
 # Audit, Nov 4 2026
 
 **Checked Nov 4 (Claude Code, against the code, data and fresh backtest runs) — read this before acting on a finding:**
+- **Done Nov 4:** #1 (ROADMAP A1: no-ESPN Yahoo rows under half of the baseline's or this season's are dropped; Kobe Sanders 7.0 → 7.9, you 57.9 → 57.8%, This week unchanged).
 - **Valid, to do:** #1 (11 players with 3+ games on a junk Yahoo line, ESPN has none: Kobe Sanders 1.9 vs 11.0), #2 (snapshot Yahoo lines move in-season: Acuff 17.3 → 23.3, Wilson 16.1 → 18.8, Oct 27 → Nov 3), #3 (rookie prior 40% fringe: Boozer 15.8 on Yahoo 18.4 / 17.4 this season), #15 (`/api/week`, `/api/lineup` use `lg`, not `fl`), #23 (`live()` assigns `lg = new` whatever `/api/me` did meanwhile), #8 / #25 (`playoffs()` docstring predates M2).
 - **Not valid:** #4: M8's `python backtest.py trend` already measured it (a 14-day form gap carries −0.07 to +0.02 into the next 14 days), so a recent-form line for This week would be worse. #22's "`backtest.py ahead` produced an empty log": it runs (re-run Nov 3, numbers as in ROADMAP M27).
 - **Unproven, not on the list:** #11 (a hypothesis, no measurement).
@@ -18,7 +19,7 @@ How to read this: **BUG** means a number the app shows is wrong. **GAP** means t
 ## Do these first (they move player values)
 
 ### 1. BUG — Yahoo's near-zero projection rows still used when ESPN has no line
-**CONFIRMED.** `experts()` (`model.py` ~597–615) drops a Yahoo row only when its PTS+REB+AST is under half of *ESPN's*. If ESPN has no row, the comparison is NaN, the Yahoo row is kept, and it is 60% of `prior()`.
+**FIXED Nov 4 (ROADMAP A1).** Thybulle isn't one of them: ESPN has a row and Yahoo is 58% of it, so he's unchanged. **CONFIRMED.** `experts()` (`model.py` ~597–615) drops a Yahoo row only when its PTS+REB+AST is under half of *ESPN's*. If ESPN has no row, the comparison is NaN, the Yahoo row is kept, and it is 60% of `prior()`.
 
 On today's league, 11 players with 3+ games this season are still on a Yahoo line under half of what they are actually doing. Most are free agents / streamers:
 
