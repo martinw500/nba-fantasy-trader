@@ -863,6 +863,9 @@ def test_all():
     keep = 1 - model.PROJ_W * model.MIN_SHRINK / (4 + model.MIN_SHRINK)
     assert np.allclose(pi.loc[("guard", "star")], keep * lf.loc[("guard", "star")])
     assert np.allclose(pi.loc[("big", "star")], lf.loc[("big", "star")]) and np.allclose(pi.xs("iron", level="by"), lf.xs("iron", level="by"))
+    # ...a rookie's expert line is ROOKIE_W of his prior (A2), so he keeps 1 - ROOKIE_W x ... of his
+    pr = model.priced_in(lf, ["iron"], {"guard": 4}, ["guard"], ["guard"])
+    assert np.allclose(pr.loc[("guard", "star")], (1 - model.ROOKIE_W * model.MIN_SHRINK / (4 + model.MIN_SHRINK)) * lf.loc[("guard", "star")])
     # had(): the lift a player had per game in the box scores. Star joined in game 1 and sat games 3 and 4, so Guard
     # (5 games) had 2/5 of it; game 0 came before Star's first and doesn't count
     box = pd.DataFrame([{"key": k, "TEAM_ABBREVIATION": "AAA", "GAME_ID": g, "GAME_DATE": pd.Timestamp(2026, 10, 20 + g)}

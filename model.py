@@ -755,14 +755,16 @@ def stretches(out, team, start):
     return spans
 
 
-def priced_in(lift, played, gp, expert):
+def priced_in(lift, played, gp, expert, rookies=()):
     """lifts() less what an expert projection already counts: a sitter out since before the season (no games in it)
-    was in the preseason line, which is PROJ_W of a player's prior, and the prior holds MIN_SHRINK / (GP + MIN_SHRINK)
-    of his minutes (ros()). played: players with games this season; gp: {player: games this season}; expert: players
-    with an expert line. Without it, teammates of preseason absentees ran 0.15-0.3 min a game over at SHARE 0.65-0.8
-    (2025-26), the rest under. ponytail: a projection updated after a mid-season injury isn't spotted (Yahoo's may be)."""
+    was in the preseason line, which is PROJ_W of a player's prior (ROOKIE_W of a rookie's: `rookies`, his expert line
+    and no baseline), and the prior holds MIN_SHRINK / (GP + MIN_SHRINK) of his minutes (ros()). played: players with
+    games this season; gp: {player: games this season}; expert: players with an expert line. Without it, teammates of
+    preseason absentees ran 0.15-0.3 min a game over at SHARE 0.65-0.8 (2025-26), the rest under. ponytail: a
+    projection updated after a mid-season injury isn't spotted (Yahoo's may be)."""
     k, j = lift.index.get_level_values("key"), lift.index.get_level_values("by")
-    keep = 1 - PROJ_W * MIN_SHRINK / (pd.Series(gp).reindex(k).fillna(0).to_numpy() + MIN_SHRINK) * k.isin(list(expert))
+    w = np.where(k.isin(list(rookies)) & (ROOKIE_W is not None), ROOKIE_W or 0, PROJ_W)
+    keep = 1 - w * MIN_SHRINK / (pd.Series(gp).reindex(k).fillna(0).to_numpy() + MIN_SHRINK) * k.isin(list(expert))
     return lift.mul(np.where(j.isin(list(played)), 1.0, keep), axis=0)
 
 
@@ -1105,7 +1107,7 @@ class League:
         out = {k: i["return"] for k, i in self.inj.items() if (i.get("return") or "") > self.today}
         spans = stretches(out, self.nba, self.today)
         lift = priced_in(lifts(takers, self.nba, [s for _, _, s in spans], self.adj), cur.index[cur.GP > 0], cur.GP,
-                         self.proj.index)
+                         self.proj.index, self.proj.index.difference(base.index))
         self.lift = lift.set_axis(pd.MultiIndex.from_tuples([(k, j, *spans[s][:2]) for k, j, s in lift.index],
                                                             names=["key", "by", "from", "until"]))
         self.ahead = ahead = self._boost("9999")  # each player's lift averaged over the rest of the season

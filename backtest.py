@@ -435,7 +435,7 @@ def mondays():
         team = past.sort_values("GAME_DATE").groupby("key")[T].last().combine_first(first)
         regs, out = line.index[line.MIN >= model.REGULAR], sat(g, line, team, w, 10)
         yield {"pre": pre, "past": past, "cur": cur, "line": line, "team": team, "regs": regs, "out": out, "nxt": nxt,
-               "rest": g[g.week >= w], "expert": ex.index, "monday": monday(g, w)}
+               "rest": g[g.week >= w], "expert": ex.index, "rookies": ex.index.difference(base.index), "monday": monday(g, w)}
 
 
 def lifted(m, deboost=True):
@@ -455,7 +455,7 @@ def lifted(m, deboost=True):
         line = model.ros(m["pre"], full)
     spans = model.stretches(m["out"], m["team"], m["nxt"].GAME_DATE.min())
     lift = model.priced_in(model.lifts(pool, m["team"], [s for _, _, s in spans], adj), m["cur"].index, m["cur"].GP,
-                           m["expert"])
+                           m["expert"], m["rookies"])
     games = m["nxt"][["key", "GAME_DATE"]].merge(lift.index.to_frame(index=False), on="key")
     games["on"] = [spans[s][0] <= d < spans[s][1] for s, d in zip(games["set"], games.GAME_DATE)]
     share = games.groupby(["key", "by", "set"]).on.mean()
