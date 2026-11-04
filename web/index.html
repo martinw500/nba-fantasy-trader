@@ -1621,6 +1621,18 @@ function render() {
   v.innerHTML = card + demo + stale + offline + ({ team: viewTeam, week: viewWeek, schedule: viewSchedule, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, compare: viewCompare, gm: viewGM }[S.view] || viewTeam)();
   const m = $("#msgs"); if (m) m.scrollTop = m.scrollHeight;
 }
+// a new punt, from the chips or My team's "Punt …" button (B2: the button reloaded My team only, so This week, Schedule,
+// League, Compare and an open trade stayed on the old punt): every view built on the punt is dropped, an open trade and
+// Try a move are scored again. Strategy ignores the punt, so it stays.
+async function setPunt(punt) {
+  S.punt = punt;
+  const re = S.trade.result, mv = S.move.result;
+  store.set("punt", S.punt); S.move.result = null; S.trade.result = null; S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {};
+  S.league.data = null; S.trade.roster = null; S.week = {}; S.sched = {}; S.card = {}; setCompare(S.compare.names);
+  await loadState();
+  if (mv) evalMove();
+  return re && evaluate();
+}
 function setView(v) { S.view = v; S.card = {}; store.set("view", v); history.replaceState(null, "", "#" + v); render(); window.scrollTo(0, 0); }
 
 document.addEventListener("click", async e => {
@@ -1629,13 +1641,7 @@ document.addEventListener("click", async e => {
   if (t.dataset.go) return setView(t.dataset.go);
   if (t.dataset.punt) {
     const c = t.dataset.punt;
-    S.punt = punted(c) ? S.punt.filter(x => x !== c) : [...S.punt, c];
-    const re = S.trade.result, mv = S.move.result;
-    store.set("punt", S.punt); S.move.result = null; S.trade.result = null; S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {};
-    S.league.data = null; S.trade.roster = null; S.week = {}; S.sched = {}; S.card = {}; setCompare(S.compare.names);
-    await loadState();
-    if (mv) evalMove();
-    return re && evaluate();
+    return setPunt(punted(c) ? S.punt.filter(x => x !== c) : [...S.punt, c]);
   }
   if (t.dataset.tier) { S.find.tier = t.dataset.tier; S.find.list = null; S.improve = { kind: null, list: null }; return render(); }
   if (t.dataset.goalcat) {
@@ -1653,7 +1659,7 @@ document.addEventListener("click", async e => {
   }
   if (t.dataset.sug) return ask(t.dataset.sug);
   const act = t.dataset.act;
-  if (act === "apply-punt") { S.punt = [...new Set([...S.punt, ...S.state.profile.punt_suggestions])]; store.set("punt", S.punt); return loadState(); }
+  if (act === "apply-punt") return setPunt([...new Set([...S.punt, ...S.state.profile.punt_suggestions])]);  // as the chips (B2)
   if (act === "plan") return plan();
   if (act === "plan-load") { const x = S.strategy.data.builds[+t.dataset.i].steps[+t.dataset.j].trade; setView("trades"); return loadDeal(x); }
   if (act === "plan-show") { S.strategy.sel = +t.dataset.i; render(); return reveal("#strategy"); }
