@@ -457,10 +457,12 @@ const punted = c => S.punt.includes(c);
 const LABEL = { FG3M: "3PM", TOV: "TO" };
 const lab = c => LABEL[c] || c;
 const mdy = d => new Date(d + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+// today as YYYY-MM-DD on this computer's calendar, the app's "today" (B7: toISOString() is UTC, a day ahead after 4pm Pacific)
+const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 // a game-day listing (probable / questionable / doubtful for one game) leads the tag: "Q Wed", counted at how often
 // players so listed play that game
 const listed = l => `${l.as[0].toUpperCase()} ${new Date(l.day + "T12:00").toLocaleDateString("en-US", { weekday: "short" })}`;
-const statusTag = p => p.status || p.injury || p.listed ? `<span class="tag ${OUT.has(p.status) && !p.listed ? "out" : ""}"${p.injury ? ` title="${esc((p.listed ? `Listed as ${p.listed.as} for ${mdy(p.listed.day)}: players listed that way played ${p.listed.plays}% of the time, so that game counts at ${p.listed.plays}%. ` : "") + p.injury)}"` : ""}>${p.listed ? listed(p.listed) : esc(p.status || "News")}${!p.listed && p.return && p.return >= new Date().toISOString().slice(0, 10) ? ` · back ${mdy(p.return)}` : ""}</span>` : "";
+const statusTag = p => p.status || p.injury || p.listed ? `<span class="tag ${OUT.has(p.status) && !p.listed ? "out" : ""}"${p.injury ? ` title="${esc((p.listed ? `Listed as ${p.listed.as} for ${mdy(p.listed.day)}: players listed that way played ${p.listed.plays}% of the time, so that game counts at ${p.listed.plays}%. ` : "") + p.injury)}"` : ""}>${p.listed ? listed(p.listed) : esc(p.status || "News")}${!p.listed && p.return && p.return >= localDay() ? ` · back ${mdy(p.return)}` : ""}</span>` : "";
 const gpNote = p => p.gp < 3 ? ` title="Only ${p.gp} games this season"` : "";
 // teammates' injuries: the minutes and shots he picks up while they sit, counted in his lines for those games only.
 // Tables tag a lift of a minute or more (most are smaller, spread over a whole rotation) with how long the biggest one
@@ -1834,7 +1836,9 @@ setInterval(async () => {
   try {
     const st = await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")) + (S.healthyFa ? "&healthy_fa=1" : ""));
     const w = await api("/api/week", {});
-    fresh(st); S.week = { data: w }; render();
+    const { goal, sit, day } = S.week;  // B7: Play for and the day picked in Start / sit stay
+    fresh(st); S.week = { data: w, goal, sit, day }; render();
+    if (goal?.length) loadSit(S.week);  // Play for's lineups again, on the new numbers
   } catch (e) { /* offline or restarting: keep what's on screen */ }
 }, 5 * 60e3);
 render();
