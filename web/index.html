@@ -1234,19 +1234,26 @@ async function copyOffer(r) {
   toast("Copied. Paste it into the note on Yahoo's trade offer. It's logged under Offers sent, at the bottom.");
 }
 
+// B3: a reply lands only if its request is still the latest (ask, a token per request). Clear, checking a player, a new
+// punt or Healthy only, a team switch... set ask to null, a new request replaces it; either way the late reply is dropped
+// (busy stays on only while a newer one runs)
+const late = (X, ask) => { if (X.ask === ask) return false; if (!X.ask) { X.busy = false; render(); } return true; };
 async function evaluate() {
-  const T = S.trade;
+  const T = S.trade, ask = T.ask = {};
   T.busy = true; render();
-  try {
-    const r = T.result = await api("/api/trade", { give: [...T.give], get: [...T.get], free: S.find.mine, their_free: S.find.theirs });
-    T.give = new Set(r.give.map(p => p.name)); T.get = new Set(r.get.map(p => p.name));  // deep links may use short names
+  let r;
+  try { r = await api("/api/trade", { give: [...T.give], get: [...T.get], free: S.find.mine, their_free: S.find.theirs }); }
+  catch (err) { if (T.ask === ask) toast(err.message); }
+  if (late(T, ask)) return;
+  if (r) {
+    T.result = r; T.give = new Set(r.give.map(p => p.name)); T.get = new Set(r.get.map(p => p.name));  // deep links may use short names
     if (r.other_team) T.team = r.other_team;
     if (S.view === "trades") history.replaceState(null, "", "#trades?" + ["give", "get"].map(k => k + "=" + [...T[k]].map(encodeURIComponent).join(",")).join("&"));
-  } catch (err) { toast(err.message); }
+  }
   T.busy = false; render();
 }
 async function loadDeal(x) {
-  Object.assign(S.trade, { team: x.team || S.trade.team, give: new Set(x.give), get: new Set(x.get), result: null });
+  Object.assign(S.trade, { team: x.team || S.trade.team, give: new Set(x.give), get: new Set(x.get), result: null, ask: null });
   await evaluate();
   reveal("#result");
 }
@@ -1255,14 +1262,16 @@ function saveDeal(x) {
   toast("Saved. Compare it under Saved trades at the bottom."); render();
 }
 async function find(scroll) {
-  const F = S.find, T = S.trade;
+  const F = S.find, T = S.trade, ask = F.ask = {};
   F.busy = true; F.ran = findTitle(); render();
   if (scroll) reveal("#find");
+  let list = null;
   try {
-    F.list = isPoints() ? await api("/api/ideas", { mode: F.tier, team: F.team })
+    list = isPoints() ? await api("/api/ideas", { mode: F.tier, team: F.team })
       : await api("/api/search", { ...findParams(), give: [...T.give], get: [...T.get], team: T.get.size ? T.team : F.team });
-  } catch (err) { toast(err.message); F.list = null; }
-  F.busy = false; F.sort = null; render();
+  } catch (err) { if (F.ask === ask) toast(err.message); }
+  if (late(F, ask)) return;  // B3: a new tier, goal, size, team or punt, or your team switched, meanwhile
+  F.list = list; F.busy = false; F.sort = null; render();
 }
 async function improve(kind) {
   const T = S.trade, tier = S.find.tier, give = [...T.give], get = [...T.get], n = Math.max(give.length, get.length);
@@ -1307,7 +1316,7 @@ function pickPlayer(q, exact) {
   const T = S.trade;
   if (p.team === S.state.me) T.give.add(p.name);
   else { if (T.team !== p.team) { T.team = p.team; T.get.clear(); } T.get.add(p.name); }
-  T.result = null; render();
+  T.result = T.ask = null; render();
 }
 async function loadTradeRoster() {
   const team = S.trade.team; S.trade.loading = team;
@@ -1398,20 +1407,22 @@ function moveResult(r) {
 }
 async function evalMove() {
   const M = S.move; if (!M.add) return;
+  const ask = M.ask = {};
   M.busy = true; render();
-  try {  // short or misspelt names (a deep link) come back as the players' real names
-    const r = await api("/api/move", { add: M.add, drop: M.drop || null, day: M.day || null });
-    if (S.move === M) {
-      Object.assign(M, { result: r, add: r.add.name, drop: r.drop.find(x => !x.auto)?.name || "" });
-      if (S.view === "waivers") history.replaceState(null, "", "#waivers?add=" + encodeURIComponent(M.add) + (M.drop ? "&drop=" + encodeURIComponent(M.drop) : "") + (M.day ? "&day=" + M.day : ""));
-    }
-  } catch (err) { toast(err.message); }
+  let r;
+  try { r = await api("/api/move", { add: M.add, drop: M.drop || null, day: M.day || null }); }
+  catch (err) { if (S.move === M && M.ask === ask) toast(err.message); }
+  if (S.move !== M || late(M, ask)) return;  // B3: a new add, drop, day or punt meanwhile (a team switch replaces S.move)
+  if (r) {  // short or misspelt names (a deep link) come back as the players' real names
+    Object.assign(M, { result: r, add: r.add.name, drop: r.drop.find(x => !x.auto)?.name || "" });
+    if (S.view === "waivers") history.replaceState(null, "", "#waivers?add=" + encodeURIComponent(M.add) + (M.drop ? "&drop=" + encodeURIComponent(M.drop) : "") + (M.day ? "&day=" + M.day : ""));
+  }
   M.busy = false;
-  if (S.move === M && S.view === "waivers") render();
+  if (S.view === "waivers") render();
 }
 function pickMove(q, exact) {
   const p = matchPlayer((S.pool || []).filter(x => x.team === "FA"), q, exact, "No free agent matches"); if (!p) return;
-  Object.assign(S.move, { add: p.name, result: null }); render();
+  Object.assign(S.move, { add: p.name, result: null, ask: null }); render();
   $("#mv-drop")?.focus();
 }
 
@@ -1627,7 +1638,7 @@ function render() {
 async function setPunt(punt) {
   S.punt = punt;
   const re = S.trade.result, mv = S.move.result;
-  store.set("punt", S.punt); S.move.result = null; S.trade.result = null; S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {};
+  store.set("punt", S.punt); S.move.result = S.move.ask = null; S.trade.result = S.trade.ask = null; S.find.list = S.find.ask = null; S.improve = { kind: null, list: null }; S.saved.evals = {};
   S.league.data = null; S.trade.roster = null; S.week = {}; S.sched = {}; S.card = {}; setCompare(S.compare.names);
   await loadState();
   if (mv) evalMove();
@@ -1643,10 +1654,10 @@ document.addEventListener("click", async e => {
     const c = t.dataset.punt;
     return setPunt(punted(c) ? S.punt.filter(x => x !== c) : [...S.punt, c]);
   }
-  if (t.dataset.tier) { S.find.tier = t.dataset.tier; S.find.list = null; S.improve = { kind: null, list: null }; return render(); }
+  if (t.dataset.tier) { S.find.tier = t.dataset.tier; S.find.list = S.find.ask = null; S.improve = { kind: null, list: null }; return render(); }
   if (t.dataset.goalcat) {
     const F = S.find, c = t.dataset.goalcat;
-    F.cats = F.cats.includes(c) ? F.cats.filter(x => x !== c) : [...F.cats, c]; F.list = null; S.improve = { kind: null, list: null }; return render();
+    F.cats = F.cats.includes(c) ? F.cats.filter(x => x !== c) : [...F.cats, c]; F.list = F.ask = null; S.improve = { kind: null, list: null }; return render();
   }
   if (t.dataset.sitcat != null) {  // Start / sit's Play for: all categories, or toggle one
     const W = S.week, c = t.dataset.sitcat, g = W.goal || [];
@@ -1674,10 +1685,10 @@ document.addEventListener("click", async e => {
     $("#team-panel")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     return p;
   }
-  if (act === "trade-with") { S.trade.team = t.dataset.team; S.trade.get.clear(); S.trade.result = null; return setView("trades"); }
+  if (act === "trade-with") { S.trade.team = t.dataset.team; S.trade.get.clear(); S.trade.result = S.trade.ask = null; return setView("trades"); }
   if (act === "shop" || act === "offers") {  // Find a buyer (My team) / buy-low rows (Hot & cold)
     const mine = act === "shop", name = [t.dataset.name];
-    Object.assign(S.trade, { give: new Set(mine ? name : []), get: new Set(mine ? [] : name), result: null });
+    Object.assign(S.trade, { give: new Set(mine ? name : []), get: new Set(mine ? [] : name), result: null, ask: null });
     if (!mine) S.trade.team = t.dataset.team;
     else if (t.dataset.team) S.find.team = t.dataset.team;  // What they want: deals with that team only
     setView("trades");
@@ -1688,7 +1699,7 @@ document.addEventListener("click", async e => {
     const n = t.dataset.name; S.locks.has(n) ? S.locks.delete(n) : S.locks.add(n);
     store.set("locks", [...S.locks]); return render();
   }
-  if (act === "clear-trade") { S.trade.give.clear(); S.trade.get.clear(); S.trade.result = null; history.replaceState(null, "", "#trades"); return render(); }
+  if (act === "clear-trade") { S.trade.give.clear(); S.trade.get.clear(); S.trade.result = S.trade.ask = null; history.replaceState(null, "", "#trades"); return render(); }
   if (act === "evaluate") return evaluate();
   if (act === "ask-gm") {  // Trades → AI GM: the checked trade in the message box, cursor after it for the question
     const T = S.trade, give = and([...T.give]), get = and([...T.get]);
@@ -1711,7 +1722,7 @@ document.addEventListener("click", async e => {
     const M = S.move;
     if ("add" in t.dataset) M.add = t.dataset.add;
     if ("drop" in t.dataset) M.drop = t.dataset.drop;
-    M.result = null; reveal("#move");
+    M.result = M.ask = null; reveal("#move");
     if (M.add) return evalMove();
     render(); return $("#mv-add")?.focus();
   }
@@ -1739,20 +1750,20 @@ document.addEventListener("click", async e => {
 });
 document.addEventListener("change", async e => {
   const t = e.target;
-  if (t.dataset.pick) { const set = S.trade[t.dataset.pick]; t.checked ? set.add(t.value) : set.delete(t.value); S.trade.result = null; return render(); }
+  if (t.dataset.pick) { const set = S.trade[t.dataset.pick]; t.checked ? set.add(t.value) : set.delete(t.value); S.trade.result = S.trade.ask = null; return render(); }
   if (t.id === "w-healthy") {  // changes the waiver suggestions and every trade number (they build on your free moves)
     const re = S.trade.result;
     S.healthyFa = t.checked; store.set("healthyFa", t.checked);
-    S.trade.result = null; S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.strategy = {}; S.week = {};
+    S.trade.result = S.trade.ask = null; S.find.list = S.find.ask = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.strategy = {}; S.week = {};
     await loadState();
     return re && evaluate();
   }
-  if (t.id === "trade-team") { S.trade.team = t.value; S.trade.get.clear(); S.trade.result = null; return render(); }
+  if (t.id === "trade-team") { S.trade.team = t.value; S.trade.get.clear(); S.trade.result = S.trade.ask = null; return render(); }
   if (t.id === "find-player") return pickPlayer(t.value);
   if (t.id === "cmp-player") return pickCompare(t.value);
   if (t.id === "mv-add") return pickMove(t.value);
-  if (t.id === "mv-drop") { Object.assign(S.move, { drop: t.value, result: null }); return render(); }
-  if (t.id === "mv-day") { Object.assign(S.move, { day: t.value, result: null }); return render(); }
+  if (t.id === "mv-drop") { Object.assign(S.move, { drop: t.value, result: null, ask: null }); return render(); }
+  if (t.id === "mv-day") { Object.assign(S.move, { day: t.value, result: null, ask: null }); return render(); }
   if (t.id === "top-player") return pickGlobal(t.value);
   if (t.id === "week-opp") { S.week = {}; loadWeek(t.value); return render(); }
   if (t.id.startsWith("gm-")) { S.gmSet[t.id.slice(3)] = t.type === "checkbox" ? t.checked : t.value; store.set("gmSet", S.gmSet); return render(); }
@@ -1760,8 +1771,8 @@ document.addEventListener("change", async e => {
     t.disabled = true;
     try {
       S.state = await api("/api/me", { team: t.value });
-      Object.assign(S.trade, { give: new Set(), get: new Set(), team: null, roster: null, result: null });
-      S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null; S.week = {}; S.sched = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names);
+      Object.assign(S.trade, { give: new Set(), get: new Set(), team: null, roster: null, result: null, ask: null });
+      S.find.list = S.find.ask = null; S.improve = { kind: null, list: null }; S.saved.evals = {}; S.league.data = null; S.players = null; S.week = {}; S.sched = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names);
       S.move = { add: "", drop: "", day: "", result: null, busy: false };
       toast(`You're ${t.value} now`);
     } catch (err) { toast(err.message); }
@@ -1769,7 +1780,7 @@ document.addEventListener("change", async e => {
   }
   if (t.id === "f-theirs" || t.id === "f-mine") {  // changes every trade number, not just the finder's
     const k = t.id.slice(2); S.find[k] = t.checked; store.set(k, t.checked);
-    S.find.list = null; S.improve = { kind: null, list: null }; S.saved.evals = {};
+    S.find.list = S.find.ask = null; S.improve = { kind: null, list: null }; S.saved.evals = {};
     return S.trade.result ? evaluate() : render();
   }
   if (t.id.startsWith("f-")) {  // finder toolbar: f-goal, f-vs, f-size, f-shape, f-overpay, f-outside, f-healthy, f-team
@@ -1777,7 +1788,7 @@ document.addEventListener("change", async e => {
     F[k] = t.type === "checkbox" ? t.checked : k === "size" ? +t.value : t.value;
     if (F.goal === "cats" && !F.cats.length) F.cats = Object.entries(prof.odds).filter(([c]) => !punted(c)).sort((a, b) => a[1] - b[1]).slice(0, 2).map(([c]) => c);
     if (F.goal === "team" && !F.vs) F.vs = Object.keys(prof.standings).find(x => x !== S.state.me);
-    F.list = null; S.improve = { kind: null, list: null }; return render();
+    F.list = F.ask = null; S.improve = { kind: null, list: null }; return render();
   }
 });
 document.addEventListener("input", e => {
@@ -1798,7 +1809,7 @@ document.addEventListener("keydown", e => {
   if (e.target.id === "chat-in" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chat-form").requestSubmit(); }
 });
 // new numbers in S.state (Refresh, or the server's own injury refetch): drop every view's cached answers
-const fresh = st => { S.state = st; S.league.data = null; S.trade.roster = null; S.find.list = null; S.saved.evals = {}; S.players = null; S.week = {}; S.sched = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names); S.move.result = null; S.loaded = Date.now(); };
+const fresh = st => { S.state = st; S.league.data = null; S.trade.roster = null; S.find.list = S.find.ask = null; S.saved.evals = {}; S.players = null; S.week = {}; S.sched = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names); S.move.result = S.move.ask = null; S.loaded = Date.now(); };
 $("#refresh").addEventListener("click", async e => {
   const b = e.currentTarget; b.classList.add("busy"); b.disabled = true;
   try {
