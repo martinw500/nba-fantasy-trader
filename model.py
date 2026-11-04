@@ -92,6 +92,9 @@ FORM_DAYS, FORM_GP = 14, 3  # recent form: value over the last 14 days, for play
 # +0.02): an arrow says what happened, not what will
 TREND, TREND_GP = 2.5, 7
 OUT = {"O", "INJ", "IL", "IL+", "NA", "SUSP"}  # Yahoo statuses that mean "not playing now"
+# a waiver move with no drop that puts an injured free agent in a free IL slot (B5: mchc allows adding straight to IL;
+# Yahoo's default doesn't). _drops() offers it, _gains() scores it, free_moves() returns it as the drop
+PARK = "(IL slot)"
 # ESPN notes for a rest day ("George will be rested Monday", "Robinson (rest) ...", not "the rest of Sunday's game"): he
 # sits one game, so he's tagged REST, not O, and isn't treated as injured (Martin, Nov 2: George and Black sat the second
 # night of a back-to-back). ESPN's return date is his team's next game, so availability already counts just that one
@@ -2556,7 +2559,7 @@ class League:
         """Every (add, drop) pair scored by the change in your weekly win % vs the league (drop None: an open spot),
         and the free moves trades are scored on top of."""
         roster = self.rosters[self.me]
-        adds, drops = self._adds(punt), self._drops(roster)
+        adds, drops = self._adds(punt), self._drops(roster, team=self.me)  # PARK with a free IL slot (B5)
         gain = self._gains(self.me, roster, adds, drops, punt)
         chip = np.array([d in self.chips(roster) for d in drops])  # never the drop, as in free_moves(): sell him
         fit, best_drop = np.where(chip, -np.inf, gain).max(1), np.where(chip, -np.inf, gain).argmax(1)
@@ -2564,7 +2567,7 @@ class League:
         order = np.argsort(-fit)[:limit]
         moves = [{**self._moves_out([(adds[i], drops[best_drop[i]], fit[i])])[0], "unit": "win%", **sell(i)}
                  for i in order if fit[i] > MOVE * self.s][:8]
-        cheap = [j for j in np.argsort(-gain.max(0)) if drops[j] and not chip[j]][:3]  # drops that cost least when swapped for the best add
+        cheap = [j for j in np.argsort(-gain.max(0)) if drops[j] not in (None, PARK) and not chip[j]][:3]  # drops that cost least when swapped for the best add
         return {"free_agents": [{**self.player(adds[i], punt), "fit": round(float(fit[i]), 1)} for i in order],
                 "drop_candidates": [self.player(drops[j], punt) for j in cheap], "moves": moves,
                 "free": self._moves_out(self.free_moves(punt))}
@@ -2577,29 +2580,49 @@ class League:
     def _adds(self, punt):
         return self.value(self.fa, punt).nlargest(40).index.tolist()
 
-    def _drops(self, roster, keep=()):
+    def _drops(self, roster, keep=(), il=None, team=None):
         """Who an add can replace: healthy active players outside `keep`, plus nobody (None) while the active roster has
-        an open spot."""
-        drops = [k for k in self._playing(roster) if k not in keep and self.meta.get(k, {}).get("status", "") not in OUT]
-        return drops + [None] * (len(self._playing(roster)) < self.roster_n)
+        an open spot, plus a free IL slot (PARK, B5) when `team`'s roster has one: an injured add's no-drop move.
+        il: who's parked (default: the league's IL slots)."""
+        il = self._parked if il is None else set(il)
+        act = [k for k in roster if k not in il]
+        drops = [k for k in act if k not in keep and self.meta.get(k, {}).get("status", "") not in OUT]
+        return (drops + [None] * (len(act) < self.roster_n)
+                + [PARK] * (team is not None and len(roster) - len(act) < self.il_n))
 
-    def _gains(self, team, roster, adds, drops, punt):
-        """Change in team's win % vs the league from swapping each add in for each drop on `roster`: (adds, drops)."""
-        act, (spot,) = self._playing(roster), self._open(team, 1)  # an add into an open spot replaces what it held
-        V, D = self.vec(roster, team=team), np.stack([self.rows[k] if k else self._wk[spot] for k in drops])
-        A = np.stack([self.rows[k] for k in adds])
+    def _stash(self, k, il):
+        """B5: an injured free agent (OUT) goes straight into a free IL slot (`il`: the team's parked players): no active
+        spot, no cover for the games he misses, and from his return he takes an open active spot, else the weakest
+        (_return(), as anyone parked). The one rule for free_moves(), Waivers, Hot & cold, after_free() and add_drop()."""
+        return self.meta.get(k, {}).get("status", "") in OUT and len(il) < self.il_n
+
+    def _gains(self, team, roster, adds, drops, punt, il=None):
+        """Change in team's win % vs the league from swapping each add in for each drop on `roster`: (adds, drops).
+        il: who's parked on it (default: the league's IL slots). An injured add with a free IL slot parks (_stash(), B5):
+        his only move is PARK, no drop and no active spot, and he counts through _return() from his return. Dropping
+        someone as well would be a second move (another team's open spot holds a stream, so it'd ride on his), and
+        nobody else can take PARK (-inf)."""
+        il = self._parked if il is None else set(il)
+        act, (spot,), nobody = [k for k in roster if k not in il], self._open(team, 1), len(self._ix)
+        offk = [k for k in roster if k in il]
+        pk, parks = np.array([self._stash(a, offk) for a in adds]), np.array([k == PARK for k in drops])
+        V = self.vec(roster, il, team)  # an add into an open spot replaces what it held
+        D = np.stack([np.zeros(len(RAW)) if k == PARK else self.rows[k] if k else self._wk[spot] for k in drops])
         # who his parked players push out on their return (an open spot first) moves with the swap
         on = np.r_[self._ids(act), self._open(team, self.roster_n - len(act))].astype(int)
-        off = self._ids([k for k in roster if k in self._parked])
-        S = np.where(on[None] == self._ids(drops)[:, None], len(self._ix), on[None])
-        for i in [i for i, k in enumerate(drops) if not k][:1]:  # an add into an open spot takes the first one
-            S[i, np.flatnonzero(on == spot)[:1]] = len(self._ix)
-        S = np.concatenate([np.broadcast_to(S, (len(adds), *S.shape)), np.broadcast_to(self._ids(adds)[:, None, None],
-                                                                                       (len(adds), len(drops), 1))], -1)
-        back = self._return(S, np.broadcast_to(off, S.shape[:2] + off.shape)) - self._return(on, off)
+        off = self._ids(offk)
+        S = np.where(on[None] == self._ids(drops)[:, None], nobody, on[None])
+        for i in [i for i, k in enumerate(drops) if k is None][:1]:  # an add into an open spot takes the first one
+            S[i, np.flatnonzero(on == spot)[:1]] = nobody
+        last = np.where(pk, nobody, self._ids(adds))[:, None].repeat(len(drops), 1)  # the add's active spot (none: parked)
+        S = np.concatenate([np.broadcast_to(S, (len(adds), *S.shape)), last[..., None]], -1)
+        Q = np.concatenate([np.broadcast_to(off, S.shape[:2] + off.shape),
+                            np.where(pk, self._ids(adds), nobody)[:, None, None].repeat(len(drops), 1)], -1)
+        back = self._return(S, Q) - self._return(on, off)
         _, O = self._others(team)
         win = lambda X: self._score(self._concede(cat_probs(X[..., None, :], O, self.cats), punt)).mean(-1)
-        return 100 * (win(V - D[None] + A[:, None] + back) - win(V))
+        g = 100 * (win(V - D[None] + self._wk[last] + back) - win(V))
+        return np.where(parks[None] == pk[:, None], g, -np.inf)
 
     def free_moves(self, punt=(), keep=(), team=None):
         """Waiver moves worth making without a trade: the best add/drop (or plain add into an open spot) by win %,
@@ -2609,16 +2632,17 @@ class League:
         if self.mode == "points" or not self.fa:
             return []
         team = team or self.me
-        roster, adds, moves = list(self.rosters[team]), self._adds(punt), []
+        roster, il, adds, moves = list(self.rosters[team]), list(self.il[team]), self._adds(punt), []
         while adds:
-            drops = self._drops(roster, {*keep, *self.chips(roster)})
+            drops = self._drops(roster, {*keep, *self.chips(roster)}, il, team)
             if not drops:
                 break
-            g = self._gains(team, roster, adds, drops, punt)
+            g = self._gains(team, roster, adds, drops, punt, il)
             i, j = np.unravel_index(g.argmax(), g.shape)
             if g[i, j] <= MOVE * self.s:
                 break
             moves.append((adds.pop(i), drops[j], float(g[i, j])))
+            il += [moves[-1][0]] * self._stash(moves[-1][0], il)  # B5: an injured add parks (drops[j] PARK: no drop)
             roster = [k for k in roster if k != drops[j]] + [moves[-1][0]]
         return moves
 
@@ -2630,10 +2654,11 @@ class League:
         moves = self.free_moves(punt, keep, team)
         if not moves:
             return self
-        roster, fa = list(self.rosters[team]), list(self.fa)
-        for a, d, _ in moves:
-            roster, fa = [k for k in roster if k != d] + [a], [k for k in fa if k != a] + [d] * bool(d)
-        lg = self._copy({team: roster}, fa)
+        roster, fa, il = list(self.rosters[team]), list(self.fa), list(self.il[team])
+        for a, d, _ in moves:  # as free_moves() made them: an injured add parks in a free IL slot (B5)
+            il += [a] * self._stash(a, il)
+            roster, fa = [k for k in roster if k != d] + [a], [k for k in fa if k != a] + [d] * (d not in (None, PARK))
+        lg = self._copy({team: roster}, fa, {team: set(il)})
         lg.free = {**self.free, team: [*self.free.get(team, ()), *moves]}
         return lg
 
@@ -2654,8 +2679,10 @@ class League:
         return lg
 
     def _moves_out(self, moves):
-        name = lambda k: self.p.at[k, "PLAYER_NAME"] if k else None
-        return [{"add": name(a), "drop": name(d), "gain": round(float(g), 1)} for a, d, g in moves]
+        """[(add, drop, gain)] as {add, drop, gain}; a PARK move (B5) is drop None and park True."""
+        name = lambda k: self.p.at[k, "PLAYER_NAME"] if k and k != PARK else None
+        return [{"add": name(a), "drop": name(d), "gain": round(float(g), 1), **({"park": True} if d == PARK else {})}
+                for a, d, g in moves]
 
     def _playing(self, keys):
         """Players not parked in an IL slot: the ones on the active roster."""
@@ -3084,9 +3111,8 @@ class League:
         d = self.find(drop) if drop else None
         if d is not None and d not in me:
             raise KeyError(f"Not on your roster: {self.names([d])[0]}")
-        hurt = self.meta.get(k, {}).get("status", "") in OUT
         il = [x for x in self.il[self.me] if x != d]
-        il += [k] * (hurt and len(il) < self.il_n)
+        il += [k] * self._stash(k, il)  # B5: the rule free_moves() and Waivers use
         keys = [x for x in me if x != d] + [k]
         n = len(keys) - len(il) - max(self.roster_n, len(self._playing(me)))  # active players over the limit
         cands = [x for x in self._drops([x for x in keys if x not in il], keep=[k]) if x]
@@ -3120,10 +3146,15 @@ class League:
             (act, ends), claim = self._week_roster(self.me, punt), self._clears(k)  # with players back from IL slots (M21)
             gone = [x for x in [d] * bool(d) + auto if x in act]  # active players leaving: they play until the move
             p0 = odds(left[self.me])
-            if k in il:  # parked: he doesn't play this week, and the drops go now (one locked today, tomorrow: M18)
+            if k in il:  # parked: the drops go now (one locked today, tomorrow: M18), and he plays from his return in
+                # place of who's cut then, as a player already in an IL slot does (B5: _week_roster on the roster after it,
+                # M21; he used to sit the whole week)
                 stay = {x: self.today for x in gone if self._locked(x)}
-                when, start, after = None, {}, [x for x in act if x not in gone or x in stay]
-                until = {**{x: e for x, e in ends.items() if x not in gone}, **stay}
+                lc = self._copy({self.me: keys}, [x for x in self.fa if x != k], {self.me: set(il)})
+                back, ends2 = lc._week_roster(self.me, punt)
+                when, start = None, ({k: claim[k]} if claim else {})
+                after = back + [x for x in stay if x not in back]
+                until = {**{x: e for x, e in ends2.items() if x not in gone}, **stay}
             elif day:
                 when = max(day, self.today, self.matchup.get("from", ""), claim.get(k, ""), self._move_day(gone))
                 start, until = {k: when}, self._handoff(ends, ends, gone, k, when)
@@ -3260,9 +3291,9 @@ class League:
         # a pickup has to play: not one out past a tenth of the games left (Champagnie, out till Feb 25, was listed)
         adds = [k for k in hot.index if k in self.fa and self.back.get(k, 1.0) >= 0.9]
         roster, gain = self.rosters[self.me], pd.Series(dtype=float)
-        drops = self._drops(roster, self.chips(roster))  # never a trade chip, as in free_moves()
-        if adds and self.mode == "points" and any(drops):
-            gain = self.value(adds, punt) - self.value([k for k in drops if k], punt).min()
+        drops = self._drops(roster, self.chips(roster), team=self.me)  # never a trade chip, as in free_moves(); PARK (B5)
+        if adds and self.mode == "points" and any(k not in (None, PARK) for k in drops):
+            gain = self.value(adds, punt) - self.value([k for k in drops if k not in (None, PARK)], punt).min()
         elif adds and drops:
             gain = pd.Series(self._gains(self.me, roster, adds, drops, punt).max(1), adds)
         pick = gain[gain >= (0.3 * self.u if self.mode == "points" else MOVE * self.s)].nlargest(limit)

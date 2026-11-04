@@ -548,6 +548,36 @@ def test_all():
     assert [(x[0]["net"], x[0]["their_net"], x[0]["market"])] == [(r["net"], r["their_net"], r["market"])], (x, r)
     at = both.after_trade(["Hurt Guy"], ["Sore Guy"])
     assert not set(at.rosters["Me"]) & set(at.rosters["Them"]) and not set(at.fa) & set(at.rosters["Them"])
+    # B5: an injured free agent parks in a free IL slot (mchc allows the add straight to IL): no drop, nothing filled
+    # for his missed games, from his return he takes an open spot, else the weakest (_return). free_moves(), Waivers,
+    # after_free() and add_drop() make the same move, search() and trade() score on top of it alike; a full IL slot or
+    # Healthy only leaves him out. Before, he cost a drop and his missed games were half-filled
+    stash_snap = {**ill.snap, "teams": {**ill.snap["teams"], "Them": lg.snap["teams"]["Them"]},
+                  "free_agents": ill.snap["free_agents"] + [{"name": "Sore Guy", "pos": "", "status": "O"}]}
+    st = model.League(stash_snap, pd.concat([base, hurt]), pd.concat([cur, hurt.assign(GP=5)]))  # 2 IL slots: you 1 free
+    sg = st.find("Sore Guy")
+    fm = st.free_moves()
+    assert (sg, model.PARK) in [(a, d) for a, d, _ in fm]
+    ad = st.add_drop("Sore Guy")
+    assert ad["add"]["parks"] and ad["drop"] == [] and ad["open"] == 0
+    assert abs(next(g for a, d, g in fm if a == sg) - ad["net"]) < 0.06  # Try a move's season number
+    assert {"add": "Sore Guy", "drop": None, "gain": ad["net"], "park": True, "unit": "win%"} in st.waivers()["moves"]
+    af = st.after_free()
+    assert af.il["Me"] >= {"hurt guy", sg} and sg in af.rosters["Me"] and sg not in af.fa and sg not in af._playing(af.rosters["Me"])
+    assert all(a != sg for a, _, _ in st.healthy_fa().free_moves())  # Healthy only: not on waivers
+    assert st._stash(sg, ["hurt guy"]) and not st._stash(sg, ["hurt guy", "x"]) and not st._stash("player 100", [])
+    full = model.League({**stash_snap, "settings": {**stash_snap["settings"], "il": 1}}, pd.concat([base, hurt]),
+                        pd.concat([cur, hurt.assign(GP=5)]))
+    assert all(d != model.PARK for _, d, _ in full.free_moves()) and not full.add_drop("Sore Guy")["add"]["parks"]
+    # ... and the deals on top of it: yours (free) and theirs (their_free, Them has two free IL slots)
+    assert any(d == model.PARK for _, d, _ in st.free_moves(team="Them"))
+    for deal in ((["Player 154"], ["Player 195"]), (["Player 194"], ["Player 195", "Player 191"]), (["Hurt Guy"], ["Player 195"])):
+        for kw in ({"free": True}, {"free": False, "their_free": True}, {"free": True, "their_free": True}):
+            r = st.trade(*deal, **kw)
+            x = [y for y in st.search(*deal, size=2, tier="hard", limit=500, **kw)
+                 if sorted(y["give"]) == sorted(deal[0]) and sorted(y["get"]) == sorted(deal[1])]
+            assert [(x[0]["net"], x[0]["their_net"], x[0]["market"])] == [(r["net"], r["their_net"], r["market"])], (deal, kw, x, r)
+        assert {"add": "Sore Guy", "drop": None, "gain": ad["net"], "park": True} in st.trade(*deal)["free"]
     model.TIERS["hard"] = hard
 
     # compare (Q3): 2 to 4 different players; each one's card plus your win % with him in one of your roster spots.
@@ -642,6 +672,14 @@ def test_all():
                       sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week},
                       inj={"Twin C": {"status": "O", "note": "Ankle.", "return": "2026-11-03"}})
     assert sl.games_week["twin a"] == 4 and sl.games_week["twin b"] == 2 and sl.games_week["twin c"] == 0
+    # B5: Try a move parks an injured free agent in a free IL slot and he plays this week from his return, as a player
+    # already in one does (_week_roster): Twin D, back Thursday, has Friday's and Sunday's games (he used to sit it all)
+    pk = model.League({**snap, "settings": {**snap["settings"], "il": 1}, "free_agents": [
+        {**f, "status": "O"} if f["name"] == "Twin D" else f for f in snap["free_agents"]]},
+        pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26), sched=sl.sched,
+        inj={"Twin C": sl.inj["twin c"], "Twin D": {"status": "O", "note": "Knee.", "return": "2026-10-29"}})
+    pkw = pk.add_drop("Twin D", opp="Them")
+    assert pkw["add"]["parks"] and pkw["drop"] == [] and pkw["week"]["games"]["add"] == 2 and pkw["week"]["net"] > 0
     # a game-day listing (M16): "questionable for Wednesday's game" counts that game at GAMEDAY's rate, his other games
     # at his usual one; ESPN's note time (UTC) dates it, so the Wednesday is Oct 28
     q = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26), sched=sl.sched,

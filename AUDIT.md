@@ -15,6 +15,7 @@
 - **B2 (Nov 4):** My team's **Punt …** button goes through the chips' path (`setPunt()`): every view on the punt reloads, an open trade and Try a move are scored again. Page only; script parses; browser check pending.
 - **B3 (Nov 4):** Evaluate, Find and Try a move drop a reply that isn't for the latest request (a token per request; Clear, a new tier / goal / add, a punt change or a team switch cancel it). Page only; script parses; browser check pending.
 - **B4 (Nov 4):** Schedule's week Starts / Sit are the sums of the player rows; Ingram's Sunday has a row. Nov 4 file: 34 = 34 (rows were 33); Denver tipped: 33 = 33 (total was stuck at 34). Standings don't move.
+- **B5 (Nov 4):** an injured free agent goes into a free IL slot with no drop in free moves, Waivers, Hot & cold, the moves under trades and Try a move (one rule), and This week plays him from his return. Your waivers and standings unchanged (full IL); Wesburn +1.0 for stashing Mark Williams after Gafford, five other teams +0.3 to +0.9; Dëmin this week +0.0 → +1.8.
 
 Deep check of player values, team strength, this week, trades, data, backtests, and the app. No code was changed. `python test_model.py` passes. There is no `data/notes.md` (no open AI GM notes).
 
