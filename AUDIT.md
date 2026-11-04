@@ -3,7 +3,8 @@
 **Checked Nov 4 (Claude Code, against the code, data and fresh backtest runs) — read this before acting on a finding:**
 - **Done Nov 4:** #15, #23, #8 / #25 (ROADMAP A4: This week and Start / sit follow Healthy only; `live()` drops a rebuild started before a team switch, opponent pick or Refresh; `playoffs()`' docstring).
 - **Done Nov 4:** #2 + #3 (ROADMAP A2: rookies blend the expert line at 75% and follow this season at 10 games, measured better in all four seasons; freezing Yahoo at the first snapshot measured worse on this season's snapshots, so the live line stays). #1 (ROADMAP A1: no-ESPN Yahoo rows under half of the baseline's or this season's are dropped; Kobe Sanders 7.0 → 7.9, you 57.9 → 57.8%, This week unchanged).
-- **Valid, to do:** #1 (11 players with 3+ games on a junk Yahoo line, ESPN has none: Kobe Sanders 1.9 vs 11.0), #2 (snapshot Yahoo lines move in-season: Acuff 17.3 → 23.3, Wilson 16.1 → 18.8, Oct 27 → Nov 3), #3 (rookie prior 40% fringe: Boozer 15.8 on Yahoo 18.4 / 17.4 this season), #15 (`/api/week`, `/api/lineup` use `lg`, not `fl`), #23 (`live()` assigns `lg = new` whatever `/api/me` did meanwhile), #8 / #25 (`playoffs()` docstring predates M2).
+- **Second check Nov 4, after A1–A4 (Claude Code, local; old and new code side by side in scratch copies):** everything the cloud claimed reproduces. `test_model.py` passes, and undoing each A1/A2 change (5 ways) fails it. Real league on the Nov 3 snapshot: every before / after number in ROADMAP A1 / A2 (title 16.9% vs 16.8%, rounding). Backtests `rookies`, `yahoo`, `recency`, `replay`, `teammates`, `bench`, `playoffs`, the 2025-26 calibration and A3's 3-vs-4 weekly runs (four seasons): same numbers to the fourth decimal. App: Healthy only reaches This week (206 → 195 free agents) and a team switch survives `live()` (the old code reverted it). #2's other fix, a lower expert weight on the live Yahoo line, also measured worse, so #2 is closed both ways. Corrected in ROADMAP: A2's "−0.6" (it's +0.6) and A3's "best in three of four" (best outright in two; best on average and head to head). Details in each A item's "Checked" line. On today's Nov 4 snapshot the new code gives you 57.8 → 58.0% (1st), title 16.1 → 16.3%, This week vs Mumbai 74.5 → 75.2%, the same plan.
+- **Valid, to do:** #13 (below: `/api/me` clears `matchup`; in ROADMAP's Small list). #1, #2, #3, #15, #23 and #8 / #25 are done (above).
 - **Not valid:** #4: M8's `python backtest.py trend` already measured it (a 14-day form gap carries −0.07 to +0.02 into the next 14 days), so a recent-form line for This week would be worse. #22's "`backtest.py ahead` produced an empty log": it runs (re-run Nov 3, numbers as in ROADMAP M27).
 - **Unproven, not on the list:** #11 (a hypothesis, no measurement).
 - **Answered:** #8's bracket question: the snapshot says "Reseeding: yes", as the sim does.
@@ -119,7 +120,12 @@ Game-day listings (`GAMEDAY` 0.92 / 0.48 / 0.10) still rest on 104 player-games 
 
 ## This week and streams
 
-### 13. Fine — dates, lock, IL-back, adds
+### 13. BUG — `/api/me` clears `matchup`, so days after the snapshot drop out of This week
+**CONFIRMED** (the This-week auditor's hung repro; checked in `data/league.json`: `"matchup": null`). `/api/me` does `remember(me=..., matchup=None)`. `League` then rebuilds the pairing from the season schedule **without** `from` or `totals`. `_so_far()` still reads the snapshot's `matchups` totals (Nov 2's 202 pts), but `from` defaults to **today**, so box scores between the snapshot and yesterday are not added. `game_days()` also starts at today, so those days are in neither the score nor the rest of the week.
+
+Fine tonight (Election Day had no games; Nov 4 not in the totals yet). After one more game night without Refresh, This week's score-so-far and remaining games will both skip that night. Re-importing the snapshot, or keeping `from` / `totals` when switching teams, fixes it.
+
+### 13b. Fine — dates, lock, IL-back, adds
 Mac is MST (UTC−7). `date.today()` is the local NBA date, not UTC. Week Nov 2–8, not rolled. No games under way at audit (live.json stale is fine overnight). Name matching: **0 unmatched rostered players, 0 unmatched listed FAs.**
 
 Start/sit, `_clears()` (rolling-waiver claim day), `_handoff()` (IL return cuts the stream), and `_reserve()` (last add for late news) match the docs. `python backtest.py news` still gives HAZARD 0.33, ONE_GAME 0.56. `gameday` still matches the shipped table.
