@@ -3161,7 +3161,10 @@ class League:
         """Schedule planner (Q4): your active players' NBA games per day for the rest of this matchup week and the
         next n (weeks()), each day's starters (the best `lineup` with a game, as starts() picks them but on the build's
         value, Q13; for the most category wins vs the week's opponent, `vs`, when one is known: _week_plan, swaps only), who sits on an overflow
-        day, and open slots (fewer than `lineup` of yours play while the NBA does: room to stream). Players in IL slots sit, injured players count from their return date. teams: every NBA
+        day, and open slots (fewer than `lineup` of yours play while the NBA does: room to stream). Players in IL slots sit, injured players count from their return date;
+        one back from an IL slot this week plays from his first game in place of who's cut then (_week_roster, M21) and has
+        a row (sched None for later weeks). A week's starts and sit are the sums of its rows' (B4): a game under way
+        today counts on neither (the day's players / sit still list him), a cut player's games after his cut on neither. teams: every NBA
         team's games in those weeks, on your open days (games a streamer from there would start), and in the fantasy playoff weeks, with your
         players there and the best healthy free agent on your build (effective()). Starters fill the league's slots by
         position (_lineup), so a player can sit with a spot open (fill: the positions that could take it).
@@ -3178,26 +3181,29 @@ class League:
         weeks, opened, starts = [], [], collections.defaultdict(list)
         eff, val = self.effective(punt), self.value(punt=punt)
         now = self._week_roster(self.me, punt)  # this week: players back from IL slots in, who's cut out then (M21)
+        rows = list(play) + [k for k in now[0] if k not in play]  # B4: one back from an IL slot this week has a row too
         for i, (s, e) in enumerate(spans):  # starters for the most category wins vs each week's opponent (_week_plan)
             wp = self._week_plan(punt=punt, span=(s, e) if i else None, bench=False)
-            day, days, c = self._days(now[0] if i == 0 else play, e, s, until=now[1] if i == 0 else None, by=val), [], collections.Counter()
+            day, days, c, g = self._days(now[0] if i == 0 else play, e, s, until=now[1] if i == 0 else None, by=val), [], collections.Counter(), collections.Counter()
             d = date.fromisoformat(s)
             while d.isoformat() <= e:
                 x, ks = d.isoformat(), day.get(d.isoformat(), [])
                 fit = self._lineup(ks)
                 on = wp["plan"].get(x, fit) if wp else fit
-                c.update(k for k in on if x != self.today or not self._locked(k))  # under way: not a start left (M18)
+                left = [k for k in ks if x != self.today or not self._locked(k)]  # under way: not a game left (M18)
+                c.update(k for k in on if k in left)
+                g.update(left)
                 o = self.lineup - len(fit) if busy[x] else 0
                 days.append({"date": x, "nba": busy[x], "players": name(on), "sit": name(k for k in ks if k not in on),
                              "open": o, **({"fill": self._fill(fit)} if o and self.slots else {})})
                 d += timedelta(1)
-            for k in play:
-                starts[k].append(c[k])
+            for k in rows:  # B4: the rows are the week's counts, so Starts and Sit are their sums (an IL player back this
+                starts[k].append({"games": g[k], "starts": c[k]} if i == 0 or k in play else None)  # week only in it)
             opened.append({x["date"] for x in days if x["open"]})
             weeks.append({"start": s, "end": e, "week": next((w["week"] for w in sched if w["start"] <= s <= w["end"]), None),
                           **({"vs": wp["opp"]} if wp else {}),
                           "games": sum(len(x["players"]) + len(x["sit"]) for x in days),
-                          "starts": sum(len(x["players"]) for x in days), "sit": sum(len(x["sit"]) for x in days),
+                          "starts": sum(c.values()), "sit": sum(g.values()) - sum(c.values()),
                           "open": sum(x["open"] for x in days), "days": days})
         po = self.playoff_weeks()
         within = lambda ds, s, e: sum(s <= d <= e for d in ds)
@@ -3212,12 +3218,11 @@ class League:
         for t in teams:
             t["total"] = sum(t["weeks"])
         teams.sort(key=lambda t: (-t["total"], -sum(t["playoffs"]), t["nba"]))
-        roster = [{**self.player(k, punt), "sched": [{"games": len(self.game_days(k, e, s)), "starts": st}
-                                                     for (s, e), st in zip(spans, starts[k])]}
-                  for k in sorted(play, key=val.get, reverse=True)]
+        roster = [{**self.player(k, punt), "sched": starts[k], **({"il": True} if k not in play else {})}
+                  for k in sorted(rows, key=val.get, reverse=True)]
         return {"lineup": self.lineup, "slots": self.slots, "weeks": weeks, "teams": teams, "roster": roster,
                 "il": [{"name": self.p.at[k, "PLAYER_NAME"], **({"return": self.inj[k]["return"]} if self.inj.get(k, {}).get("return") else {})}
-                       for k in me if k not in play],
+                       for k in me if k not in rows],
                 "playoffs": [{"week": w, "start": s, "end": e} for w, s, e in po], "adds": self.adds()}
 
     def _fill(self, on):

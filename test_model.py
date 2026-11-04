@@ -753,6 +753,25 @@ def test_all():
     assert pp["playoffs"] == [{"week": 3, "start": "2026-11-02", "end": "2026-11-08"}] and pp["weeks"][0]["week"] == 2
     assert next(x for x in pp["teams"] if x["nba"] == "AAA")["playoffs"] == [2]
     assert pp["il"] == [{"name": "Twin C", "return": "2026-11-03"}] and "Twin C" not in {r["name"] for r in pp["roster"]}
+    # B4: the week's Starts and Sit are the sums of the player rows: a player back from an IL slot this week (Twin C,
+    # Thursday) is a row and not in the "not counted" list, and a game under way counts on neither
+    rows = lambda pl, i=0: [r["sched"][i] for r in pl["roster"] if r["sched"][i]]
+    bk = model.League({**snap, "schedule": po, "teams": teams}, pd.concat([base, twins]), pd.concat([cur, twins]),
+                      today=model.date(2026, 10, 26), sched=sl.sched, inj={"Twin C": {**sl.inj["twin c"], "return": "2026-10-29"}})
+    bp = bk.planner()
+    tcb = next(r for r in bp["roster"] if r["name"] == "Twin C")
+    assert bp["il"] == [] and tcb["il"] and tcb["sched"][0]["games"] > 0 and tcb["sched"][1] is None
+    assert bp["weeks"][0]["starts"] == sum(x["starts"] for x in rows(bp)) and bp["weeks"][0]["sit"] == sum(x["games"] - x["starts"] for x in rows(bp))
+    assert bp["weeks"][0]["starts"] == sum(bk.starts(*bk._week_roster("Me")[:2]).values())  # This week's games left
+    for i in (1, 2):
+        assert bp["weeks"][i]["starts"] == sum(x["starts"] for x in rows(bp, i)) and bp["weeks"][i]["sit"] == sum(x["games"] - x["starts"] for x in rows(bp, i))
+    tk = model.League(bk.snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26), sched=sl.sched,
+                      inj={"Twin C": {**sl.inj["twin c"], "return": "2026-10-29"}})
+    tk.tipped = {"AAA"}  # Monday's AAA game tips off: its starters hold their slots (_tipoff) and aren't a game left
+    tp, n0 = tk.planner(), bp["weeks"][0]
+    bt, held = tp["weeks"][0], len(tk._held(tk._playing(tk.rosters["Me"])))
+    assert held and bt["starts"] == n0["starts"] - held and bt["starts"] == sum(x["starts"] for x in rows(tp))
+    assert bt["sit"] == sum(x["games"] - x["starts"] for x in rows(tp)) and bt["sit"] == n0["sit"]
     assert model.League({**pw.snap, "settings": {**pw.snap["settings"], "playoff_weeks": []}}, pd.concat([base, twins]),
                         pd.concat([cur, twins]), today=model.date(2026, 10, 26), sched=sl.sched).planner()["playoffs"] == []
     assert lg.planner()["weeks"] == []  # no NBA schedule: nothing to plan

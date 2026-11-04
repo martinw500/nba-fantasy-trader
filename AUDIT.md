@@ -14,6 +14,7 @@
 - **B1 (Nov 4):** see #13 below. A team switch keeps the week; Toronto's score so far on a copy with `from` two days back 159 → 315 PTS, games left unchanged, switching back gives the file's matchup.
 - **B2 (Nov 4):** My team's **Punt …** button goes through the chips' path (`setPunt()`): every view on the punt reloads, an open trade and Try a move are scored again. Page only; script parses; browser check pending.
 - **B3 (Nov 4):** Evaluate, Find and Try a move drop a reply that isn't for the latest request (a token per request; Clear, a new tier / goal / add, a punt change or a team switch cancel it). Page only; script parses; browser check pending.
+- **B4 (Nov 4):** Schedule's week Starts / Sit are the sums of the player rows; Ingram's Sunday has a row. Nov 4 file: 34 = 34 (rows were 33); Denver tipped: 33 = 33 (total was stuck at 34). Standings don't move.
 
 Deep check of player values, team strength, this week, trades, data, backtests, and the app. No code was changed. `python test_model.py` passes. There is no `data/notes.md` (no open AI GM notes).
 

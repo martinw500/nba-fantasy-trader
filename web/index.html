@@ -856,9 +856,10 @@ function viewSchedule() {
   if (!d) { if (!P.loading) loadSchedule(); return head + `<div class="panel">${SKEL}</div>`; }
   if (d.error) return head + `<div class="panel err">Couldn't load the schedule: ${esc(d.error)} <button class="btn" data-act="sched-retry">Try again</button></div>`;
   if (!d.weeks.length) return head + `<div class="panel"><div class="empty"><b>No NBA schedule yet</b>The planner needs the NBA's game schedule, which the app downloads from stats.nba.com and keeps for a day. Press Refresh once it can be reached.</div></div>`;
-  return head + calendarPanel(d) + `<div class="panel"><div class="panel-h"><div><h2>Your players</h2><p>NBA games per week after any return date. A red number after it is games he'd sit because ${d.lineup} better players have one that day.${d.il.length ? ` In IL slots, not counted: ${and(d.il.map(x => esc(x.name) + (x.return ? ` (back ${mdy(x.return)})` : "")))}.` : ""}</p></div></div>
+  return head + calendarPanel(d) + `<div class="panel"><div class="panel-h"><div><h2>Your players</h2><p>NBA games per week after any return date. A red number after it is games he'd sit because ${d.lineup} better players have one that day. The rows add up to the calendar's Starts and Sit; a game already under way isn't one left.${d.roster.some(p => p.il) ? ` Back from an IL slot this week: ${and(d.roster.filter(p => p.il).map(p => esc(p.name)))}, from his first game.` : ""}${d.il.length ? ` In IL slots, not counted: ${and(d.il.map(x => esc(x.name) + (x.return ? ` (back ${mdy(x.return)})` : "")))}.` : ""}</p></div></div>
     ${playerTable(d.roster.map(p => ({ ...p, games: undefined })), { extra: d.weeks.map((w, i) => ({ h: `<span${i ? "" : ` title="NBA games left in your matchup week"`}>${weekName(w, i)}</span>`,
-      v: p => { const x = p.sched[i], lost = x.games - x.starts; return `<span class="${x.games >= 4 ? "pos" : x.games <= 1 ? "neg" : ""}">${x.games}</span>${lost ? ` <span class="small neg" title="${lost} of his ${x.games} games land on days your lineup is full">−${lost}</span>` : ""}`; } })) })}</div>`
+      v: p => { const x = p.sched[i]; if (!x) return `<span class="muted" title="In an IL slot: counted from his return this week only">—</span>`;
+        const lost = x.games - x.starts; return `<span class="${x.games >= 4 ? "pos" : x.games <= 1 ? "neg" : ""}">${x.games}</span>${lost ? ` <span class="small neg" title="${lost} of his ${x.games} games land on days your lineup is full">−${lost}</span>` : ""}`; } })) })}</div>`
     + teamsPanel(d);
 }
 function calendarPanel(d) {
