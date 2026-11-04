@@ -13,7 +13,7 @@ To pick this up in Claude Code: *"Read ROADMAP.md and do M6"* once ~20 offers ar
 - **The app runs on the real league** (mchc fantasy, fatty zhou) from Instinct's text snapshots: Yahoo's API is closed to new apps, so rosters, the score so far, Yahoo's ranks and adds used change only with a new snapshot (drop it in the folder, press Refresh). NBA stats, box scores, schedule, ESPN projections, injuries and news are live; injuries refetch every 30 minutes while the app runs (Q20), and on game nights nba.com's live scores every 5 (M18): tonight's games count in the score as they're played and lock their players.
 - **Views:** My team (odds, playoff race, who to cut when IL players return, news, Strategy), This week (score, Start / sit, streams and the add plan), League, Trades (builder, finder, what they want, offers sent), Waivers (moves, Try a move), Hot & cold, Schedule, Compare, AI GM (Claude Code login, web search and pages, notes for Claude Code).
 - **The model:** a calibrated 9-cat matchup model (`python backtest.py`), projections fitted on 2022-23 to 2025-26, availability and teammates' injuries fitted (each team's own split since M13), IL slots and open spots as Yahoo runs them (N5, M14; This week too, M21), the market for trade acceptance (N0, M10). `python test_model.py` passes.
-- **Standings (Nov 3):** fatty zhou 57.2% (1st), Mumbai 56.6%, Shanghai 54.8%; 92% to make the playoffs.
+- **Standings (Nov 4):** fatty zhou 57.9% (1st), Mumbai 57.4%, Shanghai 55.0%; 93% to make the playoffs. Deep check of the numbers: `AUDIT.md`.
 
 ## The pathway (Nov 3)
 
@@ -53,11 +53,14 @@ Martin's goal is winning weeks, and streaming is the biggest weekly lever (this 
 - **M9. Matchup correlation** `xhigh`: moves no trade, waiver or standings number in a categories league, only This week's chance to win the matchup.
 
 **Small (pick up when nearby)**
+- **Nov 4 audit (`AUDIT.md`): junk Yahoo projection rows still used when ESPN has no line** `high` — `experts()` only drops Yahoo under half of ESPN; no ESPN → Kobe Sanders 11.0 pts this season projects 7.0, Brandon Williams 11.6 → 7.5, Thybulle, Huff, Pat Spencer. Capela 0.4 *is* caught (ESPN has him). Waiver order moves.
+- ~~**Nov 4 audit: This week uses rest-of-season lines**~~ not a bug (checked Nov 4): M8's `python backtest.py trend` already measured it, a 14-day form gap carries −0.07 to +0.02 into the next 14 days at every game count, so recent form would make This week worse; the rest-of-season line is the forecast. Boozer's low line is the rookie item below, not form.
+- **Nov 4 check: `MIN_SHRINK` / `RECENT` after M26** `high` — `python backtest.py recency` now gives weeks 1–6 +1.3 / −0.6 / 0.0 / −0.3% vs k_min 6 every game alike (was −2.0% everywhere, Oct 30); season −0.4 to −1.3%. M26 moved the baseline under it: rerun the grid, keep or refit, fix the comment.
+- **Nov 4 audit: in-season Yahoo updates double-count this season** `xhigh` — `PROJ_W` was fitted on frozen ESPN preseason lines; live Yahoo chased Acuff 17.3 → 23.3 in a week, then `ros()` adds the games again. Fix with the rookie fringe pull (40% bench line in `prior()`), not alone.
 - Weeks 1–2 of a season, healthy players sit less than This week says (M27's left: next game 94.6% played, the model 92.1%); a hazard by part of the season gained little (Brier 83.59 → 83.51), so it waits for this season's own numbers.
 - Who to cut first when IL players return days apart (M15's left: Ingram Nov 8, the others Nov 10). This week takes the plan's cut with the fewest games left then (M21: Black); the season numbers don't order them.
 - Waivers and free moves never park an injured free agent in an open IL slot (Try a move does).
 - Goal searches (cats / team) take a tier on the goal score, `trade()` on win %, so a loaded goal deal can list no tier.
-- One of Yahoo's low projection rows (Capela, 0.4 pts) is worth checking on Yahoo: the snapshot tool may divide totals by the wrong games.
 - The API-key chat (`ai.py`) has no strategy or "what they want" tools (it isn't used while the chat runs on `claude -p`).
 
 **For Martin (not code)**
