@@ -210,6 +210,21 @@ def test_all():
     a = model.availability(pd.Series([kess.GP["kess"], 41, np.nan]), pd.Series([3, 3, 3]), 3)
     assert kess.GP["kess"] == 58 and a[0] > a[1] and a[2] == (3 + model.AVAIL_K * 0.85) / (3 + model.AVAIL_K)
     assert model.availability(pd.Series([82]), pd.Series([20]), 20)[0] > model.availability(pd.Series([82]), pd.Series([10]), 20)[0]
+    # a player no expert projects (M26) has the fringe line's part of his baseline at BENCH_MIN minutes, his rates kept
+    # (Felix Okpara, 1 game at 1 minute, projected 22 minutes off the fringe line's 26); a projected one keeps his; and
+    # a rookie with no line starts at BENCH_MIN minutes on the fringe line's rates
+    two = model.keyed(pd.DataFrame([line("Deep", 100, MIN=4.0, gp=3), line("Known", 100, MIN=4.0, gp=3)]))
+    deep = model.baseline(pd.concat([base, two]), pd.concat([base, two]))  # the fringe line: 141st-200th in minutes (13.7 here)
+    pj0 = model.experts({}, {"Known": {"MIN": 4.0, "PTS": 1.0}}, deep, deep.index)
+    pre0 = model.prior(deep, pj0)
+    assert model.BENCH_MIN
+    want = deep.at["deep", "MIN"] - deep.at["deep", "PULL_MIN"] + deep.at["deep", "PULL"] * model.BENCH_MIN
+    assert np.isclose(pre0.at["deep", "MIN"], want) and not np.isclose(want, deep.at["deep", "MIN"])
+    assert np.isclose(pre0.at["deep", "PTS"] / pre0.at["deep", "MIN"], deep.at["deep", "PTS"] / deep.at["deep", "MIN"])
+    assert np.isclose(pre0.at["known", "MIN"], (1 - model.PROJ_W) * deep.at["known", "MIN"] + model.PROJ_W * 4.0)
+    rk = model.ros(base, cur.loc[["rookie guy"]].assign(GP=0)).loc["rookie guy"]  # before his first game
+    fr = base.nlargest(200, "MIN").tail(60)
+    assert np.isclose(rk.MIN, model.BENCH_MIN) and np.isclose(rk.PTS / rk.MIN, fr.PTS.mean() / fr.MIN.mean())
 
     # finder honours its own rules
     for idea in lg.ideas("fair"):

@@ -6,6 +6,8 @@ python backtest.py rates [2025-26]: next week's and rest of season's stats error
 group (M22, measured Nov 3, not shipped: no better).
 python backtest.py minor [2025-26]: the same with 15-25 minute sitters handing out minutes and a cap on what one sitter
 hands out (M25, measured Nov 4, not shipped: stats worse, the cap no change).
+python backtest.py bench: rest-of-season error by BENCH_MIN, the minutes players no expert projects are pulled toward,
+2022-23 to 2025-26 (fits BENCH_MIN, M26).
 python backtest.py gameday: how often players listed probable / questionable / doubtful for a game played it (fits
 GAMEDAY), from the archived ESPN feeds and this season's box scores.
 python backtest.py ahead: from every day of the week, how often a player who played his team's last game plays each of
@@ -35,7 +37,7 @@ import pandas as pd
 import model
 
 ARGS = [a for a in sys.argv[1:]
-        if a not in ("replay", "teammates", "onoff", "minor", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead")]
+        if a not in ("replay", "teammates", "onoff", "minor", "bench", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
@@ -250,6 +252,40 @@ def recency(seasons=("2022-23", "2023-24", "2024-25", "2025-26"),
             e = np.array(e)
             print(f"  k_min {km}, half-life {hl or '-':<3} weeks 1-6 {e[:6].mean():.4f} ({100 * (e[:6].mean() / e0[:6].mean() - 1):+.1f}%)"
                   f"   season {e.mean():.4f} ({100 * (e.mean() / e0.mean() - 1):+.1f}%)")
+
+
+def bench(seasons=("2022-23", "2023-24", "2024-25", "2025-26"), grid=(None, 6, 8, 10, 12, 15, 18)):
+    """M26: replay()'s rest-of-season error by model.BENCH_MIN (None: the fringe line's ~26 minutes, as shipped) for
+    players no expert projects (each season's ESPN preseason projection), from week 0 to 4 weeks from the end: everyone
+    with 10+ games left, and those players (their minutes bias too), week 0, weeks 1-6 and the season. Also how many
+    minutes a game they projected and played, by their minutes this season so far."""
+    old = model.BENCH_MIN
+    for season in seasons:
+        prev, prev2 = (f"{int(season[:4]) - n}-{int(season[2:4]) - n + 1:02d}" for n in (1, 2))
+        g, base = logs(season), model.baseline(model.fetch(prev), model.fetch(prev2))
+        ex = model.experts({}, model.espn(season), base, base.index.union(g.key.unique()))
+        err = {x: {"all": [], "none": [], "bias": [], "n": []} for x in grid}
+        for x in grid:
+            model.BENCH_MIN = x
+            pre = model.prior(base, ex)
+            for w in range(int(g.week.max()) - 3):
+                left = per_game(g[g.week >= w]).query("GP >= 10")
+                line = model.ros(pre, model.recent(g[g.week < w], monday(g, w))).reindex(left.index)
+                line[["MIN"] + model.RAW] = line[["MIN"] + model.RAW].fillna(0)
+                e = ((line[model.RAW] - left[model.RAW]).abs() / left[model.RAW].mean()).mean(axis=1)
+                no = ~left.index.isin(ex.index)
+                err[x]["all"].append(float(e.mean())); err[x]["none"].append(float(e[no].mean()))
+                err[x]["bias"].append(float((line.MIN - left.MIN)[no].mean())); err[x]["n"].append(int(no.sum()))
+        print(f"\n== {season}: rest-of-season error by bench minutes for players no expert projects (M26) ==")
+        e0 = {k: np.array(v) for k, v in err[grid[0]].items()}
+        for x in grid:
+            e = {k: np.array(v) for k, v in err[x].items()}
+            print(f"  BENCH_MIN {str(x):5} everyone wk0 {e['all'][0]:.4f} wks1-6 {e['all'][1:7].mean():.4f} season "
+                  f"{e['all'].mean():.4f} ({100 * (e['all'].mean() / e0['all'].mean() - 1):+.2f}%)   unprojected "
+                  f"(n {e['n'].mean():.0f}) wk0 {e['none'][0]:.4f} wks1-6 {e['none'][1:7].mean():.4f} season "
+                  f"{e['none'].mean():.4f} ({100 * (e['none'].mean() / e0['none'].mean() - 1):+.2f}%), minutes bias "
+                  f"wks1-6 {e['bias'][1:7].mean():+.2f} season {e['bias'].mean():+.2f}")
+    model.BENCH_MIN = old
 
 
 def mondays():
@@ -751,6 +787,8 @@ if __name__ == "__main__":
         ahead()
     elif "rates" in sys.argv:
         ratesplit()
+    elif "bench" in sys.argv:
+        bench()
     elif "minor" in sys.argv:
         minor()
     elif "onoff" in sys.argv:

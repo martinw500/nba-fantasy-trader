@@ -61,6 +61,12 @@ RECENT = 45  # days: this season's games weigh 0.5^(days ago / RECENT) in its pe
              # better in each of 2022-23 to 2025-26 (python backtest.py recency, Oct 30). A 7-day half-life is +5.5%:
              # streaks don't last. Slower minutes for established players' early dips gained nothing
 OLDER_W, REGRESS = 0.5, 25  # baseline: a game two seasons ago counts half; 25 games of a fringe line pull small samples in
+# M26: a player no expert projects (deep bench, two-way, undrafted) is pulled toward BENCH_MIN minutes at the fringe
+# line's rates, not the fringe line's ~26 minutes (prior(); ros() for a rookie with no line); None = off. Fitted Nov 4
+# (python backtest.py bench, 2022-23 to 2025-26): those players ran ~2 min a game high in weeks 1-6 (15.8 projected,
+# 13.8 played); rest-of-season stats error -2.2 / -3.5 / -2.1 / -0.6% for everyone (theirs -7.0 / -10.6 / -6.4 / -1.6%),
+# 10-15 about as good. Next week's stats (teammates) better in 2025-26 and 2024-25 too, minutes 0.3 a game lower
+BENCH_MIN = 12
 PROJ_W = 0.6  # expert projections' weight in the pre-season line (prior()); fitted by python backtest.py replay
 HYPE = 10    # same, for how other managers see players (hot starts count more: 3 games = 23%, 10 games = half)
 FORM_DAYS, FORM_GP = 14, 3  # recent form: value over the last 14 days, for players with 3+ games in them
@@ -554,9 +560,11 @@ def baseline(last, older):
     w1, w2 = last.GP.reindex(keys).fillna(0), OLDER_W * older.GP.reindex(keys).fillna(0)
     x1, x2 = last[cols].reindex(keys).fillna(0), older[cols].reindex(keys).fillna(0)
     line = (x1.mul(w1, axis=0) + x2.mul(w2, axis=0) + REGRESS * fringe).div(w1 + w2 + REGRESS, axis=0)
+    pull = REGRESS / (w1 + w2 + REGRESS)  # the fringe line's share of his line, and its minutes (prior()'s bench, M26)
     return line.assign(PLAYER_NAME=last.PLAYER_NAME.combine_first(older.PLAYER_NAME).reindex(keys),
                        TEAM_ABBREVIATION=last.TEAM_ABBREVIATION.combine_first(older.TEAM_ABBREVIATION).reindex(keys),
-                       GP=pd.concat([last.GP, older.GP], axis=1).max(axis=1).reindex(keys))
+                       GP=pd.concat([last.GP, older.GP], axis=1).max(axis=1).reindex(keys), PULL=pull,
+                       PULL_MIN=pull * fringe[0])
 
 
 def fresh_plays(rate, j):
@@ -598,11 +606,18 @@ def experts(yahoo, espn, base, keys=()):
 
 def prior(base, proj, w=PROJ_W):
     """Pre-season line: baseline() blended with the experts' line (experts(), weighing w). A rookie's baseline is the
-    fringe-roster line ros() starts unprojected rookies from. ros() then leans on this season as games pile up."""
+    fringe-roster line ros() starts unprojected rookies from. ros() then leans on this season as games pile up.
+    BENCH_MIN (M26): one no expert projects has the fringe line's part of his baseline at BENCH_MIN minutes instead
+    (his rates kept)."""
     cols = ["MIN"] + RAW
     fringe = base.nlargest(200, "MIN").tail(60)[cols].mean()
     new = proj.loc[proj.index.difference(base.index), ["PLAYER_NAME"]].assign(GP=0.0, **fringe.to_dict())
     out = pd.concat([base, new]) if len(new) else base.copy()
+    if BENCH_MIN is not None and "PULL" in out:
+        k = out.index.difference(proj.index)
+        mins = (out.loc[k, "MIN"] - out.loc[k, "PULL_MIN"] + out.loc[k, "PULL"] * BENCH_MIN).clip(lower=0.1)
+        out.loc[k, RAW] = out.loc[k, RAW].mul(mins / out.loc[k, "MIN"].clip(lower=0.1), axis=0)
+        out.loc[k, "MIN"] = mins
     out.loc[proj.index, cols] = (1 - w) * out.loc[proj.index, cols] + w * proj[cols]
     return out
 
@@ -618,7 +633,10 @@ def ros(base, cur, k=SHRINK, k_min=MIN_SHRINK):
     season. Faster minutes for players on a new team gained nothing."""
     rookies = cur.index.difference(base.index)
     out = pd.concat([base, cur.loc[rookies]])
-    out.loc[rookies, ["MIN"] + RAW] = base.nlargest(200, "MIN").tail(60)[["MIN"] + RAW].mean().to_numpy()
+    fringe = base.nlargest(200, "MIN").tail(60)[["MIN"] + RAW].mean()
+    if BENCH_MIN is not None:  # M26: at the fringe line's rates, bench minutes
+        fringe = fringe * BENCH_MIN / fringe.MIN
+    out.loc[rookies, ["MIN"] + RAW] = fringe.to_numpy()
     both = out.index.intersection(cur.index)
     gp, cm, bm = cur.loc[both, "GP"], cur.loc[both, "MIN"], out.loc[both, "MIN"]
     mins = (gp * cm + k_min * bm) / (gp + k_min)
