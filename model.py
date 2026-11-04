@@ -2161,8 +2161,9 @@ class League:
                hard: you win on market (up to 30% when both gain). max_overpay (%): tightens the tier's market floor.
                No deal has a player the side taking him would cut on arrival (the deal without him is the same), or
                fits only by a side cutting a trade chip (M24: chips go last, trade() flags it).
-        goal:  "win" (weekly win %), "cats" (your odds in goal_cats) or "team" (head-to-head vs goal_team).
-               The last two skip deals that cost you more than GUARD win %.
+        goal:  "win" (weekly win %), "cats" (your odds in goal_cats) or "team" (head-to-head vs goal_team): what
+               ranks the deals. The tier is always on win % (as trade()'s), and the last two also skip deals that cost
+               you more than GUARD win %.
         shape: "consolidate" (you send more players) or "depth" (you get more).
         free:  score deals on top of your free moves (after_free), never offering the players they pick up.
                their_free: each partner's too (as in trade()).
@@ -2358,8 +2359,10 @@ class League:
                 score = dme
             # a player cut on arrival adds nothing to the side taking him and hands the other a roster spot (a waiver
             # move it could make anyway): the deal without him is the real one. A deal that only fits by cutting a
-            # trade chip (M24) is out too: trade() flags it
-            ok = self._tier(tier, score, dthem, mkt, max_overpay) & ~my_cut & ~their_cut
+            # trade chip (M24) is out too: trade() flags it. The tier is on win % for every goal, as trade()'s tiers
+            # (B6: a cats or team goal's score passed Fair with win % down, and the builder then listed no tier); the
+            # goal's score only ranks the deals that clear it
+            ok = self._tier(tier, dme, dthem, mkt, max_overpay) & ~my_cut & ~their_cut
             if goal != "win":
                 ok &= dme > -GUARD * self.s
             if shape == "consolidate":

@@ -346,6 +346,12 @@ def test_all():
     cons = lg.search(get=["Player 199"], tier="hard", shape="consolidate")
     assert cons and all(len(x["give"]) > len(x["get"]) for x in cons)
     assert all(x["score"] > 0 for x in lg.search(get=["Player 199"], goal="cats", goal_cats=["STL"], tier="hard"))
+    # B6: a cats or team goal ranks the deals; the tier is on win %, as trade()'s tiers, so every one it returns lists
+    # that tier in the builder (the goal's score used to pass it with win % down)
+    for kw in ({"goal": "cats", "goal_cats": ["STL"]}, {"goal": "cats", "goal_cats": ["STL", "TOV"]}, {"goal": "team", "goal_team": "Them"}):
+        gs = lg.search(tier="hard", size=2, limit=5000, free=False, team="Them", **kw)
+        assert gs and min(x["net"] for x in gs) >= model.TIERS["hard"][0] * lg.s - 0.05, kw  # STL alone: -0.3 before
+        assert all("hard" in lg.trade(x["give"], x["get"], free=False)["tiers"] for x in gs[::max(len(gs) // 8, 1)])
     # a punted goal category is measured on real odds, like an unpunted one (its conceded 0% read +30 for every deal)
     goal = lambda p: [x["score"] for x in lg.search(["Player 198"], ["Player 199"], size=1, goal="cats", goal_cats=["STL"],
                                                     punt=p, tier="hard", free=False)]
