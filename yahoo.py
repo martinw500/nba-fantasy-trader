@@ -246,10 +246,10 @@ def parse_text(text):
     return out
 
 
-def from_text(path, me=None):
+def from_text(path, me=None, write=True):
     """league.json from a league text file (parse_text). me defaults to the file's "My team:" line. Free agents are
     the ones the file lists (with roster % and claim dates) plus the best players nobody rosters, since anyone not
-    on a roster is available."""
+    on a roster is available. write=False: the league only, data/league.json untouched (backtest.py lineups)."""
     import model
     got = parse_text(Path(path).read_text(encoding="utf-8"))
     teams = got["teams"]
@@ -282,7 +282,7 @@ def from_text(path, me=None):
                            **({"from": got["from"]} if got.get("from") else {})}
     elif old.get("matchup") and old.get("me") == me:  # the opponent picked in the app survives a re-import
         snap["matchup"] = old["matchup"]
-    return save(snap)
+    return save(snap) if write else snap
 
 
 def schedule_ok(sched, teams):

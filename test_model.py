@@ -1214,7 +1214,7 @@ def test_all():
     assert on._so_far()["Me"] == {"PTS": 130.0, "FGM": 52.0, "FGA": 100.0, **{s: 0.0 for s in model.RAW if s not in ("PTS", "FGM", "FGA")}}
     assert on._so_far()["Them"]["PTS"] == 90
     w = on.this_week()
-    assert w["cats"]["PTS"]["you"][0] == 130 and w["tonight"] == {"on": 1, "final": 0, "to_come": 1, "fetched": None}
+    assert w["cats"]["PTS"]["you"][0] == 130 and w["tonight"] == {"on": 1, "final": 0, "to_come": 1, "lineups": False, "fetched": None}
     mon = next(d for d in w["lineups"]["days"] if d["date"] == "2026-10-26")
     a = next(o for o in mon["options"] if o["name"] == "Twin A")
     assert a["locked"] and a["start"] and "flip" not in a and "Twin B" not in mon["start"] + mon["sit"]
@@ -1245,6 +1245,33 @@ def test_all():
     one = at(lv(2))
     one.lineup = 1
     assert one._tipoff == set() and one._so_far()["Me"]["PTS"] == 100 and "twin a" not in one._days(mine, one.week_end)["2026-10-26"]
+    # B8: on the day the snapshot was pulled its lineup counts, not the guess (Yahoo scores starting slots only, no
+    # auto-subs), at 9pm and the next morning alike. Twin A on your bench banks nothing (the guess started him: 130);
+    # in your one starting slot over Player 198 he banks his 30 (the guess: Player 198, 100); a slot empty at the pull
+    # goes to the best bench player who played (Tuesday: Twin A, the only one). A Sunday pull is stale on Monday: the
+    # guess. Them, with no slots read, keeps the guess
+    tue_logs = pd.DataFrame([{**line("Twin A", 180, PTS=30, FGM=12, FGA=20), "TEAM_ABBREVIATION": "AAA", "GAME_ID": 22600001,
+                              "GAME_DATE": pd.Timestamp(2026, 10, 26), "key": "twin a"}])
+    def lined(slots, n=10, now="2026-10-27T01:00:00+00:00", today=model.date(2026, 10, 26), logs=None,
+              pulled="2026-10-26T10:00:00-07:00"):
+        x = model.League({**snap, "pulled": pulled, "matchup": m0, "teams": {**snap["teams"], "Me": [
+            {**p, "slot": slots.get(p["name"], "BN")} for p in snap["teams"]["Me"]]}}, pd.concat([base, twins]),
+            pd.concat([cur, twins]), today=today, sched=sl.sched, inj={"Twin C": {"status": "O", "note": "Ankle.", "return": "2026-11-03"}},
+            logs=logs, live=lv(2) if today.day == 26 else lv(3), now=model.datetime.fromisoformat(now))
+        x.lineup = n
+        return x
+    tue = dict(now="2026-10-27T15:00:00+00:00", today=model.date(2026, 10, 27), logs=tue_logs)
+    benched = {f"Player {i}": "Util" for i in range(162, 200, 4)}  # 10 starters, Twin A on the bench
+    b9, b_tue = lined(benched), lined(benched, **tue)
+    assert b9.slot_day == "2026-10-26" and b9._held(mine) == [] and b9._so_far()["Me"]["PTS"] == 100 == b_tue._so_far()["Me"]["PTS"]
+    assert b9._so_far()["Them"] == on._so_far()["Them"] and "twin a" not in b9._days(mine, b9.week_end).get("2026-10-26", [])
+    assert b9.this_week()["tonight"]["lineups"] and not b_tue.this_week().get("tonight", {}).get("lineups")
+    s9, s_tue = lined({"Twin A": "Util"}, 1), lined({"Twin A": "Util"}, 1, **tue)
+    assert s9._held(mine) == ["twin a"] and s9._so_far()["Me"]["PTS"] == 130 == s_tue._so_far()["Me"]["PTS"]
+    assert lined({"Player 198": "Util"}, 1, **tue)._so_far()["Me"]["PTS"] == 100  # he didn't play: nobody fills in
+    assert lined({}, 1, **tue)._so_far()["Me"]["PTS"] == 130  # an empty slot: the best bench player who played
+    stale = lined(benched, **tue, pulled="2026-10-25T10:00:00-07:00")
+    assert stale.slot_day == "2026-10-25" and stale._so_far()["Me"]["PTS"] == 130
     # not tipped off yet: as before; past its tip-off but not yet marked under way: locked, nothing to bank yet
     soon = at(lv(1, "2026-10-27T03:00:00Z"))
     assert not soon.tipped and soon.this_week()["win"] == pre.this_week()["win"]

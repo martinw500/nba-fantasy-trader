@@ -92,6 +92,7 @@ FORM_DAYS, FORM_GP = 14, 3  # recent form: value over the last 14 days, for play
 # +0.02): an arrow says what happened, not what will
 TREND, TREND_GP = 2.5, 7
 OUT = {"O", "INJ", "IL", "IL+", "NA", "SUSP"}  # Yahoo statuses that mean "not playing now"
+BENCH = {"BN", "IL", "IL+", "NA"}  # Yahoo roster slots whose games don't count; any other slot (PG ... Util) starts
 # a waiver move with no drop that puts an injured free agent in a free IL slot (B5: mchc allows adding straight to IL;
 # Yahoo's default doesn't). _drops() offers it, _gains() scores it, free_moves() returns it as the drop
 PARK = "(IL slot)"
@@ -1158,6 +1159,13 @@ class League:
         # return (the share `back` of games left) he takes an open active spot, else his team's weakest player's (_return())
         self.il = {t: {k for k in ks if self.meta[k].get("slot") in ("IL", "IL+", "NA")} for t, ks in self.rosters.items()}
         self.il_n = s.get("il", max(map(len, self.il.values()), default=0))  # IL slots per team (yahoo.py reads them)
+        # the lineups the snapshot shows (B8): each team's slots on the day it was pulled (its `pulled` date; Yahoo
+        # shows today's). Yahoo scores starting slots only and has no auto-subs, so that day counts these, not a guess
+        # (_counted). From the next day they're stale. A snapshot with no slots read (a hand-typed list, the demo): none
+        self.slot_day = (snap.get("pulled") or "")[:10] or None
+        self.slotted = {t: {k: self.meta[k]["slot"] for k in ks if self.meta[k].get("slot")} for t, ks in self.rosters.items()}
+        if not any(self.slotted.values()):
+            self.slot_day = None
         w, r = self._waiver_level(self.value()), self.rate.to_numpy()[:, None]
         # an open active spot on another team holds the waiver level's week until a player back from its IL slots takes
         # it (vec(), _open()): its manager can stream it, and has to drop someone only once more come back than it has
@@ -1213,18 +1221,38 @@ class League:
 
     @functools.cached_property
     def _tipoff(self):
-        """Every team's starters today whose games have tipped off (M18): each team's lineup on per-game value over its
-        active players with a game today (_lineup: the rule _so_far() uses for a finished day), as it stood at tip-off,
-        so before any move this week's plans make (all later), the ones whose game has tipped. A player with a game today
-        counts unless he's out with a return date after today or sat it (the live box score's inactive / not playing;
-        one who got in always counts). Empty once the snapshot's totals hold today (`from`).
-        ponytail: the lineup the manager really set may have differed"""
+        """Every team's starters today whose games have tipped off (M18): each team's lineup over its active players
+        with a game today (_counted: the rule _so_far() uses for a finished day; the snapshot's lineup when it was
+        pulled today, B8, else the best per-game values), as it stood at tip-off, so before any move this week's plans
+        make (all later), the ones whose game has tipped. A player with a game today counts unless he's out with a
+        return date after today or sat it (the live box score's inactive / not playing; one who got in always counts).
+        Empty once the snapshot's totals hold today (`from`).
+        ponytail: on a day after the snapshot's, the lineup the manager really set may have differed"""
         if not self.tipped or self.matchup.get("from", "") > self.today:
             return set()
         plays = lambda k: self.today in self.sched.get(self.nba.get(k), ()) and (k in self.played_today or k not in self.sat_today
                                                                                and (self.inj.get(k, {}).get("return") or "") <= self.today)
-        return {k for ks in self.rosters.values()
-                for k in self._lineup(sorted(filter(plays, self._playing(ks)), key=self._value.get, reverse=True)) if self._locked(k)}
+        return {k for t, ks in self.rosters.items()
+                for k in self._counted(t, filter(plays, self._playing(ks)), self.today) if self._locked(k)}
+
+    def _counted(self, team, keys, d):
+        """Whose games count for `team` on day d among keys (its active players with a game that day who play: the
+        box score's, or today's expected): Yahoo scores starting slots only, no auto-subs. On the snapshot's own day
+        (slot_day, B8) the lineup it shows: its starters, and a starting slot empty at the pull taken by the best bench
+        player who plays and fits it (a manager fills one: 3 of 3 in the Oct 27-Nov 4 replay). Any other day, or a
+        team with no slots read: the best per-game values that fit the slots (_lineup). Best first. The same rule for
+        today's games under way (_tipoff) and for a finished day (_so_far), so the score doesn't jump at midnight.
+        `python backtest.py lineups` (Oct 27-30, Nov 4: each pre-tip snapshot's night against the next snapshot's
+        totals): |error| over teams and stats 1,071 with the guess, 660 with the starters, 576 with the empty slot.
+        ponytail: a starter swapped out or a player added after the pull isn't seen (the rest of that error)"""
+        keys = sorted(keys, key=self._value.get, reverse=True)
+        slot = self.slotted.get(team) if d == self.slot_day else None
+        if not slot:
+            return self._lineup(keys)
+        starters = [k for k, s in slot.items() if s not in BENCH and k in self.rosters.get(team, ())]
+        held, bench = set(starters), [k for k in keys if slot.get(k) == "BN"]
+        empty = [k for k in self._lineup(starters + bench) if k not in held][:max(self.lineup - len(starters), 0)]
+        return [k for k in keys if k in held] + empty
 
     def _move_day(self, drops):
         """The first day a move dropping these can be made: tomorrow once one's game today has tipped off (Yahoo locks
@@ -2889,6 +2917,7 @@ class League:
                 # today's NBA games (M18): under way (tipped off), final, still to come; when the live scores were fetched
                 **({"tonight": {"on": sum(s == 2 for _, s in self.tonight), "final": sum(s == 3 for _, s in self.tonight),
                                 "to_come": sum(s == 1 for _, s in self.tonight),
+                                "lineups": self.slot_day == self.today,  # B8: the snapshot's lineup counts (pulled today)
                                 "fetched": (ft := (self.loaded or {}).get("live.json")) and
                                 datetime.fromtimestamp(ft, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}}
                    if self.tonight and m.get("from", self.today) <= self.today else {}),
@@ -2910,11 +2939,12 @@ class League:
     def _so_far(self):
         """{team: this week's totals so far}, from every pairing in the snapshot (an opponent picked in the app has
         them too), {} once the snapshot's week is over. A snapshot from an earlier day misses the days from its `from`
-        to yesterday: their box scores go on, each day's best active players as starters (_lineup), so the rest of the
-        week can still start today; a game the box scores don't have yet comes from the live ones (M18: last night's
-        late games). Today (M18), the live lines of the starters in games that have tipped off (_held: the same rule)
-        go on as they're played, unless the snapshot's totals already hold today (`from`).
-        ponytail: the lineup a manager set by hand may have differed"""
+        to yesterday: their box scores go on, each day's starters by _counted() (the snapshot's own day: its lineup,
+        B8; a later one: the best active players), so the rest of the week can still start today; a game the box
+        scores don't have yet comes from the live ones (M18: last night's late games). Today (M18), the live lines of
+        the starters in games that have tipped off (_held: the same rule) go on as they're played, unless the
+        snapshot's totals already hold today (`from`).
+        ponytail: after the snapshot's day, the lineup a manager set by hand may have differed"""
         if self.rolled:
             return {}
         tot = {**{t: x for pr in self.snap.get("matchups", ()) for t, x in pr.get("totals", {}).items()},
@@ -2929,8 +2959,8 @@ class League:
         now = self.box[self.box.GAME_DATE == today].set_index("key")
         for t in tot:
             on = self._playing(self.rosters.get(t, ()))
-            for _, day in g[g.key.isin(on)].groupby("GAME_DATE"):
-                got = day.set_index("key").loc[self._lineup(sorted(day.key, key=self._value.get, reverse=True)), RAW].sum()
+            for d, day in g[g.key.isin(on)].groupby("GAME_DATE"):
+                got = day.set_index("key").loc[self._counted(t, day.key, d.date().isoformat()), RAW].sum()
                 tot[t] = {**tot[t], **{s: float(tot[t].get(s, 0)) + float(got[s]) for s in RAW}}
             if held := [k for k in self._held(on) if k in now.index]:
                 got = now.loc[held, RAW].sum()

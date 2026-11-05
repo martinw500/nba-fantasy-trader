@@ -22,6 +22,8 @@ games (fits HAZARD, ONE_GAME: the add kept for late news, M17).
 python backtest.py availability: each Monday's games-played guess vs the real share, 2024-25 and 2025-26 (fits AVAIL_*).
 python backtest.py playoffs [2025-26]: each Monday's playoff and title odds vs what happened, with every later week an
 average one and then from the real schedule (M2, scheduled()) (fits SEASON_SD, WEEK_SD).
+python backtest.py lineups: whose games count on a night the snapshot was pulled before tip-off: the guess vs the
+snapshot's lineup, against the next snapshot's totals (B8), and This week's expected starts for that night.
 python backtest.py recency: replay's error by minutes shrink and recent games' weight, 2022-23 to 2025-26 (fits
 MIN_SHRINK, RECENT).
 
@@ -43,7 +45,7 @@ import pandas as pd
 import model
 
 ARGS = [a for a in sys.argv[1:]
-        if a not in ("replay", "teammates", "onoff", "minor", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead")]
+        if a not in ("replay", "teammates", "onoff", "minor", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
@@ -845,6 +847,142 @@ def gameday():
     print("model.GAMEDAY:", model.GAMEDAY)
 
 
+def lineups():
+    """B8: whose games count on a night, replayed on this season's snapshots. Each night with a snapshot pulled before
+    its first tip-off (its `from` is its own day, the "Pulled" line says no game had started) and a later one that
+    holds that night and no other (`from` the next day, the same week): the next one's totals minus the first's, per
+    team and stat, against what each rule banks from the night's box scores (data/gamelogs_<season>.csv):
+      guess:   the best per-game values that fit the slots (before B8, and still any later day: _lineup)
+      starters: the snapshot's starters who played (Yahoo has no auto-subs)
+      fill-in: those, then bench players who played filling any slot a starter left (_lineup)
+      shipped: the starters, and a starting slot empty at the pull taken by the best bench player who played and fits
+               it (League._counted(), the app's rule on the snapshot's own day)
+    The app's own _so_far() is checked against `shipped` from the next morning (box scores) and at the end of the night
+    (today's live scores, _tipoff): the same numbers, so the score doesn't jump at midnight. A night whose first
+    snapshot was pulled after a game tipped is shown, not counted (Nov 2). What's left: roster moves after the pull (the
+    next snapshot's transactions that day, league time Central) and lineup changes after it; a night whose later
+    snapshot was pulled that same night shows its own lineups (the real ones: the floor, stat corrections).
+    Then This week's expected starts for the night's games (pulled before tip-off): the model's (value order, each
+    game at his chance to play, bench fill-ins: starts()) against the snapshot's lineup at the same chances, vs the
+    banked night (Nov 5: the snapshot's lineup ran lower and worse, so starts() keeps the value order).
+    Rerun as snapshots pile up."""
+    import glob
+    import json
+    from datetime import date, datetime, timedelta
+    from zoneinfo import ZoneInfo
+    import yahoo
+    logs_all, base = model.gamelogs(model.CUR), model.baseline(model.fetch(model.LAST), model.fetch(model.OLDER))
+    sched = json.loads((model.DATA / f"schedule_{model.CUR}.json").read_text(encoding="utf-8"))
+    snaps = []
+    for f in sorted(glob.glob(str(model.ROOT / "*snapshot*.txt"))):
+        txt = open(f, encoding="utf-8").read()
+        s = yahoo.parse_text(txt)
+        if s.get("pulled"):
+            line = next(x for x in txt.splitlines() if x.startswith("Pulled"))
+            s["tipped"] = bool(re.search(r"\b(started|in progress|under ?way)\b", line, re.I)) and not re.search(
+                r"\bno\b[^.;]*\b(started|in progress|under ?way)", line, re.I)
+            snaps.append((f, s))
+    rules, rows, starts = ("guess", "starters", "fill-in", "shipped"), [], []
+    P, CT = model.RAW.index("PTS"), ZoneInfo("America/Chicago")
+    for (f0, s0), (f1, s1) in zip(snaps, snaps[1:]):
+        d = s0.get("from")
+        nxt = d and (date.fromisoformat(d) + timedelta(1)).isoformat()
+        day = logs_all[logs_all.GAME_DATE == pd.Timestamp(d)] if d else logs_all.iloc[:0]
+        if s0["pulled"][:10] != d or s1.get("from") != nxt or s0.get("week") != s1.get("week") or not len(day):
+            continue
+        snap, past = yahoo.from_text(f0, write=False), logs_all[logs_all.GAME_DATE < pd.Timestamp(d)]
+        cur = past.groupby("key").agg(PLAYER_NAME=("PLAYER_NAME", "last"), TEAM_ABBREVIATION=("TEAM_ABBREVIATION", "last"),
+                                      GP=("GAME_ID", "count"), **{c: (c, "mean") for c in ["MIN"] + model.RAW})
+        inj = model.DATA / f"injuries_{d}.json"
+        inj = json.loads(inj.read_text(encoding="utf-8")) if inj.exists() else {}
+        ps = sorted(x for x in glob.glob(str(model.DATA / "projections_20??-??-??.json")) if x[-15:-5] <= d)
+        proj = json.loads(open(ps[-1], encoding="utf-8").read()) if ps else {}
+        build = lambda today, lg_logs, live=None, now=None: model.League(
+            snap, base, cur, sched, inj, today=date.fromisoformat(today), logs=lg_logs, proj=proj, live=live, now=now)
+        lg = build(nxt, logs_all[logs_all.GAME_DATE <= pd.Timestamp(d)])  # the next morning: the night from box scores
+        # the end of the night: every game final in today's live scores (_tipoff), a rostered player with none sat it
+        teams_on = set(day.TEAM_ABBREVIATION)
+        live = {"games": {f"{int(i):010d}": {"date": d, "tip": f"{d}T23:00:00+00:00", "status": 3,
+                                             "teams": sorted(set(x.TEAM_ABBREVIATION)), "players": {
+            r["PLAYER_NAME"]: {"team": r["TEAM_ABBREVIATION"], "played": True, "sat": False, **{c: r[c] for c in model.RAW}}
+            for _, r in x.iterrows()}} for i, x in day.groupby("GAME_ID")}}
+        for k in {k for ks in lg.rosters.values() for k in ks} - set(day.key):
+            if lg.nba.get(k) in teams_on:
+                gid = next(i for i, g in live["games"].items() if lg.nba[k] in g["teams"])
+                live["games"][gid]["players"][lg.p.at[k, "PLAYER_NAME"]] = {"team": lg.nba[k], "played": False, "sat": True,
+                                                                           **{c: 0 for c in model.RAW}}
+        night = build(d, past, live, datetime.fromisoformat(f"{nxt}T06:00:00+00:00"))
+        before = build(d, past)  # pulled before tip-off: This week's expected starts for the night
+        tot0 = {t: x for pr in s0["matchups"] for t, x in pr["totals"].items()}
+        tot1 = {t: x for pr in s1["matchups"] for t, x in pr["totals"].items()}
+        names = lambda ps: {p["name"] for p in ps}
+        same = {t: max(s1["teams"], key=lambda u: len(names(ps) & names(s1["teams"][u]))) for t, ps in s0["teams"].items()}
+        sofar, at_night = lg._so_far(), night._so_far()
+        pulled, dd = datetime.fromisoformat(s0["pulled"]), day.set_index("key")
+        vec = lambda ks: dd.loc[list(ks), model.RAW].sum().to_numpy(float) if len(ks) else np.zeros(len(model.RAW))
+        for t, ks in lg.rosters.items():
+            if t not in tot0 or same[t] not in tot1:
+                continue
+            played = [k for k in lg._playing(ks) if k in dd.index]
+            slot = lg.slotted.get(t, {})
+            byv = lambda xs: sorted(xs, key=lg._value.get, reverse=True)
+            st = [k for k in played if slot.get(k, "BN") not in model.BENCH]
+            bench = byv([k for k in played if slot.get(k) == "BN"])
+            truth = np.array([tot1[same[t]][c] - tot0[t][c] for c in model.RAW])
+            moved = [x for x in s1["transactions"] if x["team"] == same[t] and (w := datetime.strptime(
+                f"{x['when']} {pulled.year}", "%b %d %I:%M%p %Y").replace(tzinfo=CT)) > pulled and w.date().isoformat() == d]
+            own = [k for k in dd.index if k in {model.norm(p["name"]) for p in s1["teams"][same[t]]
+                                                if p.get("slot", "BN") not in model.BENCH}] if s1["pulled"][:10] == d else None
+            got = {"guess": vec(lg._lineup(byv(played))), "starters": vec(st), "fill-in": vec(lg._lineup(st + bench)),
+                   "shipped": vec(lg._counted(t, played, d))}
+            app = np.array([sofar[t][c] - tot0[t][c] for c in model.RAW])
+            live_app = np.array([at_night[t][c] - tot0[t][c] for c in model.RAW])
+            assert np.allclose(app, got["shipped"]) and np.allclose(live_app, got["shipped"]), (d, t)
+            rows.append({"night": d, "tipped": s0["tipped"], "team": t, "moved": len(moved),
+                         **{r: float(np.abs(v - truth).sum()) for r, v in got.items()},
+                         **({"real": float(np.abs(vec(own) - truth).sum())} if own is not None else {})})
+            if s0["tipped"]:
+                continue
+            # This week's expected starts for the night, before tip-off: the model's, vs the snapshot's lineup
+            keys, start, until = before._week_side(t)
+            n = before.starts([k for k in keys if k in before._ix], start, {k: min(until.get(k, d), d) for k in keys}, plays=True)
+            pw = lambda k: before._pw[before._ix[k]] if k in before._ix else np.zeros(len(model.RAW))
+            act = before._playing(ks)
+            on = byv([k for k in act if slot.get(k, "BN") not in model.BENCH and before.game_days(k, d)])
+            bn = byv([k for k in act if slot.get(k) == "BN" and before.game_days(k, d)])
+            chance = [before._plays(k, d) for k in on + bn]
+            filled = before._subs(on + bn, chance)
+            exp = {"model": sum((x * pw(k) for k, x in n.items()), np.zeros(len(model.RAW))),
+                   "lineup": sum((c * pw(k) for k, c in zip(on, chance)), np.zeros(len(model.RAW))),
+                   "lineup + fill-ins": sum((x * pw(k) for k, x in zip(on + bn, filled)), np.zeros(len(model.RAW)))}
+            starts.append({"night": d, **{r: float(np.abs(v - truth).sum()) for r, v in exp.items()},
+                           **{r + " PTS": float(v[P] - truth[P]) for r, v in exp.items()},
+                           **{r + " sq": float(((v - truth) ** 2).sum()) for r, v in exp.items()},
+                           "games model": sum(n.values()), "games lineup": sum(chance[:len(on)]), "PTS": truth[P]})
+    df = pd.DataFrame(rows)
+    print("\n== whose games count on a pulled night: |error| over teams and stats (exact teams of 12) ==")
+    for (n, tip), x in df.groupby(["night", "tipped"]):
+        print(f"  {n}{' (a game had tipped at the pull: not counted)' if tip else ''}: " + ", ".join(
+            f"{r} {x[r].sum():.0f} ({(x[r] == 0).sum()})" for r in rules)
+              + (f"; the next snapshot's own lineups {x.real.sum():.0f} ({(x.real == 0).sum()})" if "real" in x and x.real.notna().all() else ""))
+    x = df[~df.tipped]
+    by = x.groupby("night")[list(rules)].sum()
+    print(f"  total ({len(by)} nights): " + ", ".join(f"{r} {x[r].sum():.0f} ({(x[r] == 0).sum()} of {len(x)} exact)" for r in rules))
+    print("  nights each beats the guess: " + ", ".join(f"{r} {(by[r] < by.guess).sum()} (worse {(by[r] > by.guess).sum()})"
+                                                      for r in rules[1:]))
+    m = x.moved > 0
+    print(f"  team-nights with a roster move after the pull: {m.sum()}, their |error| " + ", ".join(
+        f"{r} {x[r][m].sum():.0f}" for r in rules) + f"; the rest after shipped: {x.shipped[~m].sum():.0f} (lineups changed after the pull)")
+    s = pd.DataFrame(starts)
+    print("\n== This week's expected starts for a pulled night's games, before tip-off, vs the night banked ==")
+    for n, x in s.groupby("night"):
+        print(f"  {n}: games model {x['games model'].sum():.1f} lineup {x['games lineup'].sum():.1f}; " + ", ".join(
+            f"{r} |err| {x[r].sum():.0f} PTS {x[r + ' PTS'].sum():+.0f}" for r in ("model", "lineup", "lineup + fill-ins"))
+              + f" (of {x.PTS.sum():.0f})")
+    print("  total: " + ", ".join(f"{r} |err| {s[r].sum():.0f}, squared {s[r + ' sq'].sum():.0f}, PTS {s[r + ' PTS'].sum():+.0f}"
+                                  for r in ("model", "lineup", "lineup + fill-ins")))
+
+
 # 2026-27's season on 2025-26's NBA weeks: 20 matchups (weeks 7 and 17 run two NBA weeks, 6-7 and 16-17), then three
 # one-week playoff rounds (NBA weeks 22-24, Mar 23 - Apr 12)
 SPANS = [[w] for w in range(6)] + [[6, 7]] + [[w] for w in range(8, 16)] + [[16, 17]] + [[w] for w in range(18, 25)]
@@ -947,6 +1085,8 @@ if __name__ == "__main__":
             playoffs(games=games, grid=((0.25, 0.6), (0.35, 0.6), (0.45, 0.6), (0.35, 0.5), (0.35, 0.7)))
     elif "gameday" in sys.argv:
         gameday()
+    elif "lineups" in sys.argv:
+        lineups()
     elif "news" in sys.argv:
         news()
     elif "ahead" in sys.argv:
