@@ -429,8 +429,9 @@ const delta = (v, unit) => unit === "win%" ? sign1(v) + "%" : sign(v);  // win% 
 const and = xs => xs.length > 1 ? xs.slice(0, -1).join(", ") + " and " + xs.at(-1) : xs.join("");
 // waiver moves that need no trade (trades are scored on top of them): "Vučević for Achiuwa (+1.2%)"
 // Q21: a name in a deal, a waiver move, This week's plan or a strategy step opens his card (under his table row if he
-// has one on screen, else at the top: showCard)
-const nameBtn = n => !n ? "" : `<button class="rowbtn nm" data-act="show-card" data-name="${esc(n)}" title="Open his player card">${esc(n)}</button>`;
+// has one on screen, else at the top: showCard). An inline span, not a <button>: a line can break after a button's box,
+// which left a list's comma at the start of the next line (Nov 4); Enter / Space click it like a button
+const nameBtn = n => !n ? "" : `<span class="rowbtn nm" role="button" tabindex="0" data-act="show-card" data-name="${esc(n)}" title="Open his player card">${esc(n)}</span>`;
 const into = (m, nm = esc) => m.drop ? "for " + nm(m.drop) : m.park ? "into an IL slot" : "into the open spot";  // B5: an injured add parks
 const freeList = (ms, more = 0, nm = esc) => and([...ms.map(m => `${nm(m.add)} ${into(m, nm)} (${delta(m.gain, "win%")})`),
   ...(more > 0 ? [`${more} more`] : [])]);
@@ -995,7 +996,7 @@ function viewTrades() {
         <select id="trade-team" aria-label="Trade partner">${others.map(t => `<option ${t === T.team ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
         <div class="panel-b" style="padding-top:0"><div class="plist" style="margin-top:12px">${theirs}</div></div></div>
     </div>
-    <div class="toolbar"><button class="btn primary" data-act="evaluate" ${ready && !T.busy ? "" : "disabled"}>${T.busy ? "Evaluating…" : "Evaluate trade"}</button>
+    <div class="toolbar"><button class="btn primary" data-act="evaluate" ${ready && !running(T) ? "" : "disabled"}>${running(T) ? "Evaluating…" : "Evaluate trade"}</button>
       ${ready ? `<button class="btn ghost" data-act="ask-gm" title="Open the AI GM with this trade in the message box, then ask it anything about it">Ask AI GM</button>
         <button class="btn ghost" data-act="clear-trade">Clear</button>` : ""}</div>
     ${W ? wantsPanel(W) : ""}
@@ -1126,14 +1127,14 @@ function findPanel() {
       <label class="field"><input type="checkbox" id="f-healthy" ${F.healthy ? "checked" : ""}>Healthy only</label>
       <label class="field" title="On: your gain is measured against the waiver moves you could make without a trade (listed below), so a deal gets no credit for a pickup. Off: on your roster as it is today, as if you make no pickups."><input type="checkbox" id="f-mine" ${F.mine ? "checked" : ""}>Count my waiver moves</label>
       <label class="field" title="On: the other team is measured against the waiver moves it could make instead. Off: it's judged on the trade alone, the way most managers look at an offer."><input type="checkbox" id="f-theirs" ${F.theirs ? "checked" : ""}>Count their waiver moves</label>`}`;
-  const can = !F.busy && !(F.goal === "cats" && !F.cats.length && !isPoints());
-  const body = F.busy ? SKEL : !F.list ? `<div class="empty"><b>${isPoints() ? "Search every roster" : "Aim the search with checkboxes"}</b>${isPoints()
+  const can = !running(F) && !(F.goal === "cats" && !F.cats.length && !isPoints());
+  const body = running(F) ? SKEL : !F.list ? `<div class="empty"><b>${isPoints() ? "Search every roster" : "Aim the search with checkboxes"}</b>${isPoints()
       ? "Fair finds deals that help both teams. Finesse finds deals where they look like the winner on hot starts but you gain more."
       : "Check their player to find offers for him, yours to find buyers, both to complete the trade, or none to search every roster. Lock anyone you won't move. For deals between role players, set Players to “Outside the top 60”: the market's top 60 stay out on both sides."}</div>`
     : !F.list.length ? `<div class="empty"><b>No deals cleared the ${F.tier} bar</b>${isPoints() ? "Try the other mode, a different punt, or all teams." : `Try another difficulty, a bigger size, a higher max overpay${F.outside ? ", Players: Any" : ""}, or fewer locks.`}</div>`
     : (F.ran !== title ? `<div class="panel-b small muted" style="padding:8px 16px;border-bottom:1px solid var(--line)">Showing results for “${esc(F.ran)}”.</div>` : "") + dealTable(F.list, "find");
   return `<div class="panel" id="find"><div class="panel-h"><div><h2>${esc(title)}</h2><p>${desc}${locks}${free}</p></div>
-      <button class="btn primary" data-act="find" ${can ? "" : "disabled"}>${F.busy ? "Searching…" : "Find trades"}</button></div>
+      <button class="btn primary" data-act="find" ${can ? "" : "disabled"}>${running(F) ? "Searching…" : "Find trades"}</button></div>
     <div class="toolbar" style="padding:10px 16px;border-bottom:1px solid var(--line)">${controls}</div>${body}</div>`;
 }
 function dealTable(list, src) {
@@ -1247,6 +1248,8 @@ async function copyOffer(r) {
 // punt or Healthy only, a team switch... set ask to null, a new request replaces it; either way the late reply is dropped
 // (busy stays on only while a newer one runs)
 const late = (X, ask) => { if (X.ask === ask) return false; if (!X.ask) { X.busy = false; render(); } return true; };
+// still asking: a cancelled request (ask null) frees its button at once, so the new search or move needn't wait for it
+const running = X => X.busy && X.ask;
 async function evaluate() {
   const T = S.trade, ask = T.ask = {};
   T.busy = true; render();
@@ -1371,7 +1374,7 @@ function movePanel() {
       <datalist id="mv-fas">${fas.map(p => `<option value="${esc(p.name)}">Free agent</option>`).join("")}</datalist>
       <label class="field">Drop <select id="mv-drop" title="Pick for me: your open spot if you have one, else the healthy player you'd miss least">${opt("", "Pick for me", M.drop)}${mine.map(p => opt(p.name, p.name + (p.il ? " · IL slot" : "") + (p.status ? ` (${p.status})` : ""), M.drop)).join("")}</select></label>
       ${days.length ? `<label class="field">Make it on <select id="mv-day" title="This week's number counts the move from this day, and your drop plays his games until then. Best day: whichever helps this week most">${opt("", "Best day", M.day)}${days.map(d => opt(d, dayName(d), M.day)).join("")}</select></label>` : ""}
-      <button class="btn primary" data-act="mv-eval" ${M.add && !M.busy ? "" : "disabled"}>${M.busy ? "Evaluating…" : "Evaluate move"}</button>
+      <button class="btn primary" data-act="mv-eval" ${M.add && !running(M) ? "" : "disabled"}>${running(M) ? "Evaluating…" : "Evaluate move"}</button>
       ${M.add || M.drop ? `<button class="btn ghost" data-act="mv-clear">Clear</button>` : ""}</div>`;
   const desc = isPoints() ? "Pick any free agent and any of your players to see what the swap does to your fantasy points per game."
     : `Pick any free agent and any of your players to see what the swap does to your ${WIN().of}, this week and for the season. Scored on today's roster, the same way as Suggested moves (not on top of them).`;
@@ -1656,7 +1659,7 @@ async function setPunt(punt) {
 function setView(v) { S.view = v; S.card = {}; store.set("view", v); history.replaceState(null, "", "#" + v); render(); window.scrollTo(0, 0); }
 
 document.addEventListener("click", async e => {
-  const t = e.target.closest("button, [data-pick], tr[data-act]"); if (!t) return;
+  const t = e.target.closest("button, [role=button], [data-pick], tr[data-act]"); if (!t) return;
   if (t.dataset.view) return setView(t.dataset.view);
   if (t.dataset.go) return setView(t.dataset.go);
   if (t.dataset.punt) {
@@ -1817,6 +1820,7 @@ document.addEventListener("submit", e => {
 document.addEventListener("keydown", e => {
   if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest("input, textarea, select, [contenteditable]")) { e.preventDefault(); $("#top-player").focus(); }
   if (e.target.id === "chat-in" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chat-form").requestSubmit(); }
+  if (e.target.matches("span[role=button]") && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.target.click(); }  // nameBtn
 });
 // new numbers in S.state (Refresh, or the server's own injury refetch): drop every view's cached answers
 const fresh = st => { S.state = st; S.league.data = null; S.trade.roster = null; S.find.list = S.find.ask = null; S.saved.evals = {}; S.players = null; S.week = {}; S.sched = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names); S.move.result = S.move.ask = null; S.loaded = Date.now(); };

@@ -2104,7 +2104,7 @@ class League:
         n = len(lg.free.get(self.me, ()))
         lg = lg.after_free(punt, keep=[k for tr in lg.trades for k in tr["get"]])
         new = lg.free.get(self.me, [])[n:]
-        add, drop = t["add"] + [a for a, _, _ in new], t["drop"] + [d for _, d, _ in new if d]
+        add, drop = t["add"] + [a for a, _, _ in new], t["drop"] + [d for _, d, _ in new if d not in (None, PARK)]
         return {"lg": lg, "free": lg._moves_out(new), "add": self.names(k for k in add if k not in drop),
                 "drop": self.names(k for k in drop if k not in add),
                 "win": lg.outlook(self.me)["win"], "obj": lg.outlook(self.me, punt=punt)["win"],

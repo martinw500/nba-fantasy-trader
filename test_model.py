@@ -584,6 +584,9 @@ def test_all():
                  if sorted(y["give"]) == sorted(deal[0]) and sorted(y["get"]) == sorted(deal[1])]
             assert [(x[0]["net"], x[0]["their_net"], x[0]["market"])] == [(r["net"], r["their_net"], r["market"])], (deal, kw, x, r)
         assert {"add": "Sore Guy", "drop": None, "gain": ad["net"], "park": True} in st.trade(*deal)["free"]
+    # ... and Strategy's steps (_step: a trade, then its free moves): a stash's drop is no player (Nov 4: KeyError)
+    stp = st._step({"give": ["Player 150"], "get": ["Player 155"]})  # st's own free moves aren't made: the step makes them
+    assert stp["add"] == ["Sore Guy"] and stp["drop"] == [] and stp["free"][0]["park"] and stp["free"][0]["drop"] is None
     model.TIERS["hard"] = hard
 
     # compare (Q3): 2 to 4 different players; each one's card plus your win % with him in one of your roster spots.
