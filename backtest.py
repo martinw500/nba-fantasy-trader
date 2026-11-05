@@ -22,6 +22,8 @@ games (fits HAZARD, ONE_GAME: the add kept for late news, M17).
 python backtest.py availability: each Monday's games-played guess vs the real share, 2024-25 and 2025-26 (fits AVAIL_*).
 python backtest.py playoffs [2025-26]: each Monday's playoff and title odds vs what happened, with every later week an
 average one and then from the real schedule (M2, scheduled()) (fits SEASON_SD, WEEK_SD).
+python backtest.py corr: how a week's category misses move together, and matchup log loss and calibration by the
+shared factor's load (M9: fits WEEK_LOAD), 2022-23 to 2025-26, both modes.
 python backtest.py lineups: whose games count on a night the snapshot was pulled before tip-off: the guess vs the
 snapshot's lineup, against the next snapshot's totals (B8), and This week's expected starts for that night.
 python backtest.py recency: replay's error by minutes shrink and recent games' weight, 2022-23 to 2025-26 (fits
@@ -32,7 +34,8 @@ it would have known that Monday (last season blended with games so far, availabi
 sat their team's last game out until a rough guess at their return, as the app does with ESPN's dates), then the
 prediction is scored against the real box scores that week. Lines blend in ESPN's preseason projection (prior()). All games count (no daily lineup cap), rosters never change,
 so predictions leave out League.week's FILL term (missed games covered at waiver level): nobody fills in here.
-Prints calibration (predicted vs actual win rates), log loss and Brier score for categories and for whole matchups.
+Prints calibration (predicted vs actual win rates), log loss and Brier score for categories and for whole matchups
+(categories independent, and with M9's shared factor, model.WEEK_LOAD, which This week uses on the real schedule).
 """
 import itertools
 import random
@@ -45,7 +48,7 @@ import pandas as pd
 import model
 
 ARGS = [a for a in sys.argv[1:]
-        if a not in ("replay", "teammates", "onoff", "minor", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups")]
+        if a not in ("replay", "teammates", "onoff", "minor", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
@@ -218,16 +221,84 @@ def calibration(p, y, bins=10):
 
 
 def report(A, B, Y, label):
+    """Category and matchup scores. Matchups twice: categories independent (the app's average week: One Win's season
+    numbers) and with M9's shared factor (model.WEEK_LOAD: This week, the real schedule)."""
     P = model.cat_probs(A, B, model.CATS)
-    match = model.match_prob(P)
     won = (Y.sum(-1) > len(model.CATS) / 2) + 0.5 * (Y.sum(-1) == len(model.CATS) / 2)
     print(f"\n== {label}: {len(A)} matchups ==")
     print("categories:", {k: round(v, 4) for k, v in score(P.ravel(), Y.ravel()).items()}, "(coin flip: logloss 0.6931, brier 0.25)")
     for c, i in zip(model.CATS, range(len(model.CATS))):
         print(f"  {c:5}", {k: round(v, 4) for k, v in score(P[:, i], Y[:, i]).items()})
     print("category calibration (predicted bin, n, actual win %):", calibration(P.ravel(), Y.ravel()))
-    print("matchups:", {k: round(v, 4) for k, v in score(match, won).items()})
-    print("matchup calibration:", calibration(match, won))
+    for name, load in (("independent", 0.0), (f"shared factor {model.WEEK_LOAD}", model.WEEK_LOAD)):
+        match = model.match_prob(P, model.CATS, load)
+        print(f"matchups, {name}:", {k: round(v, 4) for k, v in score(match, won).items()})
+        print(f"matchup calibration, {name}:", calibration(match, won))
+
+
+def use(season):
+    """Point the module at another season (SEASON, PREV, PREV2: season_setup() and experts() read them)."""
+    global SEASON, PREV, PREV2
+    SEASON = season
+    PREV, PREV2 = (f"{int(season[:4]) - n}-{int(season[2:4]) - n + 1:02d}" for n in (1, 2))
+
+
+def corr(seasons=("2022-23", "2023-24", "2024-25", "2025-26"), grid=(0, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65)):
+    """M9: do a week's categories move together, and does match_prob() with one shared factor (model.WEEK_LOAD) call
+    matchups better? Each season's matchups (build(), both modes): the correlation of the categories' misses (each
+    margin's actual minus expected over the model's sd, from A's side: TO's sign flipped, so a team with more games is
+    + in counting stats and - in TO), and matchup log loss and calibration at each load (category odds don't move:
+    the factor averages out of each one). Nov 5: with the real schedule every season gains at 0.35-0.65 (also with the
+    load fitted on the other three); on an average week only 2024-25 does, so the app uses it for This week only."""
+    rows = {}
+    for season in seasons:
+        use(season)
+        for games in ("fixed", "schedule"):
+            pairs = [(l * TEAMS + a, l * TEAMS + b) for l in range(LEAGUES) for a, b in itertools.combinations(range(TEAMS), 2)]
+            I, J = np.array(pairs).T
+            A, B, RA, RB = [], [], [], []
+            for _, exp, act in team_weeks(games):
+                if act.sum():
+                    A.append(exp[I]); B.append(exp[J]); RA.append(act[I]); RB.append(act[J])
+            A, B, RA, RB = map(np.concatenate, (A, B, RA, RB))
+            P, Y = model.cat_probs(A, B, model.CATS), outcome(RA, RB)
+            won = (Y.sum(-1) > len(model.CATS) / 2) + 0.5 * (Y.sum(-1) == len(model.CATS) / 2)
+            Z = []  # each category's miss over the model's sd (as cat_probs() computes it)
+            for c in model.CATS:
+                if c in ("FG%", "FT%"):
+                    m, a = model.RAW.index(c[:2] + "M"), model.RAW.index(c[:2] + "A")
+                    na, nb = np.maximum(A[:, a], 1e-9), np.maximum(B[:, a], 1e-9)
+                    pa, pb = A[:, m] / na, B[:, m] / nb
+                    sd = np.sqrt(model.PCT_NOISE * (pa * (1 - pa) / na + pb * (1 - pb) / nb))
+                    real = RA[:, m] / np.maximum(RA[:, a], 1e-9) - RB[:, m] / np.maximum(RB[:, a], 1e-9)
+                    Z.append((real - (pa - pb)) / sd)
+                else:
+                    i, sg = model.RAW.index(c), -1 if c == "TOV" else 1
+                    ta, tb = A[:, i], B[:, i]
+                    sd = np.sqrt(model.DISPERSION.get(c, 1.0) * (ta + tb) + (model.SCHED_CV * ta) ** 2 + (model.SCHED_CV * tb) ** 2)
+                    Z.append(sg * ((RA[:, i] - RB[:, i]) - (ta - tb)) / sd)
+            Z = np.stack(Z, 1)
+            C = np.corrcoef(Z[np.isfinite(Z).all(1)].T)
+            k = [model.CATS.index(c) for c in model.COUNTING if c != "TOV"]
+            ll = [score(model.match_prob(P, model.CATS, x), won)["logloss"] for x in grid]
+            rows[season, games] = ll
+            ev = np.linalg.eigvalsh(C)
+            print(f"\n== {season}, games per week: {games} ({len(A)} matchups) ==")
+            print(f"  misses' correlation: counting stats with each other {C[np.ix_(k, k)][np.triu_indices(len(k), 1)].mean():.2f} "
+                  f"(PTS-REB {C[3, 4]:.2f}, PTS-AST {C[3, 5]:.2f}, PTS-3PM {C[3, 2]:.2f}, REB-BLK {C[4, 7]:.2f}), TO with them "
+                  f"{C[8, k].mean():.2f}, FG% with PTS {C[0, 3]:.2f}, FT% with PTS {C[1, 3]:.2f}; one factor carries "
+                  f"{ev[-1] / ev.sum():.0%} (the next {ev[-2] / ev.sum():.0%})")
+            print(f"  categories logloss {score(P.ravel(), Y.ravel())['logloss']:.4f} (any load)")
+            print("  matchup logloss by load: " + ", ".join(f"{x} {v:.4f}" for x, v in zip(grid, ll)))
+            for x in (0.0, model.WEEK_LOAD):
+                print(f"  matchup calibration, load {x}:", calibration(model.match_prob(P, model.CATS, x), won))
+    for games in ("fixed", "schedule"):
+        T = np.array([rows[s, games] for s in seasons])
+        print(f"\n{games}: pooled logloss by load " + ", ".join(f"{x} {v:.4f}" for x, v in zip(grid, T.mean(0))))
+        for i, s in enumerate(seasons):  # the load fitted on the other seasons, scored on this one
+            b = int(np.delete(T, i, 0).mean(0).argmin())
+            print(f"  {s}: fitted on the others {grid[b]} -> {T[i, b]:.4f}, at {model.WEEK_LOAD} "
+                  f"{T[i, grid.index(model.WEEK_LOAD)]:.4f}, independent {T[i, 0]:.4f}")
 
 
 def replay(weights=(0, 0.25, 0.5, 0.6, 0.75, 1)):
@@ -1087,6 +1158,8 @@ if __name__ == "__main__":
         gameday()
     elif "lineups" in sys.argv:
         lineups()
+    elif "corr" in sys.argv:
+        corr()
     elif "news" in sys.argv:
         news()
     elif "ahead" in sys.argv:

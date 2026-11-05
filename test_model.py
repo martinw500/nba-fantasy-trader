@@ -193,6 +193,21 @@ def test_all():
     assert ow.s == 1 and lg.s == model.CAT_SCALE
     assert ow.standings()["Me"]["win"] == round(float(p_ab), 3) != st["Me"]["win"]
     assert ow.trade(["Player 150"], ["Player 199"])["net"] > lg.trade(["Player 150"], ["Player 199"])["net"] > 0
+    # M9: this week's categories move together, one shared factor at WEEK_LOAD (counting stats +, TO -, FG% / FT% 0).
+    # Each category's own odds stay (the factor averages out of them), a favourite is less sure than independent
+    # categories say, it's symmetric, an all-but-decided week (banked) barely moves, load 0 is the independent rule.
+    # This week (_wscore) uses it; season numbers (_score, One Win's too) and a categories league's scores don't
+    pc = model.cat_probs(upgraded, B, model.CATS)
+    lam = np.array([0, 0] + [model.WEEK_LOAD] * 6 + [-model.WEEK_LOAD])
+    back = sum(wi * model.phi((model.phinv(pc) + lam * xi) / np.sqrt(1 - lam ** 2)) for xi, wi in zip(*model.GH))
+    assert np.allclose(back, pc, atol=1e-6) and abs(model.phinv(np.array(0.975)) - 1.959964) < 1e-5
+    m0, m1 = model.match_prob(pc), model.match_prob(pc, model.CATS, model.WEEK_LOAD)
+    assert abs(m1 - 0.5) < abs(m0 - 0.5) and abs(model.match_prob(1 - pc, model.CATS, model.WEEK_LOAD) - (1 - m1)) < 1e-9
+    fav = np.array([0.7, 0.6, 0.75, 0.8, 0.7, 0.75, 0.65, 0.6, 0.3])
+    assert model.match_prob(fav) - model.match_prob(fav, model.CATS, model.WEEK_LOAD) > 0.02
+    done = np.where(fav > 0.5, 0.999, 0.001)  # Sunday night: every category all but decided
+    assert abs(model.match_prob(done) - model.match_prob(done, model.CATS, model.WEEK_LOAD)) < 1e-3
+    assert model.match_prob(pc, model.CATS, 0) == m0 == ow._score(pc) and ow._wscore(pc) == m1 and lg._wscore(pc) == lg._score(pc)
 
     # trade verdicts come from the matchup model in 9-cat and update both rosters
     r = lg.trade(["Player 150"], ["Player 199"])
@@ -1214,6 +1229,8 @@ def test_all():
     assert on._so_far()["Me"] == {"PTS": 130.0, "FGM": 52.0, "FGA": 100.0, **{s: 0.0 for s in model.RAW if s not in ("PTS", "FGM", "FGA")}}
     assert on._so_far()["Them"]["PTS"] == 90
     w = on.this_week()
+    _, lft, odd = on._matchup("Them")  # M9: This week's win with the categories moving together, not independent
+    assert w["win"] == round(100 * float(model.match_prob(odd(lft["Me"]), on.cats, model.WEEK_LOAD)), 1) != round(100 * float(model.match_prob(odd(lft["Me"]))), 1)
     assert w["cats"]["PTS"]["you"][0] == 130 and w["tonight"] == {"on": 1, "final": 0, "to_come": 1, "lineups": False, "fetched": None}
     mon = next(d for d in w["lineups"]["days"] if d["date"] == "2026-10-26")
     a = next(o for o in mon["options"] if o["name"] == "Twin A")

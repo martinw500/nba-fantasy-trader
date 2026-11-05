@@ -39,7 +39,7 @@ small sample, buying at peak hype, overpaying or lowballing on the market), tier
 and build_after (categories the user would win under 35% of weeks, a punt hint).
 Use find_trades for "who can I get for X", "who wants Y", "fix my steals" or "beat team Z"; offer a harder tier
 when nothing clears the bar. Use this_week for "how's my matchup" and streaming: "score" is the expected
-categories won-lost this week (lead with it in a categories league), "win" the chance to win more categories, stream
+categories won-lost this week (lead with it in a categories league), "win" the chance to win more categories (the categories move together, so it is less sure than nine separate odds), stream
 "gain" is this week's win % and "season" what keeping him does to the season-long win %, "day" the best day to make
 the add (the drop plays until then). "adds" = adds used and left this week (4 a week in the user's league): "plan"
 is the best way to spend the ones left (its "news": the last add is kept for a player ruled out later in the week

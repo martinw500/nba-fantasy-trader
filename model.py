@@ -111,6 +111,17 @@ DISPERSION = {"FG3M": 1.75, "PTS": 3.0, "REB": 2.5, "AST": 3.0, "STL": 1.0, "BLK
 SCHED_CV = 0.10                                    # week-to-week swing beyond box-score noise (schedule, rest, minutes,
                                                    # and projection error); 0.12 before N9, 0.17 before it knew who's out
 PCT_NOISE = 1.5                                    # FG%/FT% variance vs coin-flip shooting at each player's rate (was 1.75)
+# M9: a week's categories move together. A team that gets more games or minutes than expected (or whose players were
+# over-projected) wins PTS, REB, AST, 3PM, STL and BLK together and loses TO; FG% and FT% barely move with it. Measured
+# on backtest.py's matchups 2022-23 to 2025-26 (the miss of each category's margin over its sd): counting stats 0.2-0.7
+# apart, TO -0.3 to -0.6, one factor carrying most of it. So this week's chance to win the matchup (match_prob) has
+# each category's margin load WEEK_LOAD on one shared factor (counting +, TO -, FG%/FT% 0), independent given it. With
+# the week's real schedule (This week) matchup log loss 0.5459 / 0.5425 / 0.5497 / 0.5066 -> 0.5436 / 0.5418 / 0.5469 /
+# 0.5046 (every season, and with the load fitted on the other three), 10-20% predictions that won 17-19% now win 15-17%.
+# On an average week (One Win's season numbers) it measured no better (1 of 4 seasons) and stays off there. A loading
+# per category, or one on FG%, gained nothing (python backtest.py corr)
+WEEK_LOAD = 0.5
+GH = (lambda x, w: (x, w / w.sum()))(*np.polynomial.hermite_e.hermegauss(5))  # N(0, 1) nodes, weights (3 give the same)
 WEAK = 0.35                                        # a "weak spot" / punt hint: winning a category under 35% of
                                                    # weeks (about the bottom 10% of team-categories once odds are calibrated)
 FILL = 0.5                                         # share of a sat-out player's games your bench/streamers cover
@@ -936,8 +947,41 @@ def total(v, c):
     return round(float(v[RAW.index(c)]), 1)
 
 
-def match_prob(p):
-    """P(win the matchup) = P(more category wins than losses), categories independent; a tie counts half."""
+def phinv(p):
+    """Inverse of phi() (Acklam's rational approximation, error < 1.2e-9), vectorized without scipy; p is clipped to
+    1e-12 from 0 and 1 (a punted category's 0 stays a sure loss)."""
+    a = (-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02,
+         -3.066479806614716e+01, 2.506628277459239e+00)
+    b = (-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01)
+    c = (-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00,
+         4.374664141464968e+00, 2.938163982698783e+00)
+    d = (7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00)
+    p = np.clip(p, 1e-12, 1 - 1e-12)
+    q = np.minimum(p, 1 - p)  # the lower tail, then the sign
+    r = np.sqrt(-2 * np.log(np.where(q < 0.02425, q, 0.5)))
+    tail = (((((c[0] * r + c[1]) * r + c[2]) * r + c[3]) * r + c[4]) * r + c[5]) / ((((d[0] * r + d[1]) * r + d[2]) * r + d[3]) * r + 1)
+    u = q - 0.5
+    t = u * u
+    mid = (((((a[0] * t + a[1]) * t + a[2]) * t + a[3]) * t + a[4]) * t + a[5]) * u / (((((b[0] * t + b[1]) * t + b[2]) * t + b[3]) * t + b[4]) * t + 1)
+    x = np.where(q < 0.02425, tail, mid)
+    return np.where(p < 0.5, x, -x)
+
+
+def match_prob(p, cats=CATS, load=0.0):
+    """P(win the matchup) = P(more category wins than losses); a tie counts half. load 0: categories independent.
+    load (M9, WEEK_LOAD: this week on its real schedule): each category's margin loads `load` on one shared factor F
+    (counting stats +, TOV -, FG% / FT% 0), independent given it, so category c is won with Phi((phinv(p_c) + l_c F) /
+    sqrt(1 - l_c^2)) at F, integrated over GH's nodes. Each category's own odds stay p (the average over F); only how
+    they go together changes. A banked lead is in p already, so it moves only what's left of the week."""
+    if not load:
+        return _match_indep(p)
+    lam = np.array([0.0 if c in ("FG%", "FT%") else -load if c == "TOV" else load for c in cats])
+    mu, s = phinv(p), np.sqrt(1 - lam ** 2)
+    return sum(w * _match_indep(phi((mu + lam * x) / s)) for x, w in zip(*GH))
+
+
+def _match_indep(p):
+    """match_prob() with the categories independent: the distribution of categories won, one category at a time."""
     n = p.shape[-1]
     dist = np.zeros(p.shape[:-1] + (n + 1,))
     dist[..., 0] = 1
@@ -1837,8 +1881,15 @@ class League:
 
     def _score(self, p):
         """What a week is worth in the standings, from category odds p (..., cats): the expected share of categories
-        won (categories: each one counts as a win), or the chance to win the matchup (one win)."""
+        won (categories: each one counts as a win), or the chance to win the matchup (one win). An average week of
+        the season: categories independent (M9's shared factor measured no better there)."""
         return match_prob(p) if self.scoring == "one_win" else p.mean(-1)
+
+    def _wscore(self, p):
+        """_score() for this week on its real schedule (streams, the add plan, Start / sit, Try a move's week): in One
+        Win, the chance to win the matchup with the categories moving together (M9, WEEK_LOAD); in categories the same
+        share of categories won."""
+        return match_prob(p, self.cats, WEEK_LOAD) if self.scoring == "one_win" else p.mean(-1)
 
     def _concede(self, p, punt):
         """Punted categories count as losses for you: that's what committing to a punt means."""
@@ -2758,7 +2809,7 @@ class League:
         best, days = None, sorted(set(self.game_days(a, self.week_end, first)) | {x for x in after if first <= x <= self.week_end})
         for s in days or [first]:
             st, un = {**(start or {}), a: s}, self._handoff(until or {}, ends or {}, drops, a, s)
-            g = 100 * (float(self._score(odds(self.week_vec(list(keys) + [a], st, un)))) - s0)
+            g = 100 * (float(self._wscore(odds(self.week_vec(list(keys) + [a], st, un)))) - s0)
             if best is None or g > best[0] + 1e-9:
                 best = (g, s, st, un)
         return best
@@ -2781,13 +2832,13 @@ class League:
             h = HAZARD * (1 - float(self.rate.get(k, 1)))
             for i, d in enumerate(games):
                 un = {**until, k: day(d, -1)}
-                s = float(self._score(odds(self.week_vec(keys, start, un))))
+                s = float(self._wscore(odds(self.week_vec(keys, start, un))))
                 V = [self.week_vec(keys + [a], {**start, a: f}, self._handoff(un, ends, [x], a, f))
                      for a in cands if a not in keys for x in [*drops, *([k] if park and k not in drops else [])]
                      for f in [max(d, self._clears(a).get(a, d), self._move_day([x]))]]
                 if V:
                     p = h * (1 if i == len(games) - 1 else 1 - ONE_GAME)
-                    ev.append((d, p, 100 * (float(self._score(odds(np.array(V))).max()) - s)))
+                    ev.append((d, p, 100 * (float(self._wscore(odds(np.array(V))).max()) - s)))
         v = 0.0
         for d in sorted({e[0] for e in ev}, reverse=True):
             stay, add = 1.0, 0.0
@@ -2830,7 +2881,7 @@ class League:
         moves.sort(key=lambda x: x["day"])
         for i, x in enumerate(moves):
             done = moves[:i + 1]
-            s = float(self._score(odds(self.week_vec(base + [y["add"] for y in done], {y["add"]: y["day"] for y in done},
+            s = float(self._wscore(odds(self.week_vec(base + [y["add"] for y in done], {y["add"]: y["day"] for y in done},
                                                      {**ends0, **{y["add"]: y["end"] for y in done if y["end"]},
                                                       **{y["drop"]: until[y["drop"]] for y in done}}))))
             x["gain"], prev = 100 * (s - prev), s
@@ -2856,7 +2907,7 @@ class League:
         wk = {t: self._week_side(t, punt) for t in (me, opp)}
         mine, _, ends = wk[me]  # with players back from IL slots, and who's cut for them then
         p = odds(left[me])
-        win = float(match_prob(p))
+        win = float(match_prob(p, self.cats, WEEK_LOAD))  # M9: this week's categories move together
         clears = self._clears
 
         # streams: each healthy free agent for whichever of your 3 cheapest healthy players (season win-% cost) helps most,
@@ -2871,8 +2922,8 @@ class League:
         if drops and fas and (cap is None or cap["left"]):
             V = np.array([[self.week_vec(swap(a, d), clears(a), self._handoff(ends, ends, [d], a, self.today))
                            for d in drops] for a in fas])
-            s0 = float(self._score(p))
-            gain = 100 * (self._score(odds(V)) - s0)
+            s0 = float(self._wscore(p))
+            gain = 100 * (self._wscore(odds(V)) - s0)
             cands = [fas[i] for i in np.argsort(-gain.max(1))[:max(limit, 10)]]
             season0 = self.outlook(me, punt=punt)["win"]
             season = lambda out, inn: round(100 * (self.outlook(me, {me: self.vec(
@@ -3034,7 +3085,7 @@ class League:
         pl = {x: 1.0 if x in lock else self._plays(x[1], x[0], rate) for x in per}
         one = {x: pl[x] * per[x] for x in per}
         idx = [self.cats.index(c) for c in cats if c in self.cats and c not in punt]
-        goal = (lambda p: p[..., idx].mean(-1)) if idx else self._score
+        goal = (lambda p: p[..., idx].mean(-1)) if idx else self._wscore
         fit = {}
 
         def fits(ks):
@@ -3111,7 +3162,7 @@ class League:
                                           "with": flip[d, k][1] and name(flip[d, k][1])} if (d, k) in flip else {})}
                                      for k in ks]})
         goal = [c for c in cats if c in self.cats and c not in punt]
-        return {"opponent": r["opp"], "gain": round(100 * float(self._score(p) - self._score(p0)), 1), "days": days,
+        return {"opponent": r["opp"], "gain": round(100 * float(self._wscore(p) - self._wscore(p0)), 1), "days": days,
                 "cats": {c: [round(100 * float(a), 1), round(100 * float(b), 1)] for c, a, b in zip(self.cats, p0, p)
                          if abs(b - a) >= 0.005},
                 **({"goal": goal, "goal_gain": round(100 * (r["now"] - float(r["goal"](p0))), 1)} if goal else {})}
@@ -3193,13 +3244,13 @@ class League:
                 start, until = {k: when}, self._handoff(ends, ends, gone, k, when)
                 after = act + [k]
             else:
-                _, when, start, until = self._timed(act, k, gone, odds, float(self._score(p0)), None, ends, ends)
+                _, when, start, until = self._timed(act, k, gone, odds, float(self._wscore(p0)), None, ends, ends)
                 after = act + [k]
             p1 = odds(self.week_vec(after, start, until))
             for c, x0, x1 in zip(self.cats, p0, p1):
                 cats[c]["week"] = [pct1(x0), pct1(x1)]
-            week = {"opponent": opp, "net": round(100 * float(self._score(p1) - self._score(p0)), 1) + 0.0,
-                    "win": [pct1(match_prob(p0)), pct1(match_prob(p1))],
+            week = {"opponent": opp, "net": round(100 * float(self._wscore(p1) - self._wscore(p0)), 1) + 0.0,
+                    "win": [pct1(match_prob(p0, self.cats, WEEK_LOAD)), pct1(match_prob(p1, self.cats, WEEK_LOAD))],
                     "score": [round(float(p0.sum()), 1), round(float(p1.sum()), 1)],
                     **({"claim": claim[k]} if claim else {}), **({"day": when} if when else {}),
                     "today": max(self.today, self.matchup.get("from", ""))}
