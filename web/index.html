@@ -200,7 +200,14 @@ details > summary { cursor: pointer; margin-top: 10px; color: var(--muted); }
 /* trade */
 .picker { display: flex; flex-direction: column; gap: 10px; }
 .plist { display: flex; flex-direction: column; max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
-.pitem { display: grid; grid-template-columns: 18px 1fr auto auto; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.pitem, .phead { display: grid; grid-template-columns: 18px 1fr 44px 20px; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.pitem { cursor: pointer; }
+.pitem .n, .phead .n { text-align: right; }
+.phead { position: sticky; top: 0; z-index: 1; background: var(--panel); padding-top: 7px; padding-bottom: 7px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.phead [data-tip] { cursor: help; text-decoration: underline dotted var(--line-strong); text-underline-offset: 3px; border-radius: 4px; }
+.phead [data-tip] { position: relative; outline: none; }
+.phead [data-tip]:hover, .phead [data-tip]:focus { color: var(--text); }
+.phead [data-tip]:hover::after, .phead [data-tip]:focus::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); right: -6px; z-index: 3; width: 250px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--text); box-shadow: 0 1px 2px oklch(0% 0 0 / .06), 0 4px 12px oklch(0% 0 0 / .1); font-size: 12.5px; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal; pointer-events: none; }
 .pitem:last-child { border-bottom: 0; }
 .pitem:hover { background: var(--panel-2); }
 .pitem input { accent-color: var(--accent); margin: 0; }
@@ -363,6 +370,8 @@ const store = {
 };
 const [hashView, hashQuery] = location.hash.slice(1).split("?");
 const link = new URLSearchParams(hashQuery);  // #trades?give=A,B&get=C opens and evaluates a trade
+// Trades' finder settings as they start (Reset puts them back); Count my / their waiver moves are remembered in this browser
+const FIND0 = () => ({ tier: "fair", goal: "win", cats: [], vs: "", size: 3, healthy: false, mine: true, theirs: false, shape: "", overpay: "", outside: "", team: "", list: null, busy: false, ran: "", sort: null });
 const S = {
   view: hashView || store.get("view", "team"),
   punt: new URLSearchParams(location.search).get("punt")?.split(",").filter(Boolean) ?? store.get("punt", []),  // ?punt=FT%25,TOV bookmarks a build
@@ -375,8 +384,8 @@ const S = {
   news: {},  // { data, error }: My team's News panel; replaced on team / refresh
   strategy: {},  // { data, busy, sel }: the punt planner (sel: the build whose plan shows), ignores your punt, so only team / refresh / Healthy only replace it
   trade: { give: new Set(), get: new Set(), team: null, roster: null, result: null, busy: false },
-  locks: new Set(store.get("locks", [])),
-  find: { tier: "fair", goal: "win", cats: [], vs: "", size: 3, healthy: false, mine: store.get("mine", true), theirs: store.get("theirs", false), shape: "", overpay: "", outside: "", team: "", list: null, busy: false, ran: "", sort: null },
+  locks: new Set(store.get("locks", [])),  // players the finder never trades, kept in this browser; Trades' Reset clears them
+  find: { ...FIND0(), mine: store.get("mine", true), theirs: store.get("theirs", false) },
   improve: { kind: null, list: null, busy: false, sort: null },
   saved: { list: store.get("saved", []), evals: {}, loading: false },
   players: null,
@@ -666,6 +675,10 @@ function strategyPanel() {
     ? ["accept", `Punt ${buildName(d.pick)}`, `Its plan beats staying balanced by ${delta(d.edge, "win%")}.`]
     : ["toss-up", "Stay balanced", best.punt.length ? `The best punt, ${buildName(best.punt)}, is only ${delta(d.edge, "win%")} ahead, too close to call.` : "No punt beats it once its moves are made."];
   const sel = P.sel ?? d.builds.indexOf(d.pick.length ? best : flat), b = d.builds[sel];
+  // the title can favour another build: playoff weeks are one matchup, won on 5 of 9 categories (Nov 7 note)
+  const same = (x, y) => x.join() === y.join(), mine = d.builds.find(x => same(x.punt, d.pick));
+  const tp = d.title_pick && d.builds.find(x => same(x.punt, d.title_pick));
+  const title = tp ? `<div class="panel-b small" ${line}><b>For the title: ${tp.punt.length ? "punt " + buildName(tp.punt) : "stay balanced"}</b> <span class="muted">· ${p1(tp.title)} to win it, against ${p1(mine.title)} for ${d.pick.length ? buildName(d.pick) : "staying balanced"}. The playoffs are one matchup a week, won on 5 of 9 categories, and its plan wins more of them. Over the regular season it wins ${p1(tp.win)} of categories, against ${p1(mine.win)}.</span></div>` : "";
   // the plan: waiver adds, then each trade on the rosters the one before leaves (and the adds it opens up)
   const steps = b.steps.map((s, j) => {
     const prev = j ? b.steps[j - 1].win : d.win;
@@ -685,8 +698,8 @@ function strategyPanel() {
     ? and(b.stars.map(x => `<b>${esc(x.name)}</b> (${lab(x.cat)} ${x.z.toFixed(1)})`)) + (new Set(b.stars.map(x => x.name)).size > 1 ? ". Their weak spots stop costing you." : ". His weak spot stops costing you.")
     : `none of your top five players is weak in ${cats}.`}</div>` : "";
   const strategy = `<div class="panel" id="strategy">${head}
-    <div class="panel-b"><div class="verdict"><span class="pill ${cls}" style="text-transform:none">${pill}</span><span class="small">${why}</span></div></div>
-    <div class="panel-b small" ${line}><b>Plan: ${buildName(b.punt)}</b> <span class="muted">· ${planMoves(b)}, ${p1(d.win)} → ${p1(b.win)}</span></div>
+    <div class="panel-b"><div class="verdict"><span class="pill ${cls}" style="text-transform:none">${pill}</span><span class="small">${why}</span></div></div>${title}
+    <div class="panel-b small" ${line}><b>Plan: ${buildName(b.punt)}</b> <span class="muted">· ${planMoves(b)}, ${p1(d.win)} → ${p1(b.win)}${b.title != null ? ` · title ${p1(d.title)} → ${p1(b.title)}` : ""}</span></div>
     <div class="tw" ${line}><table><thead><tr>${th("Step", "Waiver adds first, then each trade on the rosters the one before leaves", "")}${th("Partner", "Trade partner", "")}<th>You give</th><th>You get</th>
       ${th("Them", "Change in their " + WIN().of + " from the trade")}${th("Market", MKT_TIP)}${th("Package", PKG_TIP)}${th("Will they say yes", "Mostly the market, a little how it really helps them", "")}
       ${th(WIN().h + " after", "After this step, on real odds: a punted category still counts when you win it")}${th("Change", "From the step before (today, for the waiver adds)")}<th></th></tr></thead>
@@ -705,11 +718,11 @@ function strategyPanel() {
   const path = x => x.steps.map((s, i) => `<span class="${s.win < (i ? x.steps[i - 1].win : d.win) ? "neg" : ""}">${s.win.toFixed(1)}</span>`).join(` <span class="muted">→</span> `);
   const rows = d.builds.map((x, i) => `<tr${i === sel ? ` class="sel"` : ""}><td><button class="rowbtn" data-act="plan-show" data-i="${i}" aria-pressed="${i === sel}" title="Show this build's plan, buy list and sell list">${buildName(x.punt)}</button>${x.punt.length === S.punt.length && x.punt.every(punted) ? `<span class="tag">current</span>` : ""}</td>
     <td class="muted">${planMoves(x)}</td><td class="small">${path(x)}</td>
-    <td class="n val">${p1(x.win)}</td><td class="n ${tone(x.gain)}">${delta(x.gain, "win%")}</td></tr>`).join("");
+    <td class="n val">${p1(x.win)}</td><td class="n ${tone(x.gain)}">${delta(x.gain, "win%")}</td>${x.title != null ? `<td class="n">${p1(x.playoffs)}</td><td class="n${tp === x ? " val" : ""}">${p1(x.title)}</td>` : ""}</tr>`).join("");
   const every = `<div class="panel"><div class="panel-h"><div><h2>Every build</h2><p>Staying balanced, every single punt and six common pairs. Pick one to see its plan, buy list and sell list.</p></div></div>
     <div class="tw"><table><thead><tr>${th("Build", "The categories this build concedes", "")}${th("Moves", "Waiver adds (before and between trades) and trades in its plan", "")}
       ${th("Path", `Your ${WIN().of} after the waiver adds and after each trade. Red: a step that costs on its own, paid back by a later trade`, "")}
-      ${th(WIN().h + " after", "After the whole plan, on real odds")}${th("vs now", "Change from your " + WIN().of + " today")}</tr></thead>
+      ${th(WIN().h + " after", "After the whole plan, on real odds")}${th("vs now", "Change from your " + WIN().of + " today")}${d.title != null ? th("Playoffs", `Chance to make the playoffs after the whole plan (today ${p1(d.playoffs)})`) + th("Title", `Chance to win the league after the whole plan (today ${p1(d.title)}). The playoffs are one matchup a week won on 5 of 9 categories, so a build that's strong in 5 can do better here than its win % says`) : ""}</tr></thead>
       <tbody>${rows}</tbody></table></div>
     <div class="panel-b small muted" ${line}>Staying balanced also tries every other build's trades and repeats each build's plan for as long as every trade still lifts your real odds, since it could make them too. So a punt only wins through moves it alone unlocks: its waiver adds, or trades that only pay off after a costly first one.</div></div>`;
   return strategy + buy + sell + every;
@@ -740,7 +753,7 @@ function viewWeek() {
   const score = `<div><dt title="Categories you'd expect to win and lose${oneWin() ? "" : ". Each one counts in the standings"}">Expected score</dt><dd>${w.score[0].toFixed(1)}–${w.score[1].toFixed(1)}</dd></div>`;
   const yg = w.yahoo_games;
   const games = (w.games ? `<div><dt title="Player-games left this week if your best 10 with a game start each day, players in IL slots from their return">Games left</dt><dd>${w.games.you} <span class="muted small">vs ${w.games.them}</span></dd></div>` : "")
-    + (yg ? `<div><dt title="Yahoo's count, from the lineups as they're set now. Lower than ours when bench players could fill in on light days">Yahoo games left</dt><dd>${yg.you.left} <span class="muted small">vs ${yg.them.left}</span></dd></div>` : "");
+    + (yg ? `<div><dt title="Yahoo's count, from the lineups as they're set now: a starter counts whenever his team plays, even if he sits. Lower than ours when bench players could fill in on light days">Yahoo games left</dt><dd>${yg.you.left} <span class="muted small">vs ${yg.them.left}</span></dd></div>` : "");
   // today's NBA games (M18): under way and final ones count in the score so far, their players locked
   const tn = w.tonight, clock = iso => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   const tonight = tn && (tn.on || tn.final) ? ` · Tonight: ${[tn.on && `${tn.on} under way`, tn.final && `${tn.final} final`, tn.to_come && `${tn.to_come} to come`].filter(Boolean).join(", ")}${tn.fetched ? ` (scores from ${clock(tn.fetched)})` : ""}` : "";
@@ -977,31 +990,34 @@ function viewTrades() {
   if ((!T.roster || T.roster.team !== T.team) && T.loading !== T.team) loadTradeRoster();
   if (!S.players) loadPlayers();
   const W = T.roster?.team === T.team ? T.roster.wants : null;  // what they want: worth to them in win %
-  const worth = W && Object.fromEntries([...W.give.map(x => [x.name, x.worth]), ...Object.entries(W.keep)]);
   const item = (p, set) => {
-    const on = set.has(p.name), lk = S.locks.has(p.name), w = worth?.[p.name];
+    const on = set.has(p.name), lk = S.locks.has(p.name);
     return `<label class="pitem ${on ? "on" : ""}"><input type="checkbox" data-pick="${set === T.give ? "give" : "get"}" value="${esc(p.name)}" ${on ? "checked" : ""}>
-    <span>${esc(p.name)}${statusTag(p)}</span><span class="muted small">${Number(p.value).toFixed(isPoints() ? 1 : 2)}${w == null ? "" : ` · <span title="Worth to ${esc(T.team)}: their ${WIN().of} with him minus with ${esc(W.spot.join(""))} (the best healthy free agent) in his spot">${delta(w, "win%")}</span>`}</span>
-    ${isPoints() ? "" : `<button class="lock" data-act="lock" data-name="${esc(p.name)}" aria-pressed="${lk}" aria-label="Lock ${esc(p.name)}" title="${lk ? "Locked: the finder never trades him" : "Lock so the finder never trades him"}"><svg class="i"><use href="#i-lock"/></svg></button>`}</label>`;
+    <span>${esc(p.name)}${statusTag(p)}</span><span class="n small ${tone(p.value)}">${Number(p.value).toFixed(isPoints() ? 1 : 2)}</span>
+    ${isPoints() ? "<span></span>" : `<button class="lock" data-act="lock" data-name="${esc(p.name)}" aria-pressed="${lk}" aria-label="Lock ${esc(p.name)}" title="${lk ? "Locked: the finder never trades him" : "Lock so the finder never trades him"}"><svg class="i"><use href="#i-lock"/></svg></button>`}</label>`;
   };
-  const theirs = T.roster && T.roster.team === T.team ? T.roster.roster.map(p => item(p, T.get)).join("") : `<div class="skel"></div><div class="skel"></div>`;
+  // Value to you, both lists (Martin, Nov 7: the per-player win % against the best free agent read as noise, and on a
+  // punt everyone rose); comparing players is the deal itself, worked out as soon as both sides have one (evaluate())
+  const head = `<div class="phead"><span></span><span>Player</span><span class="n" tabindex="0" data-tip="Value to you: how good he is per game for the rest of the season, his category scores added up against an average rostered player${S.punt.length ? `, counting only the categories you play for (punting ${and(S.punt.map(lab))} lowers a player who's good there and raises one who's bad there)` : ""}. 0 is an average rostered player.">Value</span><span></span></div>`;
+  const theirs = T.roster && T.roster.team === T.team ? head + T.roster.roster.map(p => item(p, T.get)).join("") : `<div class="skel"></div><div class="skel"></div>`;
   const ready = T.give.size + T.get.size > 0;
-  return `<div class="head"><div><h1>Trades</h1><p class="sub">Check players to build a trade, then evaluate it or find deals built around them.${W ? ` After each value: what he's worth to ${esc(T.team)}, their ${WIN().of} with him minus with the best free agent in his spot. Swap one for one and their gain is about your player's number minus theirs.` : ""}</p></div>
-      <input type="search" class="input" id="find-player" list="all-players" placeholder="Add any player to the trade" aria-label="Add any rostered player to the trade" autocomplete="off" style="width:240px;max-width:100%">
+  return `<div class="head"><div><h1>Trades</h1><p class="sub">Tick players on both sides and the deal is worked out for you and for them as you go, or find deals built around them. <b>Value</b> is how good a player is for your build.</p></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><input type="search" class="input" id="find-player" list="all-players" placeholder="Add any player to the trade" aria-label="Add any rostered player to the trade" autocomplete="off" style="width:240px;max-width:100%">
+      <button class="btn ghost" data-act="reset-trades" title="Start over: untick every player, unlock everyone, and put the finder's settings back (difficulty, goal, size, filters, Count my / their waiver moves)">Reset</button></div>
       <datalist id="all-players">${S.players.map(p => `<option value="${esc(p.name)}">${esc(p.team)}</option>`).join("")}</datalist></div>
     <div class="grid2">
       <div class="panel picker"><div class="panel-h"><div><h2>You give</h2><p>${T.give.size ? [...T.give].map(esc).join(", ") : "Pick players from your roster"}</p></div></div>
-        <div class="panel-b" style="padding-top:0"><div class="plist" style="margin-top:12px">${st.roster.map(p => item(p, T.give)).join("")}</div></div></div>
+        <div class="panel-b" style="padding-top:0"><div class="plist" style="margin-top:12px">${head}${st.roster.map(p => item(p, T.give)).join("")}</div></div></div>
       <div class="panel picker"><div class="panel-h"><div><h2>You get</h2><p>${T.get.size ? [...T.get].map(esc).join(", ") : "Pick players from their roster"}</p></div>
         <select id="trade-team" aria-label="Trade partner">${others.map(t => `<option ${t === T.team ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
         <div class="panel-b" style="padding-top:0"><div class="plist" style="margin-top:12px">${theirs}</div></div></div>
     </div>
-    <div class="toolbar"><button class="btn primary" data-act="evaluate" ${ready && !running(T) ? "" : "disabled"}>${running(T) ? "Evaluating…" : "Evaluate trade"}</button>
+    <div class="toolbar"><button class="btn primary" data-act="evaluate" ${ready && !running(T) ? "" : "disabled"}>${running(T) ? "Evaluating…" : T.result ? "Evaluate again" : "Evaluate trade"}</button>
       ${ready ? `<button class="btn ghost" data-act="ask-gm" title="Open the AI GM with this trade in the message box, then ask it anything about it">Ask AI GM</button>
         <button class="btn ghost" data-act="clear-trade">Clear</button>` : ""}</div>
+    ${T.result ? tradeResult(T.result) : ""}
     ${W ? wantsPanel(W) : ""}
     ${findPanel()}
-    ${T.result ? tradeResult(T.result) : ""}
     ${savedPanel()}
     ${offersPanel()}`;
 }
@@ -1029,7 +1045,8 @@ function tradeResultOdds(r) {
   const moves = [r.you_drop.length && `You drop ${r.you_drop.map(esc).join(", ")} to make room.`,
     r.you_add.length && `You pick up ${r.you_add.map(esc).join(", ")} with the open spot.`,
     r.they_drop.length && `${them} drops ${r.they_drop.map(esc).join(", ")}.`,
-    r.they_add.length && `${them} picks up ${r.they_add.map(esc).join(", ")}.`].filter(Boolean).join(" ");
+    r.they_add.length && `${them} picks up ${r.they_add.map(esc).join(", ")}.`,
+    r.il_cut && `When ${and(r.il_cut.back.map(esc))} ${r.il_cut.back.length > 1 ? "are" : "is"} back: now you'd cut ${and(r.il_cut.now.map(esc)) || "nobody"}; after this deal ${and(r.il_cut.after.map(esc)) || "nobody"}.`].filter(Boolean).join(" ");
   const tot = c => v => c.endsWith("%") ? v.toFixed(1) + "%" : v.toFixed(1);
   const odds = o => `<td class="n">${ba(o, v => Math.round(v) + "%")}</td><td class="n val ${tone(o[1] - o[0])}">${delta(o[1] - o[0], "win%")}</td>`;
   const cats = `<div class="tw"><table><thead><tr><th>Category</th><th class="n" title="Expected weekly total">You: total</th><th class="n" title="Chance you win it, averaged over every opponent">Your odds</th><th></th>
@@ -1117,7 +1134,7 @@ function findPanel() {
   const tiers = isPoints() ? ["fair", "finesse"] : Object.keys(TIER);
   const controls = `<div class="seg" role="group" aria-label="Difficulty">${tiers.map(k => `<button data-tier="${k}" aria-pressed="${F.tier === k}" title="${(isPoints() ? TIER_PTS : TIER)[k]}">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div>
     <label class="field">Team <select id="f-team" ${pinned ? `disabled title="Set by the player you're asking for"` : ""}>${opt("", "All teams", team)}${others.map(t => opt(t, t, team)).join("")}</select></label>
-    ${isPoints() ? "" : `<label class="field">Optimize for <select id="f-goal">${opt("win", "Win %", F.goal)}${opt("cats", "Categories…", F.goal)}${opt("team", "Beat a team…", F.goal)}</select></label>
+    ${isPoints() ? "" : `<label class="field">Optimize for <select id="f-goal">${opt("win", "Win %", F.goal)}${opt("cats", "Categories…", F.goal)}${opt("team", "Beat a team…", F.goal)}${S.state.profile?.playoffs ? opt("title", "Title odds (~25 s)", F.goal) : ""}</select></label>
       ${F.goal === "cats" ? `<span class="sugs" role="group" aria-label="Categories to improve">${st.cats.map(c => `<button class="chip pick ${punted(c) ? "punted-col" : ""}" data-goalcat="${c}" aria-pressed="${F.cats.includes(c)}">${lab(c)}</button>`).join("")}</span>` : ""}
       ${F.goal === "team" ? `<select id="f-vs" aria-label="Team to beat">${others.map(t => opt(t, t, F.vs)).join("")}</select>` : ""}
       <label class="field">Max size <select id="f-size">${[1, 2, 3].map(k => opt(String(k), `${k}-for-${k}`, String(F.size))).join("")}</select></label>
@@ -1145,12 +1162,12 @@ function dealTable(list, src) {
   if (s) rows.sort(([a], [b]) => (v(a, s.k) > v(b, s.k) ? 1 : v(a, s.k) < v(b, s.k) ? -1 : 0) * s.dir);
   const th = (k, h, tip, cls = "n") => `<th class="${cls}" title="${esc(tip)}"${s?.k === k ? ` aria-sort="${s.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="sort" data-sort="${k}" data-src="${src}">${esc(h)}${s?.k === k ? `<svg class="i${s.dir > 0 ? " up" : ""}"><use href="#i-caret"/></svg>` : ""}</button></th>`;
   const head = `<tr>${th("team", "Team", "Trade partner", "")}<th>You give</th><th>You get</th>
-    ${goal ? th("score", F.goal === "cats" ? F.cats.map(lab).join(" + ") : "vs " + F.vs, F.goal === "cats" ? "Change in your average odds in these categories" : oneWin() ? "Change in your chance to beat them" : "Change in your share of categories vs them") : ""}
+    ${!goal ? "" : list[0].title ? th("score", "Title", "Change in your chance to win the league (hover a number: before → after, and your playoff odds). Found among each team's best deals on win %") : th("score", F.goal === "cats" ? F.cats.map(lab).join(" + ") : "vs " + F.vs, F.goal === "cats" ? "Change in your average odds in these categories" : oneWin() ? "Change in your chance to beat them" : "Change in your share of categories vs them")}
     ${th("net", "You", "Change in your " + u + (lostTip() && u !== "value" ? ". " + lostTip() : ""))}${th("their_net", "Them", "Change in their " + u)}
     ${mk ? th("mkt", "Market", MKT_TIP) + th("pkg", "Package", PKG_TIP) : th("their_view", "Looks to them", "On this season's hot and cold starts, what Yahoo's ranks show them")}
     ${acc ? th("accept", "Will they say yes", "Mostly the market, a little how it really helps them", "") : ""}<th></th></tr>`;
   const body = rows.map(([x, i]) => `<tr><td>${esc(x.team)}</td><td class="names">${x.give.map(nameBtn).join(", ")}</td><td class="names">${x.get.map(nameBtn).join(", ")}</td>
-    ${goal ? `<td class="n val ${tone(x.score)}">${delta(x.score, "win%")}</td>` : ""}
+    ${goal ? `<td class="n val ${tone(x.score)}"${x.title ? ` title="Title ${x.title.join("% → ")}%, playoffs ${x.playoffs.join("% → ")}%"` : ""}>${delta(x.score, "win%")}</td>` : ""}
     <td class="n ${goal ? "" : "val"} ${tone(x.net)}">${delta(x.net, x.unit)}</td><td class="n ${tone(x.their_net)}">${delta(x.their_net, x.unit)}</td>
     ${mk ? `<td class="n">${mktSum(x.market)}</td><td class="n">${mktPair(x.market)}</td>` : `<td class="n ${tone(x.their_view)}">${sign(x.their_view)}</td>`}${acc ? `<td>${acceptPill(x.accept)}</td>` : ""}
     <td class="n"><button class="btn ghost" data-act="load-deal" data-src="${src}" data-i="${i}">Load</button><button class="btn ghost" data-act="save-deal" data-src="${src}" data-i="${i}" ${isSaved(x) ? "disabled" : ""}>${isSaved(x) ? "Saved" : "Save"}</button></td></tr>`).join("");
@@ -1641,7 +1658,11 @@ function render() {
   const offline = bad.length ? `<div class="notice">${old.length ? `Couldn't refresh ${and(old.map(x => `${esc(lower(x))} (using the copy from ${when(x.fetched)})`))}. ` : ""}${none.length ? `No ${and(none.map(x => esc(lower(x))))}, so the numbers leave out ${none.map(x => esc(x.lost)).join("; ")}. ` : ""}Press Refresh to try again.</div>` : "";
   TBL = 0;
   const card = S.card.t === -1 ? `<div class="panel card-panel" role="region" aria-label="Player card">${playerCard()}</div>` : "";
+  // the view is rebuilt on every change, so scrolled lists (Trades' pickers, deals) keep their place on the same view
+  const keep = S.view === render.view ? [...v.querySelectorAll(".plist, .deals")].map(e => e.scrollTop) : [];
+  render.view = S.view;
   v.innerHTML = card + demo + stale + offline + ({ team: viewTeam, week: viewWeek, schedule: viewSchedule, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, compare: viewCompare, gm: viewGM }[S.view] || viewTeam)();
+  v.querySelectorAll(".plist, .deals").forEach((e, i) => { if (keep[i]) e.scrollTop = keep[i]; });
   const m = $("#msgs"); if (m) m.scrollTop = m.scrollHeight;
 }
 // a new punt, from the chips or My team's "Punt …" button (B2: the button reloaded My team only, so This week, Schedule,
@@ -1712,6 +1733,12 @@ document.addEventListener("click", async e => {
     const n = t.dataset.name; S.locks.has(n) ? S.locks.delete(n) : S.locks.add(n);
     store.set("locks", [...S.locks]); return render();
   }
+  if (act === "reset-trades") {  // everything on Trades back to a fresh start; ask null drops replies still on the way (B3)
+    Object.assign(S.trade, { give: new Set(), get: new Set(), result: null, ask: null });
+    S.locks.clear(); store.set("locks", []); store.set("mine", true); store.set("theirs", false);
+    Object.assign(S.find, FIND0(), { ask: null }); Object.assign(S.improve, { kind: null, list: null, busy: false, sort: null, ask: null });
+    history.replaceState(null, "", "#trades"); return render();
+  }
   if (act === "clear-trade") { S.trade.give.clear(); S.trade.get.clear(); S.trade.result = S.trade.ask = null; history.replaceState(null, "", "#trades"); return render(); }
   if (act === "evaluate") return evaluate();
   if (act === "ask-gm") {  // Trades → AI GM: the checked trade in the message box, cursor after it for the question
@@ -1763,7 +1790,7 @@ document.addEventListener("click", async e => {
 });
 document.addEventListener("change", async e => {
   const t = e.target;
-  if (t.dataset.pick) { const set = S.trade[t.dataset.pick]; t.checked ? set.add(t.value) : set.delete(t.value); S.trade.result = S.trade.ask = null; return render(); }
+  if (t.dataset.pick) { const set = S.trade[t.dataset.pick]; t.checked ? set.add(t.value) : set.delete(t.value); S.trade.result = S.trade.ask = null; return S.trade.give.size && S.trade.get.size ? evaluate() : render(); }
   if (t.id === "w-healthy") {  // changes the waiver suggestions and every trade number (they build on your free moves)
     const re = S.trade.result;
     S.healthyFa = t.checked; store.set("healthyFa", t.checked);

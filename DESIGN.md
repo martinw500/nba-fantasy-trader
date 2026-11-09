@@ -215,6 +215,9 @@ A table row that picks what another panel shows (Strategy's Every build, League'
 ### Player card from the top bar
 The top bar's player search opens the card under the player's row when a player table on screen holds him. Otherwise the same card sits in its own panel at the top of the view (`.card-panel`, first in the column, under the top bar), closed by its Close button or a tab change. Never a modal or a popover.
 
+### Trade pickers
+Two checkable player lists (You give, You get) in a bordered scroll box with a sticky heading row (Player, Value; 12px muted). Value sits in a fixed 44px right-aligned column in pos / neg ink, and the lock button closes each row. A heading that needs explaining has a dotted underline, and hovering, tapping or focusing it shows a small panel-coloured tip right under it (`[data-tip]::after`, 250px, the panel lift shadow, at once): native `title` tooltips were too slow to notice (Martin, Nov 7). Ticking players on both sides evaluates the deal at once; there are no per-player win % columns (tried Nov 7: a free-agent baseline read as noise).
+
 ### Compare table
 Rows are numbers, columns are deals (Saved trades) or players (Compare), the row label in muted 12px. On Compare, bold marks who's ahead on each number, a muted grey sub-heading row starts each group (NBA games, Per game) and category rows are z-score cells with the chosen per-game line beside them. A punted category dims its whole row (`tr.punted-col`).
 

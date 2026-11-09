@@ -52,10 +52,21 @@ def test_all():
     assert r.at["twin", "GP"] == 2 and abs(r.at["twin", "PTS"] - (0.5 * 10 + 30) / 1.5) < 1e-9
     assert model.recent(g2, "2026-10-31", None).at["twin", "PTS"] == 20
 
-    # ROS: 5 games of 40 PTS barely moves a 20-PTS baseline (k=20 -> 20% weight); rookies start near fringe level
+    # ROS: 5 games of 40 PTS barely moves a 20-PTS baseline (k=20 -> 20% weight; on the same shots, so what the shots
+    # don't explain, at SHRINK); rookies start near fringe level
     ros = model.ros(base, cur)
     assert abs(ros.at["player 150", "PTS"] - (0.2 * 40 + 0.8 * base.at["player 150", "PTS"])) < 1e-9
-    assert ros.at["rookie guy", "PTS"] < base.at["player 199", "PTS"]
+    # A4: a percentage leans on this season far slower than shot volume: a 60% FT start (career 80%) on 5 FTA a game
+    # projects 77.1% after 10 games (PCT_K 60 games of his FTA; one k for all gave 73.3%), FGA 2/3 of the way to 12
+    b3 = model.keyed(pd.DataFrame([line("Shooter", 150, FTM=4.0, FTA=5.0, FGA=9.0)]))
+    c3 = model.keyed(pd.DataFrame([line("Shooter", 150, gp=10, FTM=3.0, FTA=5.0, FGA=12.0)]))
+    s3 = model.ros(b3, c3).loc["shooter"]
+    assert np.isclose(s3.FTM / s3.FTA, (10 * 5 * 0.6 + model.PCT_K["FT"] * 5 * 0.8) / (10 * 5 + model.PCT_K["FT"] * 5))
+    assert 0.77 < s3.FTM / s3.FTA < 0.772 and np.isclose(s3.FGA, (10 * 12 + model.RATE_K["FGA"] * 9) / (10 + model.RATE_K["FGA"]))
+    # ...and a veteran's prior production per minute moves with age (AGE_SLOPE): a 33-year-old's 4.5% under a 27's
+    old = model.keyed(pd.DataFrame([{**line("Vet", 150), "AGE": 32}, {**line("Kid", 150), "AGE": 26}]))
+    pa = model.prior(model.baseline(old, old), model.experts({}, {}, old, old.index))
+    assert np.isclose(pa.at["vet", "PTS"] / pa.at["kid", "PTS"], (1 + 6 * model.AGE_SLOPE) / 1) and pa.at["vet", "MIN"] == pa.at["kid", "MIN"]
     # experts(): Yahoo's line where it has him, but one under half of ESPN's isn't a per-game line (Oct 30: Jaxson
     # Hayes 1.7 points while playing 27 minutes a game), so ESPN's wins
     yl = {"Player 100": {"PTS": 1.7, "REB": 1.0, "AST": 0.2}, "Player 101": {"PTS": 9.0, "REB": 4.0, "AST": 1.0}}
@@ -173,6 +184,25 @@ def test_all():
     rest, hurt_ = sat("Player 150 will be rested Monday."), sat("Player 150 (knee) is out for the rest of Sunday's game.")
     assert (rest["status"], hurt_["status"], sat("He'll be rested.", tag="O")["status"]) == ("REST", "O", "REST")
     assert "REST" not in model.OUT and rest["avail"] == hurt_["avail"] and sat("(rest)", back="2026-10-26")["status"] == ""
+    # one gone from the game is out for the season whatever placeholder ESPN dates (Nov 6: Porziņģis, Jan 2)
+    gone = sat("Player 150 announced he's stepping away from basketball.", back="2026-11-20")
+    assert gone["avail"] == 0 and sat("Player 150 (knee) is out.", back="2026-11-20")["avail"] > 0
+    # one yet to play this season is on ESPN's team, not last season's (Nov 6: Tobias Harris, DET -> SAS); one with
+    # games keeps this season's
+    moved = model.League(snap2, base2, cur2, today=model.date(2026, 10, 26), sched={"XXX": days}, inj={
+        n: {"status": "O", "note": "", "return": "2026-11-20", "team": "SA"} for n in ("Nikola Jokić", "Player 150")})
+    assert (moved.nba["nikola jokic"], moved.nba["player 150"]) == ("SAS", "XXX")
+    # ...and a Yahoo tag that ESPN's feed, fetched after the pull, no longer lists is stale (Nov 5: Tatum rested Nov 4,
+    # the night pull kept his O, ESPN dropped him and the O cut him to 61% all season): no cut. A feed from before the
+    # pull, or an empty one (ESPN down), keeps the tag
+    tagged = lambda inj, at: model.League(
+        {**snap2, "pulled": "2026-10-26T09:00:00-07:00",  # 16:00 UTC
+         "teams": {**snap2["teams"], "Me": [{**p, "status": "O"} if p["name"] == "Player 150" else p for p in snap2["teams"]["Me"]]}},
+        base2, cur2, today=model.date(2026, 10, 26), sched={"XXX": days}, inj=inj, inj_at=at).player("player 150")
+    other, utc = {"Player 151": {"status": "O", "note": "", "return": "2026-11-20"}}, lambda h: model.datetime(
+        2026, 10, 26, h, tzinfo=model.timezone.utc).timestamp()
+    assert tagged(other, utc(18))["status"] == "" and tagged(other, utc(18))["avail"] > tagged(other, utc(15))["avail"]
+    assert tagged(other, utc(15))["status"] == tagged({}, utc(18))["status"] == tagged(other, None)["status"] == "O"
 
     # matchup math: symmetric, identical teams are a coin flip, better players raise your odds
     A, B = lg.vecs["Me"], lg.vecs["Them"]
@@ -569,6 +599,42 @@ def test_all():
     assert [(x[0]["net"], x[0]["their_net"], x[0]["market"])] == [(r["net"], r["their_net"], r["market"])], (x, r)
     at = both.after_trade(["Hurt Guy"], ["Sore Guy"])
     assert not set(at.rosters["Me"]) & set(at.rosters["Them"]) and not set(at.fa) & set(at.rosters["Them"])
+    # B13: a full IL (one slot, Hurt Guy in it, a shot-blocker): trade() scores your side before and after on the best
+    # cut once he's back (_il_cut's gain over _return()'s rule), and search() re-scores the deals it shows the same way
+    hurt2 = model.keyed(pd.DataFrame([line("Hurt Guy", 196, BLK=3.0, REB=12, PTS=8), line("Sore Guy", 193)]))
+    full = model.League({**ill.snap, "settings": {**ill.snap["settings"], "il": 1}}, pd.concat([base, hurt2]),
+                        pd.concat([cur, hurt2.assign(GP=5)]))
+    g0 = full._il_cut()[2]
+    assert full.il["Me"] == {"hurt guy"} and g0 > 0.05  # the rule cuts Player 150, the best cut Player 154
+    rescored = []
+    for deal in ((["Player 154"], ["Player 195"]), (["Player 194", "Player 154"], ["Player 195"]),
+                 (["Player 194"], ["Player 195", "Player 191"]), (["Hurt Guy"], ["Player 195"])):
+        r = full.trade(*deal, free=False)
+        mk, _, ma, mil = full._after("Me", *map(lambda ns: [full.find(n) for n in ns], deal))
+        tk, _, _, til = full._after("Them", [full.find(n) for n in deal[1]], [full.find(n) for n in deal[0]], skip=ma)
+        c1 = full._copy({"Me": mk, "Them": tk}, full.fa, {"Me": set(mil), "Them": set(til)})._il_cut()
+        ov = {"Me": full.vec(mk, mil), "Them": full.vec(tk, til, "Them")}
+        raw = 100 * (full.outlook("Me", ov)["win"] - full.outlooks["Me"]["win"])
+        assert r["net"] == round(raw + (c1[2] if c1 else 0) - g0, 1) and r["il_cut"]["now"] == ["Player 154"], (deal, r)
+        x = [y for y in full.search(*deal, size=2, tier="hard", free=False, limit=500)
+             if sorted(y["give"]) == sorted(deal[0]) and sorted(y["get"]) == sorted(deal[1])]
+        assert [(x[0]["net"], x[0]["their_net"], x[0]["market"])] == [(r["net"], r["their_net"], r["market"])], (deal, x, r)
+        # your standings row is on the best cut too, as the headline (Nov 7: "+1.0" next to a flag's "+1.2%")
+        assert all(abs(s - w) < 0.06 for s, w in zip(r["standings"]["Me"]["win"], (r["win"], r["win_after"]))), r
+        rescored.append((deal, raw, raw + (c1[2] if c1 else 0) - g0))
+    rp = full.trade(["Player 154"], ["Player 195"], ["FT%"], free=False)  # a punt: real-odds standings stay on the rule
+    assert abs(rp["standings"]["Me"]["win"][0] - 100 * full.outlooks["Me"]["win"]) < 0.06
+    # ... and Find trades tiers a deal again on its re-scored net, as the builder does (Nov 7: 5 of the 20 default
+    # deals sat just under Fair there): a Fair line between a deal's quick-rule gain and its re-scored one keeps it out
+    deal, raw, net = next(x for x in rescored if x[2] < x[1] - 0.02)
+    model.TIERS["fair"], fair = ((raw + net) / 2 / full.s, -99, -np.inf, np.inf), model.TIERS["fair"]
+    try:
+        shown = full.search(*deal, size=2, tier="fair", free=False, limit=500)
+        assert shown and all("fair" in full.trade(y["give"], y["get"], free=False)["tiers"] for y in shown)
+        assert (sorted(deal[0]), sorted(deal[1])) not in [(sorted(y["give"]), sorted(y["get"])) for y in shown]
+    finally:
+        model.TIERS["fair"] = fair
+    assert lg.trade(["Player 154"], ["Player 195"], free=False)["il_cut"] is None  # nobody parked: no line, no change
     # B5: an injured free agent parks in a free IL slot (mchc allows the add straight to IL): no drop, nothing filled
     # for his missed games, from his return he takes an open spot, else the weakest (_return). free_moves(), Waivers,
     # after_free() and add_drop() make the same move, search() and trade() score on top of it alike; a full IL slot or
@@ -977,8 +1043,8 @@ def test_all():
     up = sl.lift.xs(("twin a", "twin c"), level=("key", "by")).iloc[0]
     gap = lambda a, b, k: (a.loc[k, model.RAW] - b.loc[k, model.RAW]).astype(float).to_numpy()
     assert up.MIN > 0.5 and not len(no.lift)
-    assert np.allclose(gap(sl.p, no.p, "twin a"), 4 / 6 * up[model.RAW]) and np.allclose(gap(sl.p_week, no.p, "twin a"), up[model.RAW])
-    assert not gap(sl.p_week, no.p, "twin b").any() and sl.value(["twin a"]).iloc[0] > no.value(["twin a"]).iloc[0]
+    assert np.allclose(gap(sl.p, no.p, "twin a"), 4 / 6 * up[model.RAW]) and np.allclose(gap(sl.p_week, no.p_week, "twin a"), up[model.RAW])
+    assert not gap(sl.p_week, no.p_week, "twin b").any() and sl.value(["twin a"]).iloc[0] > no.value(["twin a"]).iloc[0]
     assert sl.week_vec(["twin a"])[model.RAW.index("PTS")] > no.week_vec(["twin a"])[model.RAW.index("PTS")]
     assert sl.player("twin a")["lift"] == [{"by": "Twin C", "return": "2026-11-03", "games": 4, "days": 8, "term": "medium",
                                            **{c: round(float(up[c]), 1) for c in ["MIN"] + model.COUNTING}}]
@@ -987,7 +1053,7 @@ def test_all():
     gone = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
                         sched={"AAA": week[1:], "BBB": week, "XXX": week},
                         inj={"Twin C": {"status": "O", "note": "Ankle.", "return": "2026-10-27"}})
-    assert len(gone.lift) and not gone.lifted and not gap(gone.p_week, no.p, "twin a").any()
+    assert len(gone.lift) and not gone.lifted and not gap(gone.p_week, no.p_week, "twin a").any()
     # two out at once: Twin D (AAA) is out until Oct 30 too, so until then Twin C's and Twin D's minutes go to the
     # AAA players left, and from Oct 30 Twin D takes his share of Twin C's. The twins play 31.6, so Twin C (first of
     # two equal) fills Twin A's room both times and Twin D's minutes go to the bench, but his unreplaced shots still
@@ -997,16 +1063,16 @@ def test_all():
                        inj={"Twin C": {"status": "O", "note": "Ankle.", "return": "2026-11-03"},
                             "Twin D": {"status": "O", "note": "Knee.", "return": "2026-10-30"}})
     ta = two.lift.xs("twin a", level="key").groupby(level="from").sum()
-    assert list(ta.index) == ["2026-10-26", "2026-10-30"] and np.allclose(ta.MIN, model.ROOM - no.p.at["twin a", "MIN"])
+    assert list(ta.index) == ["2026-10-26", "2026-10-30"] and np.allclose(ta.MIN, model.ROOM - no.p_week.at["twin a", "MIN"])
     assert ta.PTS.iloc[0] > ta.PTS.iloc[1] > 0
-    assert np.allclose(gap(two.p_week, no.p, "twin a"), (ta[model.RAW].iloc[0] + ta[model.RAW].iloc[1]) / 2)
+    assert np.allclose(gap(two.p_week, no.p_week, "twin a"), (ta[model.RAW].iloc[0] + ta[model.RAW].iloc[1]) / 2)
     assert [(x["by"], x["games"]) for x in two.player("twin a")["lift"]] == [("Twin C", 4)]  # Twin D's: no minutes
     assert "twin d" not in two.lift.xs("2026-10-26", level="from").index.get_level_values("key")  # out: takes nothing
     # ... and Start / sit plays each game on its own day's lift, not the week's average: Twin A's Oct 26 game gets the
     # first stretch's, his Oct 30 game the second's, and his four games together are This week's line. On Oct 26 the
     # lineup lists both teammates (Twin D's shots without minutes count too)
     wp, r = two._week_plan("Them"), [two._plays("twin a", d) for d in week[:4]]
-    one, flat = [wp["one"][d, "twin a"] for d in week[:4]], no.p.loc["twin a", model.RAW].to_numpy(float)
+    one, flat = [wp["one"][d, "twin a"] for d in week[:4]], no.p_week.loc["twin a", model.RAW].to_numpy(float)
     assert np.allclose(one[0], r[0] * (flat + ta[model.RAW].iloc[0])) and np.allclose(one[2], r[2] * (flat + ta[model.RAW].iloc[1]))
     assert np.allclose(sum(x / p for x, p in zip(one, r)) / 4, two.p_week.loc["twin a", model.RAW].to_numpy(float))
     mon = next(o for o in two.start_sit("Them")["days"][0]["options"] if o["name"] == "Twin A")
@@ -1018,6 +1084,32 @@ def test_all():
     wl = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
                       sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week}, logs=bx.assign(key=bx.PLAYER_NAME.map(model.norm)))
     assert wl.p.at["twin a", "MIN"] < no.p.at["twin a", "MIN"] and wl.p.at["twin d", "MIN"] == no.p.at["twin d", "MIN"]
+    assert wl.p_week.at["twin a", "MIN"] < no.p_week.at["twin a", "MIN"]
+    # A6/A7: the season line (p) nets NET_SEASON of had() with MIN_SHRINK_SEASON games of minutes, This week (p_week)
+    # all of it at MIN_SHRINK. One line when the knobs agree; This week never moves with them; half netted is the
+    # midpoint (minutes are linear in it); 6 games keep (GP + 3) / (GP + 6) of what 3 do of Twin A's gap from his prior
+    old = model.MIN_SHRINK_SEASON, model.NET_SEASON
+    try:
+        def at(k, s):
+            model.MIN_SHRINK_SEASON, model.NET_SEASON = k, s
+            return model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
+                                sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week}, logs=bx.assign(key=bx.PLAYER_NAME.map(model.norm)))
+        one = at(model.MIN_SHRINK, 1.0)
+        assert np.allclose(one.p[model.RAW].to_numpy(float), one.p_week[model.RAW].to_numpy(float))
+        assert np.allclose(one.p_week[model.RAW].to_numpy(float), wl.p_week[model.RAW].to_numpy(float))
+        m = {s: at(model.MIN_SHRINK, s).p.at["twin a", "MIN"] for s in (0.0, 0.5)}
+        assert m[0.0] > m[0.5] > one.p.at["twin a", "MIN"] and np.isclose(m[0.5], (m[0.0] + one.p.at["twin a", "MIN"]) / 2)
+        prior, six = at(1e9, 1.0).p.at["twin a", "MIN"], at(6, 1.0).p.at["twin a", "MIN"]
+        gp = one.cur.GP["twin a"]  # this season's (60: the box scores' 4 games don't match it, so fetch()'s line)
+        assert abs(one.p.at["twin a", "MIN"] - prior) > 3 and np.isclose(six - prior, (gp + model.MIN_SHRINK) / (gp + 6) * (one.p.at["twin a", "MIN"] - prior))
+    finally:
+        model.MIN_SHRINK_SEASON, model.NET_SEASON = old
+    # B11: back from missing games, a player's first games run short. Twin C sat AAA's last 2: RAMP's first row for his
+    # games Monday and Wednesday, in This week's totals (week_vec) but not his games count; Twin A played them all; no
+    # box scores, no ramp
+    assert wl._ramp == {("twin c", "2026-10-26"): 0.96, ("twin c", "2026-10-28"): 0.98} and no._ramp == {}
+    pc = wl.p_week.at["twin c", "PTS"] * sum(wl._plays("twin c", d) * wl._ramp.get(("twin c", d), 1) for d in week[:4])
+    assert np.isclose(wl.week_vec(["twin c"])[model.RAW.index("PTS")], pc) and wl.starts(["twin c"])["twin c"] == 4
     # ... but a regular with no game this season and no injury listing isn't sitting out: he's left the league (Oct 30:
     # Westbrook and Rozier took up to 9 minutes a game off their old teammates' lines). Twin C in no box score: played
     # this season, he's a sitter and Twin A's shots in those games come off his line (his minutes are capped at ROOM
@@ -1026,6 +1118,12 @@ def test_all():
     at = lambda c: model.League(snap, pd.concat([base, twins]), pd.concat([cur, c]), today=model.date(2026, 10, 26), logs=solo)
     phantom, sat = at(twins.drop("twin c")), at(twins)
     assert "twin c" not in phantom.here and "twin c" in sat.here and phantom.p.at["twin a", "PTS"] > sat.p.at["twin a", "PTS"]
+    # hurt with no game this season and team games before his first one here: the longest row (Nov 9: StopIteration,
+    # the sentinel plus those games ran past RAMP's last bound)
+    gone = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26), logs=solo,
+                        inj={"Twin C": {"status": "O", "note": "Ankle.", "return": "2026-10-30"}},
+                        sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week})
+    assert {f for (k, _), f in gone._ramp.items() if k == "twin c"} <= set(model.RAMP[-1][1]) and any(k == "twin c" for k, _ in gone._ramp)
     # recent form: the last FORM_DAYS of box scores, for players with FORM_GP+ games in them (Twin C played 2)
     assert wl.player("twin a")["form_gp"] == 4 and "form" not in wl.player("twin c")
     late = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 11, 5),
@@ -1033,7 +1131,8 @@ def test_all():
     assert "form" not in late.player("twin a") and late.movers()["window"] == "the last 14 days"  # 2 games since Oct 22
 
     # this week: no opponent until one is known; streams score more games higher, a waiver claim plays from the day
-    # it clears; banked totals decide a category, a punt concedes it, last week's matchup is ignored
+    # it clears; banked totals decide a category, a punt doesn't concede it (real odds: Yahoo scores it), last week's
+    # matchup is ignored
     assert sl.this_week()["opponent"] is None
     wk = sl.this_week("Them")
     gain = {s["name"]: s["gain"] for s in wk["streams"]}
@@ -1051,7 +1150,8 @@ def test_all():
     assert w2["opponent"] == "Them" and w2["live"] and w2["cats"]["PTS"]["call"] == "safe" and w2["win"] > wk["win"]
     assert w2["cats"]["PTS"]["you"][0] == 900 and w2["cats"]["FG%"]["you"][0] == 50.0
     assert w2["yahoo_games"]["them"] == {"played": 10, "left": 27} and "yahoo_games" not in wk
-    assert up.this_week(punt=["PTS"])["cats"]["PTS"] == {**w2["cats"]["PTS"], "odds": 0, "call": "punt"}
+    pw = up.this_week(punt=["PTS"])
+    assert pw["cats"]["PTS"] == {**w2["cats"]["PTS"], "call": "punt"} and pw["win"] == w2["win"] and pw["score"] == w2["score"]
     # the week so far comes from every pairing in the snapshot, so an opponent picked in the app has his too (Oct 30:
     # one without read 100%, your week against his nothing); a side with none zeroes both, as on a Monday
     at = lambda **m: model.League({**snap, **m}, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
@@ -1106,7 +1206,8 @@ def test_all():
                       pd.concat([cur, twins]), today=model.date(2026, 12, 30), sched={"AAA": ny, "XXX": ny})
     assert next(s for s in nl.this_week("Them", limit=50)["streams"] if s["name"] == "Twin F")["games"] == 2
     # ... and the add/drop evaluator scores a stream's move the same way: this week's gain, the season's, his games
-    # (a claim from the day it clears), nothing for this week without an opponent, a punt concedes the category
+    # (a claim from the day it clears), nothing for this week without an opponent, a punt concedes the category for
+    # the season only (this week's odds are real)
     for st in sl.this_week("Them", limit=50)["streams"]:
         r = sl.add_drop(st["name"], st["drop"], opp="Them")
         assert abs(r["week"]["net"] - st["gain"]) < 0.06 and abs(r["net"] - st["season"]) < 0.06
@@ -1114,10 +1215,11 @@ def test_all():
     f = sl.add_drop("Twin F", "Player 150", opp="Them")["week"]
     assert f["claim"] == "2026-11-01" and f["games"]["add"] == 1 and sl.add_drop("Twin D", "Player 150")["week"] is None
     pp = up.add_drop("Twin D", "Player 150", punt=["PTS"])
-    assert pp["week"]["opponent"] == "Them" and pp["cats"]["PTS"] == {"season": [0, 0], "week": [0, 0]}
+    assert pp["week"]["opponent"] == "Them" and pp["cats"]["PTS"]["season"] == [0, 0] and pp["cats"]["PTS"]["week"][0] > 50
+    assert pp["week"] == up.add_drop("Twin D", "Player 150")["week"]
     # start/sit (Oct 30): on a full day the players who add most to this week's matchup start, not the best per-game
     # values. Player 150, your worst, blocks 6 a game this week only: he starts over a better player every day and
-    # BLK and the week go up; with BLK punted his blocks count for nothing and per-game value's lineups stand
+    # BLK and the week go up, with BLK punted too (Nov 6: this week's odds are real, Yahoo scores every category)
     # Start / sit's days count the bench filling in for a starter who sits (M19), as This week's numbers do: 15 play
     # most days for 10 slots and 26% of the starters sit, so the week is more than the starters' games alone
     r0, pts = sl._week_plan("Them"), model.RAW.index("PTS")
@@ -1130,7 +1232,7 @@ def test_all():
     ss = sl.start_sit("Them")
     assert all(d["in"] == ["Player 150"] and len(d["out"]) == 1 for d in ss["days"]) and ss["gain"] > 0
     assert ss["cats"]["BLK"][1] > ss["cats"]["BLK"][0] and all(d["why"]["BLK"] > 0 for d in ss["days"])
-    assert not any(d["in"] for d in sl.start_sit("Them", punt=["BLK"])["days"])
+    assert [d["in"] for d in sl.start_sit("Them", punt=["BLK"])["days"]] == [d["in"] for d in ss["days"]]
     assert sl.this_week("Them")["lineups"] == ss and sl.start_sit() is None  # no opponent saved
     # every starting slot comes back in Yahoo's order, None where nobody with a game fits (Nov 2: no SF while George
     # and Black rested)
@@ -1159,7 +1261,9 @@ def test_all():
     # IL players back this week (M21; before, they sat all week): a parked player starts from his first game after his
     # return (a game-day listing's chance for it, M16) in place of who his team cuts then, the cut playing until the day
     # before. Yours: il_plan()'s cut; another team's: _return()'s rule (its weakest active player by effective value,
-    # while he beats him). An open spot takes him with nobody cut; one back after the week sits it out
+    # while he beats him). An open spot takes him with nobody cut; one back after the week sits it out. B11: ESPN's
+    # date is a guess (Twin C, "Ankle."), so he plays his j-th game from it at 1 - RETURN_LATE^j of his rate and his cut
+    # stays until he's likelier back than not, his 2nd game (Nov 1); a game-day listing (Twin G, probable) is M16's
     tw = pd.concat([twins, model.keyed(pd.DataFrame([line("Twin G", 180)]))])
     mk = lambda s, i: model.League(s, pd.concat([base, tw]), pd.concat([cur, tw]), today=model.date(2026, 10, 26),
                                    sched=sl.sched, inj=i)
@@ -1170,10 +1274,13 @@ def test_all():
                        "date": "2026-10-26T20:00Z"}}
     ml, pts = mk(isnap, iinj), model.RAW.index("PTS")
     (keys, until), c = ml._week_roster("Me"), ml._il_cut()[1]
-    assert "twin c" in keys and c != ["twin c"] and until == {c[0]: "2026-10-29"}
+    assert "twin c" in keys and c != ["twin c"] and until == {c[0]: "2026-10-31"}
+    assert ml._back_day("twin c") == "2026-11-01" and ml._back_day("twin g") == "2026-10-28"
+    assert [ml._plays("twin c", d) for d in ("2026-10-30", "2026-11-01")] == [
+        ml._rw["twin c"] * (1 - model.RETURN_LATE ** j) for j in (1, 2)] and ml._plays("twin g", "2026-10-28") == 0.92
     day = ml._days(keys, ml.week_end, until=until)
     assert [d for d, ks in day.items() if "twin c" in ks] == ["2026-10-30", "2026-11-01"]
-    assert max(d for d, ks in day.items() if c[0] in ks) == "2026-10-28"
+    assert max(d for d, ks in day.items() if c[0] in ks) == "2026-10-30"
     (them, tu), act = ml._week_roster("Them"), ml._playing(ml.rosters["Them"])
     weak = min(act, key=lambda k: ml._ev[ml._ix[k]])
     assert ml._hv[ml._ix["twin g"]] > ml._ev[ml._ix[weak]] and "twin g" in them and tu == {weak: "2026-10-27"}
@@ -1181,17 +1288,19 @@ def test_all():
     assert np.allclose(left["Me"], ml.week_vec(keys, until=until)) and np.allclose(left["Them"], ml.week_vec(them, until=tu))
     assert left["Them"][pts] > ml.week_vec(act)[pts]  # Twin G, probable (92%), for their weakest from Wednesday
     w = ml.this_week("Them")
-    assert w["back"] == {"you": {"in": [{"name": "Twin C", "day": "2026-10-30"}], "cut": [{"name": ml.names(c)[0], "last": "2026-10-29"}], "stream": []},
+    assert w["back"] == {"you": {"in": [{"name": "Twin C", "day": "2026-10-30"}], "cut": [{"name": ml.names(c)[0], "last": "2026-10-31"}], "stream": []},
                          "them": {"in": [{"name": "Twin G", "day": "2026-10-28"}], "cut": [{"name": ml.names([weak])[0], "last": "2026-10-27"}], "stream": []}}
     assert all(("Twin C" in d["start"] + d["sit"]) == (d["date"] >= "2026-10-30") for d in ml.start_sit("Them")["days"])
     # a stream that drops the player cut for him is cut in his place: it keeps his last day (_handoff)
     *_, un = ml._timed(keys, "twin e", [c[0]], odds, float(ml._score(odds(left["Me"]))), None, until, until)
-    assert un["twin e"] == "2026-10-29" and un[c[0]] <= "2026-10-29"
+    assert un["twin e"] == "2026-10-31" and un[c[0]] <= "2026-10-31"
     assert model.League._handoff({"x": "2026-10-29"}, {"x": "2026-10-29"}, ["x"], "a", "2026-10-28") == {"x": "2026-10-27", "a": "2026-10-29"}
     op = mk({**isnap, "teams": {**isnap["teams"], "Them": isnap["teams"]["Them"][1:]}}, iinj)
     assert op._room("Them") == 1 and op._week_roster("Them") == (op._playing(op.rosters["Them"]) + ["twin g"], {})
     late = mk(isnap, {**iinj, "Twin C": {**iinj["Twin C"], "return": "2026-11-03"}})
     assert late._week_roster("Me") == (late._playing(late.rosters["Me"]), {})
+    sun = mk(isnap, {**iinj, "Twin C": {**iinj["Twin C"], "return": "2026-11-01"}})  # one game: nobody cut this week
+    assert sun._back_day("twin c") is None and sun._week_roster("Me") == (sun._playing(sun.rosters["Me"]) + ["twin c"], {})
     # an open active spot this week (M20): another team's is streamed from tomorrow by the waiver level's free agent
     # with the most games left (until a player back from its IL slots takes it: the day before his first game); yours
     # stays empty, as season-long
@@ -1204,7 +1313,7 @@ def test_all():
     assert o.this_week("Them")["back"]["them"]["stream"] == [{"name": o.names([a])[0], "from": "2026-10-27", "until": None}]
     o = mk(osn, {**iinj, "Twin G": {"status": "O", "note": "Ankle.", "return": "2026-10-30"}})
     k, st, un = o._week_side("Them")
-    assert st == {a: "2026-10-27"} and un == {a: "2026-10-29"} and "twin g" in k
+    assert st == {a: "2026-10-27"} and un == {a: "2026-10-31"} and "twin g" in k  # his 2nd game from ESPN's date (B11)
 
     # games under way (M18). Monday 9pm ET: BBB @ AAA tipped off at 7 (Twin A 30 points so far, Twin B sat it: DND),
     # XXX's game tips at 10. Twin A is locked: his game is no longer one left (games, starts), his live line is in the
@@ -1495,6 +1604,28 @@ def test_all():
     assert r["you"][1] > r["you"][0] and r["them"][1] < r["them"][0]
     assert tr["title"]["you"] == [round(100 * x["teams"]["Me"]["title"], 1) for x in (pl.playoffs, at)]
     assert lg.trade(["Player 150"], ["Player 199"])["playoffs"] is None
+    # the finder's title goal (Nov 7 note): each deal carries trade()'s title and playoff odds, scored and ranked on
+    # the title's change; no schedule, no title goal
+    ft = pl.search(goal="title", free=False, size=1, tier="hard")
+    assert ft and [x["score"] for x in ft] == sorted((x["score"] for x in ft), reverse=True)
+    for x in ft[:3]:
+        tr = pl.trade(x["give"], x["get"], free=False)
+        assert x["title"] == tr["title"]["you"] and x["playoffs"] == tr["playoffs"]["you"] and x["net"] == tr["net"]
+        assert abs(x["score"] - (x["title"][1] - x["title"][0])) <= 0.1
+    try:
+        lg.search(goal="title")
+        assert False, "title goal without a schedule"
+    except KeyError:
+        pass
+    # Strategy: each build's playoff and title odds after its plan (Nov 7 note: the playoffs are won on 5 of 9), today's
+    # on top; title_pick is the most title odds when 2+ ahead of the pick's build
+    sp = pl.strategy(size=1)
+    ttl = lambda b: round(100 * pl.after_free(b).playoffs["teams"]["Me"]["title"], 1)
+    assert sp["title"] == round(100 * pl.playoffs["teams"]["Me"]["title"], 1) and sp["playoffs"] == pct(pl.playoffs, "Me")
+    assert all(b["title"] == ttl(b["punt"]) for b in sp["builds"] if len(b["steps"]) == 1)
+    tb = max(sp["builds"], key=lambda b: b["title"])
+    assert sp["title_edge"] == round(tb["title"] - next(b["title"] for b in sp["builds"] if b["punt"] == sp["pick"]), 1)
+    assert sp["title_pick"] == (tb["punt"] if sp["title_edge"] >= 2 else None)
 
     # league text import: a trimmed Instinct snapshot (settings, rosters with ranks and "Empty slot" rows, injured
     # list skipped, free agents across three lists, matchups, transactions, projections, adds, schedule), sections it
@@ -1728,12 +1859,13 @@ Sharks has an open SF slot.""")
     # a rookie (audit #3, Nov 4): his expert line weighs ROOKIE_W 0.75, not PROJ_W 0.6, and his production per minute
     # leans on this season at ROOKIE_K 10 games of his minutes, not SHRINK 20; a veteran's still at SHRINK
     assert model.ROOKIE_W == 0.75 and model.ROOKIE_K == 10 and pre.at["new rookie", "GP"] == 0
-    hot = model.keyed(pd.DataFrame([line("New Rookie", 190, gp=5, PTS=30), line("Player 152", 152, gp=5, PTS=30)]))
+    hot = model.keyed(pd.DataFrame([line("New Rookie", 190, gp=5, REB=12), line("Player 152", 152, gp=5, REB=12)]))
     after = model.ros(pre, hot)
+    assert model.RATE_K.get("REB", model.SHRINK) == model.SHRINK  # rebounds at SHRINK (A4): a rookie leans faster
     for k, kk in (("new rookie", model.ROOKIE_K), ("player 152", model.SHRINK)):
         gp, cm, bm = 5, hot.at[k, "MIN"], pre.at[k, "MIN"]
         mins, w = (gp * cm + model.MIN_SHRINK * bm) / (gp + model.MIN_SHRINK), gp * cm / (gp * cm + kk * bm)
-        assert abs(after.at[k, "PTS"] - mins * (w * 30 / cm + (1 - w) * pre.at[k, "PTS"] / bm)) < 1e-9, k
+        assert abs(after.at[k, "REB"] - mins * (w * 12 / cm + (1 - w) * pre.at[k, "REB"] / bm)) < 1e-9, k
     # an expert row with no numbers at all is no projection (ESPN's 2023-24 file: 43 of that season's rookies), not 0s
     assert "player 153" not in model.experts({}, {"Player 153": {}, "Player 154": {"MIN": 0.0}}, base, base.index).index
     assert ex.find("New Rookie") == "new rookie" and ex.find("Zed Unknown", strict=False) is None
