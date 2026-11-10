@@ -271,7 +271,7 @@ def test_all():
     # fresh_plays(), 1 - HAZARD x his missing share); a player who sat it keeps his rest-of-season rate
     rate, _, _, week, fresh = tagged
     assert rate["player 199"] == model.availability(base.GP[["player 199"]], cur.GP[["player 199"]], 1)["player 199"]
-    assert abs(week["player 199"] - (1 - model.HAZARD * (1 - rate["player 199"]))) < 1e-12 and week["player 198"] == rate["player 198"]
+    assert abs(week["player 199"] - (1 - model.HAZARD * model.B2B[1] * (1 - rate["player 199"]))) < 1e-12 and week["player 198"] == rate["player 198"]
     assert "player 199" in fresh and "player 198" not in fresh
     lg.logs = None
     # availability (N9): one lost season isn't fragility (the baseline keeps his better season: 58, not 5), a repeat
@@ -784,8 +784,16 @@ def test_all():
     # whole-week chance; This week's line is the sum. Twin C, out, isn't on the chain
     ra, ch = sl.rate["twin a"], [sl._plays("twin a", d) for d in week[:4]]
     assert np.allclose(ch, [model.fresh_plays(ra, j) for j in (1, 2, 3, 4)]) and ch[0] > ch[1] > ch[2] > ch[3]
-    assert np.isclose(ch[0], 1 - model.HAZARD * (1 - ra)) and np.isclose(ch[1], ch[0] * (1 - model.HAZARD * (1 - ra) * (1 - model.ONE_GAME)))
+    hz = model.HAZARD * (1 - ra)
+    assert np.isclose(ch[0], 1 - hz * model.B2B[1]) and np.isclose(ch[1], ch[0] * (1 - hz * (1 - model.ONE_GAME)))
     assert np.isclose(sl.week_vec(["twin a"])[model.RAW.index("PTS")], sum(ch) * sl.p_week.at["twin a", "PTS"])
+    # M28: the night after another of his team's games he sits more: that game's own hazard x B2B[0], the rest of the
+    # chain as it was (Oct 26, 27, 28: the 27th follows a game, the 28th too)
+    bb = model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
+                      sched={**sl.sched, "AAA": ["2026-10-26", "2026-10-27", "2026-10-28"]})
+    cb = [bb._plays("twin a", d) for d in bb.sched["AAA"]]
+    assert np.allclose(cb, [model.fresh_plays(ra, 1), model.fresh_plays(ra, 2, True), model.fresh_plays(ra, 3, True)])
+    assert np.isclose(cb[1], (1 - hz * model.B2B[0]) * (1 - hz * (1 - model.ONE_GAME))) and cb[1] < ch[1] and cb[0] == ch[0]
     assert "twin a" in sl.fresh and "twin c" not in sl.fresh and sl._plays("twin c", week[4]) == sl.rate_week["twin c"]
     # an ESPN return date of today cuts nothing (Oct 30: 14 of 20 players back that day were still cut, Sengun 0.75 -> 0.70)
     sl.meta["twin b"]["status"], sl.inj["twin b"] = "O", {"status": "O", "note": "", "return": sl.today}
@@ -1277,7 +1285,14 @@ def test_all():
     assert "twin c" in keys and c != ["twin c"] and until == {c[0]: "2026-10-31"}
     assert ml._back_day("twin c") == "2026-11-01" and ml._back_day("twin g") == "2026-10-28"
     assert [ml._plays("twin c", d) for d in ("2026-10-30", "2026-11-01")] == [
-        ml._rw["twin c"] * (1 - model.RETURN_LATE ** j) for j in (1, 2)] and ml._plays("twin g", "2026-10-28") == 0.92
+        ml._rw["twin c"] * (1 - model.RETURN_LATE["O"] ** j) for j in (1, 2)] and ml._plays("twin g", "2026-10-28") == 0.92
+    # B15: ESPN's Day-To-Day is back sooner than its Out (his own rate, and his spot from his 1st game); a rest day's
+    # date isn't a guess at all, also on the day he's due back (the REST tag is gone by then: it read as Out's 38%)
+    dd = mk(isnap, {**iinj, "Twin C": {**iinj["Twin C"], "status": "DTD"}})
+    assert dd._plays("twin c", "2026-10-30") == dd._rw["twin c"] * (1 - model.RETURN_LATE["DTD"]) > ml._plays("twin c", "2026-10-30")
+    assert dd._back_day("twin c") == "2026-10-30"
+    rs = mk(isnap, {**iinj, "Twin C": {"status": "DTD", "note": "Twin (rest) won't play Sunday.", "return": "2026-10-26"}})
+    assert rs.meta["twin c"]["status"] == "" and rs._late("twin c") is None and rs._plays("twin c", "2026-10-26") == rs._rw["twin c"]
     day = ml._days(keys, ml.week_end, until=until)
     assert [d for d, ks in day.items() if "twin c" in ks] == ["2026-10-30", "2026-11-01"]
     assert max(d for d, ks in day.items() if c[0] in ks) == "2026-10-30"
@@ -1395,7 +1410,8 @@ def test_all():
     s9, s_tue = lined({"Twin A": "Util"}, 1), lined({"Twin A": "Util"}, 1, **tue)
     assert s9._held(mine) == ["twin a"] and s9._so_far()["Me"]["PTS"] == 130 == s_tue._so_far()["Me"]["PTS"]
     assert lined({"Player 198": "Util"}, 1, **tue)._so_far()["Me"]["PTS"] == 100  # he didn't play: nobody fills in
-    assert lined({}, 1, **tue)._so_far()["Me"]["PTS"] == 130  # an empty slot: the best bench player who played
+    assert lined({"Player 198": "Util"}, 2, **tue)._so_far()["Me"]["PTS"] == 130  # an empty slot: the best bench player who played
+    assert lined({}, 1, **tue)._so_far()["Me"]["PTS"] == 100  # B14: no starter set at all, the lineup wasn't set: nothing counts
     stale = lined(benched, **tue, pulled="2026-10-25T10:00:00-07:00")
     assert stale.slot_day == "2026-10-25" and stale._so_far()["Me"]["PTS"] == 130
     # not tipped off yet: as before; past its tip-off but not yet marked under way: locked, nothing to bank yet
@@ -1494,7 +1510,8 @@ def test_all():
     hz, fp = model.HAZARD, model.fresh_plays
     try:
         model.HAZARD = 0
-        model.fresh_plays = lambda rate, j: (1 - hz * (1 - rate)) * (1 - hz * (1 - rate) * (1 - model.ONE_GAME)) ** (j - 1)
+        model.fresh_plays = lambda rate, j, b2b=False: ((1 - hz * (1 - rate) * np.where(b2b, *model.B2B))
+                                                        * (1 - hz * (1 - rate) * (1 - model.ONE_GAME)) ** (j - 1))
         n0 = capped(adds={"Me": 3}).this_week()["plan"]
         model.HAZARD = 1
         n1 = capped(adds={"Me": 3}).this_week()["plan"]
@@ -1914,6 +1931,20 @@ def test_freshness(lg):
             assert model._cached(inj, 3, lambda: {"C": 3}) == {"B": 2}  # inside its window: not refetched
             x = next(x for x in model.freshness() if x["key"] == "injuries")
             assert x["status"] == "ok" and x["error"] == "" and x["age"] < 0.1
+            # an empty reply is a failed refresh too (ESPN answers {} when something's wrong: no injuries at all read
+            # every injured player as healthy), and a table that came back empty or short keeps the old copy; nothing
+            # is ever half written (a copy swapped in)
+            assert model._cached(inj, 3, dict, force=True) == {"B": 2} and "empty" in model.FAILED.pop(inj.name)
+            big = pd.DataFrame([line(f"Player {i}", i) for i in range(10)])
+            model._save_csv(big.iloc[:0], d / "t.csv")  # before opening night: an empty table with nothing saved is fine
+            model._save_csv(big, d / "t.csv")
+            for bad in (big.iloc[:0], big.iloc[:5]):
+                try:
+                    model._save_csv(bad, d / "t.csv")
+                    assert False, "an empty or short table must not replace the saved copy"
+                except ValueError:
+                    pass
+            assert len(pd.read_csv(d / "t.csv")) == 10 and not list(d.glob("*.tmp"))
             assert model._cached(d / name["projections"], 24, down) == {}  # nothing to fall back on
             assert next(x for x in model.freshness() if x["key"] == "projections")["status"] == "missing"
             # this season's stats past their window, network down: the old copy, flagged; none at all still raises

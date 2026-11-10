@@ -33,6 +33,7 @@ import difflib
 import functools
 import itertools
 import json
+import os
 import re
 import sys
 import threading
@@ -184,13 +185,23 @@ HAZARD, ONE_GAME = 0.33, 0.56
 # ahead, Nov 4, 121k player-games): played 0.930 / 0.893 / 0.874 / 0.858 of his next / 2nd / 3rd / 4th game, the chain
 # within 2% of each (the flat WEEK_K 0.45 it replaces: +3.2% / -1.0% / -3.1% / -4.9%), the rest of the week from each
 # weekday within 1% (was 0.998 Monday to 1.026 Sunday), Brier 84.2 -> 83.6 a thousand games, the same every season
+# Back-to-backs (M28, Nov 9): the night after a game he played, a player sits far more often (rest days, sore knees):
+# the 156 best each Monday, 2022-23 to 2025-26, played 87.0% of those games against 93.5% of the rest (every season:
+# 86-90% vs 93-94%; the least available fifth 75% vs 92%, 32 and older 80% vs 93%), where the chain said 92.7% of
+# both. So that game's own hazard is HAZARD x B2B[0], any other game's x B2B[1] (the pooled HAZARD holds both kinds);
+# the chain's carry (absences that run on) stays on HAZARD. `python backtest.py ahead` fits and checks it
+B2B = (1.8, 0.88)
 # Coming back (B11, Nov 6, Martin: "we're not certain they're coming back that day"), This week only. ESPN's return date
 # is a guess, mostly the next game after the one he's ruled out for: a player it lists out until a date (not a rest day,
 # not listed for that game: M16) played his team's 1st game from it 24% of the time, 2nd 39%, 3rd 63%, against
 # availability's 67-71% (this season's daily feeds, Oct 27-Nov 4, 41 rotation players, `python backtest.py returns`).
 # So he's back by his j-th game from it at 1 - RETURN_LATE^j (fitted 0.62, 90% range over players 0.46-0.72; each half
 # of the archive 0.63 / 0.51). Small sample: refit as the feeds pile up
-RETURN_LATE = 0.62
+# B15 (Nov 9): by ESPN's status. The 0.62 was fitted on Out players and used for Day-To-Day ones too, who are back
+# sooner: feeds Oct 27-Nov 8, day-to-day players (not listed for a game, not resting) played their 1st / 2nd / 3rd
+# game from the date 45 / 66 / 67% of the time (47 with 15+ minutes), Out players 23 / 44 / 47% (67), where both counted
+# 28 / 45 / 55%. Fitted apart: Day-To-Day 0.35 (90% range 0.20-0.51), Out 0.63 (0.47-0.72); 0.4 until more feeds
+RETURN_LATE = {"O": 0.62, "DTD": 0.4}
 # ...and his first games back run short (minutes restrictions, conditioning): PTS+REB+AST vs his last 10 before it, for
 # 15+ minute players, by team games missed (2022-23 to 2025-26 box scores, 9,000 returns, every season within 3%:
 # `python backtest.py returns`): (most games missed, his 1st, 2nd, ... game back; 1 after). Out since before the
@@ -360,8 +371,7 @@ def fetch(season, max_age_hours=None):
             from nba_api.stats.endpoints import leaguedashplayerstats
             df = leaguedashplayerstats.LeagueDashPlayerStats(
                 season=season, per_mode_detailed="PerGame", timeout=60).get_data_frames()[0]
-            DATA.mkdir(exist_ok=True)
-            df[["PLAYER_NAME", "TEAM_ABBREVIATION", "GP", "MIN"] + RAW + ["AGE"]].to_csv(cache, index=False)
+            _save_csv(df[["PLAYER_NAME", "TEAM_ABBREVIATION", "GP", "MIN"] + RAW + ["AGE"]], cache)
             FAILED.pop(cache.name, None)
         except Exception as e:
             FAILED[cache.name] = str(e)[:200]
@@ -376,13 +386,36 @@ TRICODE = {"GS": "GSW", "NY": "NYK", "SA": "SAS", "NO": "NOP", "PHO": "PHX", "WS
            "CHO": "CHA"}  # Yahoo/ESPN short forms -> NBA tricodes
 
 
+def _write(path, text):
+    """Write a copy, then swap it in: the app's live() thread, a Refresh and the AI GM's model.py runs read these
+    files while another writes them, and never see half of one."""
+    path.parent.mkdir(exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
+def _save_csv(df, cache):
+    """A fetched table in for its cache (as _write()), unless it came back empty or short: a season's stats and box
+    scores only grow, so fewer rows than the saved copy's (5% off) is a bad reply and the old copy stays (the caller
+    logs it in FAILED). An empty stats table read as nobody having played this season. With no saved rows anything
+    goes: before opening night the season's tables are empty."""
+    old = sum(1 for _ in open(cache, encoding="utf-8")) - 1 if cache.exists() else 0
+    if old > 0 and len(df) < 0.95 * old:
+        raise ValueError(f"{len(df)} rows came back, the saved copy has {old}")
+    _write(cache, df.to_csv(index=False, lineterminator="\n"))  # "\n": write_text adds Windows' own line ends
+
+
 def _cached(cache, hours, get, force=False):
     """Read a JSON cache, refreshing it with get() when older than `hours` (or `force`). Offline: the stale cache, or {}.
-    A failed refresh is logged in FAILED for freshness()."""
+    A failed refresh is logged in FAILED for freshness(), and an empty reply is one (ESPN's feeds answer {} when
+    something's wrong on their side: no injuries at all read every injured player as healthy)."""
     if force or not cache.exists() or time.time() - cache.stat().st_mtime > hours * 3600:
         try:
-            DATA.mkdir(exist_ok=True)
-            cache.write_text(json.dumps(get(), ensure_ascii=False), encoding="utf-8")
+            DATA.mkdir(exist_ok=True)  # get() may archive the day's copy there
+            if not (got := get()):
+                raise ValueError("an empty reply")
+            _write(cache, json.dumps(got, ensure_ascii=False))
             FAILED.pop(cache.name, None)
         except Exception as e:
             FAILED[cache.name] = str(e)[:200]
@@ -419,6 +452,8 @@ def injuries(force=False):
                                              "return": i.get("details", {}).get("returnDate", ""), "date": i.get("date", ""),
                                              "team": i["athlete"].get("team", {}).get("abbreviation", "")}
                for team in feed.get("injuries", []) for i in team.get("injuries", [])}
+        if not out:  # before the day's archive: an empty feed isn't the day's last copy
+            raise ValueError("ESPN's injury feed came back empty")
         (DATA / f"injuries_{date.today()}.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
         # every note the first time it's seen (the day's archive keeps only its last copy, so a morning "questionable"
         # upgraded by tip-off was lost): what M16's rates are refit on
@@ -455,6 +490,8 @@ def espn(season=CUR):
         out = {p["player"]["fullName"]: {c: round(a[i], 2) for c, i in ESPN_STAT.items() if i in a}
                for p in players for s in p["player"].get("stats", ())
                if s.get("statSourceId") == 1 and s.get("seasonId") == yr and (a := s.get("averageStats"))}
+        if not out:
+            raise ValueError("ESPN's projections came back empty")
         if season == CUR:
             (DATA / f"projections_{date.today()}.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
         return out
@@ -508,8 +545,7 @@ def news(keys, since=""):
             got = {pid: {"last": stale[pid], "items": items} for pid, items in zip(stale, ex.map(get, stale)) if items is not None}
         with news_lock:  # re-read: the card and the panel can fetch at once
             saved = {**read(), **got}
-            DATA.mkdir(exist_ok=True)
-            NEWS.write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
+            _write(NEWS, json.dumps(saved, ensure_ascii=False))
     return {k: [x for x in saved[str(pid)]["items"] if x["date"] >= since]
             for k, (pid, _) in found.items() if str(pid) in saved}
 
@@ -523,8 +559,7 @@ def gamelogs(season=CUR, max_age_hours=None):
             from nba_api.stats.endpoints import leaguegamelog
             g = leaguegamelog.LeagueGameLog(season=season, player_or_team_abbreviation="P", timeout=90,
                                             season_type_all_star="Regular Season").get_data_frames()[0]
-            DATA.mkdir(exist_ok=True)
-            g.to_csv(cache, index=False)
+            _save_csv(g, cache)
             FAILED.pop(cache.name, None)
         except Exception as e:
             FAILED[cache.name] = str(e)[:200]
@@ -653,12 +688,14 @@ def trend_cut(games):
     return TREND * np.sqrt(TREND_GP / games)
 
 
-def fresh_plays(rate, j):
+def fresh_plays(rate, j, b2b=False):
     """This week (M27): the chance a player who played his team's last game plays his j-th game from today (1 = his
     next), at availability `rate`: each game he's newly ruled out at HAZARD x (1 - rate), ONE_GAME of those for that game
-    only, the rest for the rest of the week (M17's late news), so (1 - h)(1 - h(1 - ONE_GAME))^(j - 1). Arrays work."""
+    only, the rest for the rest of the week (M17's late news), so (1 - h)(1 - h(1 - ONE_GAME))^(j - 1). b2b (M28): the
+    game is the night after another of his team's, when he sits more: that game's own h x B2B[0], else x B2B[1].
+    Arrays work."""
     h = HAZARD * (1 - rate)
-    return (1 - h) * (1 - h * (1 - ONE_GAME)) ** (j - 1)
+    return (1 - h * np.where(b2b, *B2B)) * (1 - h * (1 - ONE_GAME)) ** (j - 1)
 
 
 def availability(best, played, games):
@@ -1377,12 +1414,16 @@ class League:
         today's games under way (_tipoff) and for a finished day (_so_far), so the score doesn't jump at midnight.
         `python backtest.py lineups` (Oct 27-30, Nov 4: each pre-tip snapshot's night against the next snapshot's
         totals): |error| over teams and stats 1,071 with the guess, 660 with the starters, 576 with the empty slot.
+        Rerun Nov 9 (8 nights to Nov 7): 2,038 / 1,186 / 1,701, the empty-slot rule right 3 of 5 times and far off
+        the other two, a team with no starter set at all (B14): those count nothing now, 1,076.
         ponytail: a starter swapped out or a player added after the pull isn't seen (the rest of that error)"""
         keys = sorted(keys, key=self._value.get, reverse=True)
         slot = self.slotted.get(team) if d == self.slot_day else None
         if not slot:
             return self._lineup(keys)
         starters = [k for k, s in slot.items() if s not in BENCH and k in self.rosters.get(team, ())]
+        if not starters:  # B14: every starting slot empty, so the lineup wasn't set (Yahoo carries yesterday's over) and
+            return []     # nothing counts: John Ball, Nov 6 and 7, banked 0 both nights where the fill-in gave him 413 and 212
         held, bench = set(starters), [k for k in keys if slot.get(k) == "BN"]
         empty = [k for k in self._lineup(starters + bench) if k not in held][:max(self.lineup - len(starters), 0)]
         return [k for k in keys if k in held] + empty
@@ -1465,21 +1506,27 @@ class League:
     @functools.cached_property
     def _week_p(self):
         """{(player, date): his chance to play that game} this week for players who played their team's last game
-        (M27): fresh_plays() by its place among his games left from today (game_days(): a locked game isn't one); and
+        (M27): fresh_plays() by its place among his games left from today (game_days(): a locked game isn't one), lower
+        the night after another of his team's games (M28); and
         (B11) for one ESPN lists out until a date (_late(): also one hurt in that last game), his availability times the
         chance he's back by his j-th game from that date, 1 - RETURN_LATE^j (game_days() starts there)."""
-        p = {(k, d): float(fresh_plays(self.rate[k], j))
+        day = {t: set(ds) for t, ds in self.sched.items()}  # M28: a game the night after another of his team's
+        b2b = lambda k, d: (date.fromisoformat(d) - timedelta(1)).isoformat() in day.get(self.nba.get(k), ())
+        p = {(k, d): float(fresh_plays(self.rate[k], j, b2b(k, d)))
              for k in self.fresh if k in self.rate.index
              for j, d in enumerate(self.game_days(k, self.week_end), 1)}
-        p.update({(k, d): self._rw[k] * (1 - RETURN_LATE ** j) for k in self.inj if self._late(k) and k in self._rw
+        p.update({(k, d): self._rw[k] * (1 - q ** j) for k in self.inj if (q := self._late(k)) and k in self._rw
                   for j, d in enumerate(self.game_days(k, self.week_end), 1)})
         return p
 
     def _late(self, k):
-        """ESPN lists him out until a date from today on that's a guess (B11): not a one-game rest, nor listed for a
-        game (M16 has that one's chance)."""
+        """ESPN lists him out until a date from today on that's a guess (B11): RETURN_LATE for his status (B15: a
+        day-to-day player is back sooner than one listed out), else None: not a one-game rest (his note says so, also
+        on the day he's due back, when the REST tag is gone), nor listed for a game (M16 has that one's chance)."""
         i = self.inj.get(k, {})
-        return (i.get("return") or "") >= self.today and i.get("status") != "REST" and k not in self.gameday
+        if (i.get("return") or "") < self.today or REST.search(i.get("note", "")) or k in self.gameday:
+            return None
+        return RETURN_LATE.get(i.get("status"), RETURN_LATE["O"])
 
     def _back_day(self, q):
         """The day a player back from an IL slot takes his spot this week (M21): his first game left, or with an ESPN
@@ -1488,7 +1535,7 @@ class League:
         ponytail: one day for the mix of days he could be back on; the cut's games between count in full, his own at
         his chance"""
         g = self.game_days(q, self.week_end)
-        j = next(j for j in itertools.count(1) if 1 - RETURN_LATE ** j >= 0.5) if self._late(q) else 1
+        j = next(j for j in itertools.count(1) if 1 - late ** j >= 0.5) if (late := self._late(q)) else 1
         return g[j - 1] if len(g) >= j else None
 
     @functools.cached_property
@@ -3019,7 +3066,7 @@ class League:
         ponytail: one-game absences take no stream (a game's worth); the stream starts on the news day (its best day
         from then, as _timed() picks, moved Nov 3's +0.76 to +0.80 at twice the time); news before a later planned
         move could take that move's add instead, which this counts as a spare one; an add unused at the week's end
-        counts nothing"""
+        counts nothing; every game at the pooled HAZARD, a back-to-back's second night (M28) like any other"""
         day = lambda d, n: (date.fromisoformat(d) + timedelta(n)).isoformat()
         ev, park = [], len(self.il[self.me]) < self.il_n  # (day, chance, gain); a free IL slot takes him, no drop
         for k in keys:

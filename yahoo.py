@@ -26,9 +26,9 @@ STATUS = {"out": "O", "o": "O", "questionable": "GTD", "q": "GTD", "gtd": "GTD",
 
 
 def save(snap):
-    OUT.parent.mkdir(exist_ok=True)
+    import model
     snap["fetched"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-    OUT.write_text(json.dumps(snap, indent=1, ensure_ascii=False), encoding="utf-8")
+    model._write(OUT, json.dumps(snap, indent=1, ensure_ascii=False))  # the running app may be reading it
     return snap
 
 

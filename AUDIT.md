@@ -1,3 +1,36 @@
+# Model audit, Nov 9 2026
+
+Martin asked for everything to be gone through, issues found and fixed, backtested, and left alone where it's already good. Claude Code read `model.py`, `backtest.py`, `yahoo.py`, `app.py` and the gm skill end to end, reran every backtest that reads this season's data, and measured each new idea on frozen copies (old and new code side by side, the same caches). `python test_model.py` passes. Details and numbers: each item's ROADMAP section.
+
+**Shipped (all four are This week / data plumbing; no season number moved: standings identical, you 59.0%):**
+- **M28, back-to-backs.** A healthy player sits the night after a game twice as often (87.0% played against 93.5%, every season 2022-23 to 2025-26; the least available fifth 75% against 92%). The chain treated every next game alike. Brier 84.26 → 83.60 a thousand games; the weekly matchups a hair better or equal in all four seasons.
+- **B15, day-to-day returners.** `RETURN_LATE` was fitted on Out players and used for Day-To-Day ones, who are back sooner (1st game from the date 45% played against 23%). Fitted apart: 0.4 for Day-To-Day (47 players). Also a rest day's return date read as a guess (28%) on the day itself.
+- **B14, a lineup that wasn't set.** On the snapshot's day a team with no starter at all banks nothing (John Ball, Nov 6 and 7: 413 and 212 stat-units the fill-in rule gave him). Eight-night replay 1,701 → 1,076.
+- **S1, sturdiness.** An empty feed or a short stats table is a failed refresh, not the new copy; every cache and `league.json` is written whole (a copy swapped in).
+- **`python backtest.py league`** (new check): the real league's two weeks of snapshots against the model, end to end.
+
+**Real league, Nov 9 (1:23 AM pull), old → new:** you vs Wesburn 89.7 → 87.6% (6.1–2.9 → 6.0–3.0); the plan's adds the same; standings, trades, waivers' season column, playoff and title odds unchanged.
+
+**Measured, nothing to change (don't redo without new data):**
+- *The real league end to end:* totals within 2% but FTM +5%, BLK −5%, TO +6%, games +6% (streams); misses 0.8–1.3 of the model's sd; category log loss 0.377 against 0.415 if calibrated. The variance knobs fitted on simulated leagues hold on real managers.
+- *Game-day listings:* 215 games, 0.89 / 0.49 / 0.19 against 0.92 / 0.48 / 0.10.
+- *Yahoo's live line:* still better than the first-seen one (0.4781 against 0.4839).
+- *`RETURN_LATE` for Out players:* refit 0.63 (was 0.62).
+- *Nov 4 audit #11 (lifts to 10-minute teammates):* closed. They play more than line + lift (+2.4 min at 10–14), and each lifted minute shows up as 1.07–1.24 real ones in every minutes bucket.
+- *ESPN's far dates:* near ones slip a median 4 days; not enough players to move the season numbers. M7 keeps its date.
+- *A weaker carry in the play chain* (0.36 for 0.44): Brier 83.56 against 83.60, one more knob, not shipped.
+- *This season on the simulated leagues* (`python backtest.py 2026-27`, 3 weeks): categories 0.5217 on the real schedule, in line with 2022-23 to 2025-26 (0.5137–0.5264).
+
+**The open AI GM note (Nov 8, Keegan Murray "questionable" while RotoWire had him starting):** not a bug. ESPN's note said questionable, which plays 49% of the time; he played 23 minutes. The model reads ESPN only. Whether the chat should be able to tell the model "he's playing tonight" is Martin's call (ROADMAP, For Martin).
+
+**Checked and fine while reading:** `cat_probs()` (banked totals add no variance, percentages from summed makes), `season_sim()` (ties, reseeding, byes), `_return()` / `_il_cut()` / `_week_roster()`, `_subs()` (exact by positions), `lineup()`, `match_prob()` with the shared factor, the market and `package()`, `adds()` and `_txday()` across New Year, `switched()`, `parse_text()`'s `from` rule, `live()`'s generation counter.
+
+**Reviewed Nov 9 (a second agent, read-only, on the finished diff):** M28, B15, B14 and `backtest.py league` came back clean (types through `fresh_plays()`, the back-to-back flags per team and week, every `_late()` caller, an empty lineup through `_tipoff` / `_so_far()`; it reran `ahead` and `league` and got the same numbers). Two real problems in S1, both fixed: before opening night an empty stats table (nothing saved yet) raised and the app couldn't load, so the guard now only applies once a copy has rows; and on Windows the swapped-in CSV doubled its line ends, which would have made every later refresh look short. Left: on Windows a swap can fail while another process has the file open (the Mac doesn't care).
+
+**Still guesses (no data to fit them here):** `FILL`, `GAMES_WEEK`, `MARKET`, `PACKAGE`, `CHASE`, `CHIP`, `TIERS`, `accept()` (M6: no offers marked yet).
+
+---
+
 # Projection audit, Nov 6 2026
 
 Martin asked for a deep check of the player projections: how this season's minutes feed them, why players are down or up (mechanical or real), whether they bounce back, against analysts, backtested on 2022-23 to 2025-26. Five agents worked in scratch copies (code and data, player by player, analysts, per-stat rates, minutes); Claude Code reproduced every number below that led to a change, old and new code side by side. `python test_model.py` passes. No `data/notes.md`.

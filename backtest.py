@@ -26,6 +26,8 @@ python backtest.py corr: how a week's category misses move together, and matchup
 shared factor's load (M9: fits WEEK_LOAD), 2022-23 to 2025-26, both modes.
 python backtest.py lineups: whose games count on a night the snapshot was pulled before tip-off: the guess vs the
 snapshot's lineup, against the next snapshot's totals (B8), and This week's expected starts for that night.
+python backtest.py league: the real league's weeks end to end: each pre-tip snapshot's rest-of-week totals and category
+odds against what the teams banked by the week's last snapshot (Nov 9; rerun as snapshots pile up).
 python backtest.py recency: replay's error by minutes shrink and recent games' weight, 2022-23 to 2025-26 (fits
 MIN_SHRINK, RECENT).
 python backtest.py season: the season line's rest-of-season error by its minutes shrink and share of had() netted,
@@ -50,7 +52,7 @@ import pandas as pd
 import model
 
 ARGS = [a for a in sys.argv[1:]
-        if a not in ("replay", "teammates", "onoff", "minor", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season")]
+        if a not in ("replay", "teammates", "onoff", "minor", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season", "league")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
@@ -204,7 +206,11 @@ def team_weeks(games="fixed", leagues=LEAGUES, info=None, season=False):
             past = g[g.week < w]  # j-th game at fresh_plays() (League._week_p, M27): more of it than all season
             last, played = past.groupby("TEAM_ABBREVIATION").GAME_DATE.max(), set(zip(past.key, past.GAME_DATE))
             fresh = np.array([(k, last.get(team[k])) in played for k in keys]) if len(past) else np.ones(len(keys), bool)
-            chain = sum(model.fresh_plays(avail, j) * np.clip(n - j + 1, 0, 1) for j in range(1, int(n.max()) + 1))
+            # the night after another of his team's games he sits more (M28): each team's j-th game this week
+            b2 = {t: [i > 0 and (d[i] - d[i - 1]).days == 1 for i in range(len(d)) if monday <= d[i] < monday + pd.Timedelta(weeks=1)]
+                  for t, d in ((t, pd.DatetimeIndex(d)) for t, d in days.items())}
+            flag = lambda j: np.array([j <= len(f := b2.get(t, ())) and f[j - 1] for t in team])
+            chain = sum(model.fresh_plays(avail, j, flag(j)) * np.clip(n - j + 1, 0, 1) for j in range(1, int(n.max()) + 1))
             played_n = np.where(fresh, chain, played_n)
         yield w, R @ (played_n[:, None] * line[model.RAW].to_numpy()), R @ actual[w]
 
@@ -903,6 +909,7 @@ def ahead(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
         g, T = logs(season), "TEAM_ABBREVIATION"
         base, first = model.baseline(model.fetch(prev), model.fetch(prev2)), g.sort_values("GAME_DATE").groupby("key")[T].first()
         days, played = g.groupby(T).GAME_DATE.unique().map(sorted), set(zip(g.key, g.GAME_DATE))
+        back = days.map(set)
         for w in range(1, int(g.week.max()) - 3):
             mon = monday(g, w)
             cur = per_game(g[g.week < w])
@@ -918,14 +925,22 @@ def ahead(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
                     if not before or (k, before[-1]) not in played:
                         continue
                     left = [d for d in days[team[k]] if t <= d < mon + pd.Timedelta(days=7)]
-                    for j, d in enumerate(left):
-                        rows.append((season, w, t.weekday(), (d - t).days, j + 1, 1 - av[k], (k, d) in played))
-    d = pd.DataFrame(rows, columns=["season", "week", "dow", "ahead", "game", "miss", "played"])
-    d["flat"], d["chain"] = 1 - 0.45 * d.miss, model.fresh_plays(1 - d.miss, d.game)
+                    for j, d in enumerate(left):  # b2b: his team played the night before (M28)
+                        rows.append((season, w, t.weekday(), (d - t).days, j + 1, 1 - av[k], (k, d) in played,
+                                     d - pd.Timedelta(days=1) in back[team[k]]))
+    d = pd.DataFrame(rows, columns=["season", "week", "dow", "ahead", "game", "miss", "played", "b2b"])
+    d["flat"], d["chain"] = 1 - 0.45 * d.miss, model.fresh_plays(1 - d.miss, d.game, d.b2b)
+    d["plain"] = (1 - model.HAZARD * d.miss) * (1 - model.HAZARD * d.miss * (1 - model.ONE_GAME)) ** (d.game - 1)  # before M28
     tab = lambda x: pd.Series({"n": len(x), "played": x.played.mean(), "chain": x.chain.mean(), "flat": x.flat.mean(),
                                "K": (1 - x.played).sum() / x.miss.sum()})
     brier = lambda c: 1000 * ((d[c] - d.played) ** 2).mean()
     print(f"\n== {len(d)} player-games from each day of the week, after he played his team's last game ==")
+    print("the night after another of his team's games (M28: fits model.B2B = his next game's K over model.HAZARD), by game:")
+    print(d.groupby(["b2b", "game"]).apply(lambda x: pd.Series({**tab(x), "plain": x.plain.mean()})).round(3).to_string())
+    nx = d[d.game == 1]
+    print("next game's K by season, a back-to-back's second night / any other: " + ", ".join(
+        f"{s} {tab(x[x.b2b]).K:.2f} / {tab(x[~x.b2b]).K:.2f}" for s, x in [*nx.groupby("season"), ("all", nx)])
+          + f"; model.B2B {model.B2B} x HAZARD {model.HAZARD}; Brier before M28 {brier('plain'):.2f}")
     print("by days ahead (0 = today):")
     print(d.groupby("ahead").apply(tab).round(3).to_string())
     print("by game (1 = his team's next):")
@@ -1031,24 +1046,27 @@ def returns(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
         day = f[-15:-5]
         for name, i in json.loads(open(f, encoding="utf-8").read()).items():
             k, r = lg.find(name, strict=False), i.get("return") or ""
-            if (k not in lg.p.index or r <= day or i.get("status") != "O" or model.REST.search(i.get("note", ""))
+            if (k not in lg.p.index or r <= day or i.get("status") not in model.RETURN_LATE or model.REST.search(i.get("note", ""))
                     or model.LISTED.search(i.get("note", "")) or lg.p_week.at[k, "MIN"] < 15):
                 continue
             for j, gd in enumerate([gd for gd in lg.sched.get(lg.nba.get(k), ()) if r <= gd <= done][:4], 1):
-                x.append((name, day, j, (k, gd) in played, float(lg.rate[k])))
-    x = pd.DataFrame(x, columns=["player", "feed", "j", "played", "rate"])
-    t = x.groupby("j").agg(n=("played", "size"), played=("played", "mean"), rate=("rate", "mean"))
-    print(f"\n== ESPN's return dates, feeds {x.feed.min()} to {x.feed.max()} vs box scores through {done}: "
-          f"{x.player.nunique()} players ==\n{t.round(3).to_string()}")
+                x.append((name, day, i["status"], j, (k, gd) in played, float(lg.rate[k])))
+    x = pd.DataFrame(x, columns=["player", "feed", "status", "j", "played", "rate"])
 
     def fit(y):
         qs = np.linspace(0.05, 0.95, 91)
         p = lambda q: np.clip(y.rate * (1 - q ** y.j), 1e-9, 1 - 1e-9)
         return qs[int(np.argmax([np.where(y.played, np.log(p(q)), np.log(1 - p(q))).sum() for q in qs]))]
-    rng, ps = np.random.default_rng(0), x.player.unique()
-    boot = [fit(pd.concat([x[x.player == p] for p in rng.choice(ps, len(ps))])) for _ in range(100)]
-    print(f"RETURN_LATE fit {fit(x):.2f} (90% over players {np.quantile(boot, 0.05):.2f}-{np.quantile(boot, 0.95):.2f}), "
-          f"model.RETURN_LATE {model.RETURN_LATE}")
+    rng = np.random.default_rng(0)
+    for s, y in x.groupby("status"):  # ESPN's Out and Day-To-Day apart (B15): a day-to-day player is back sooner
+        t = y.groupby("j").agg(n=("played", "size"), played=("played", "mean"), rate=("rate", "mean"))
+        t["model"] = t.rate * (1 - model.RETURN_LATE[s] ** t.index)
+        print(f"\n== ESPN's return dates, status {s}, feeds {y.feed.min()} to {y.feed.max()} vs box scores through {done}: "
+              f"{y.player.nunique()} players ==\n{t.round(3).to_string()}")
+        ps = y.player.unique()
+        boot = [fit(pd.concat([y[y.player == p] for p in rng.choice(ps, len(ps))])) for _ in range(100)]
+        print(f"RETURN_LATE[{s}] fit {fit(y):.2f} (90% over players {np.quantile(boot, 0.05):.2f}-{np.quantile(boot, 0.95):.2f}), "
+              f"model {model.RETURN_LATE[s]}")
 
 
 def lineups():
@@ -1187,6 +1205,68 @@ def lineups():
                                   for r in ("model", "lineup", "lineup + fill-ins")))
 
 
+def league():
+    """The real league's weeks, end to end (Nov 9): every snapshot pulled before its day's first tip-off, as the app
+    stood then (box scores before that day, the day before's last injury feed, that day's ESPN projections): each
+    team's rest of the week (week_vec on _week_side, This week's numbers) against what it really banked by the week's
+    last snapshot (through the day before that one's `from`), and the category odds against the real results. The
+    simulated leagues (python backtest.py) never stream, set lineups or use IL slots; these teams do.
+    Prints actual / predicted per stat, the misses over the model's own sd (mean 0 and sd 1 when DISPERSION and
+    SCHED_CV fit real teams), and the odds' log loss against what calibrated odds would score. Nov 9, weeks 2-3 (132
+    team-days, 11 snapshots): totals within 2% but FTM +5%, BLK -5% and TO +6%, Yahoo's games played +6% (streams);
+    sd 0.8-1.3 (John Ball's two unset nights in it); log loss 0.377 against 0.415 expected, so no sign the odds are
+    too sure on real teams. Two weeks: rerun as snapshots pile up."""
+    import glob
+    import json
+    from datetime import date, timedelta
+    import yahoo
+    logs_all, base = model.gamelogs(model.CUR), model.baseline(model.fetch(model.LAST), model.fetch(model.OLDER))
+    sched = json.loads((model.DATA / f"schedule_{model.CUR}.json").read_text(encoding="utf-8"))
+    snaps = [(f, s) for f in sorted(glob.glob(str(model.ROOT / "*snapshot*.txt")))
+             if (s := yahoo.parse_text(open(f, encoding="utf-8").read())).get("pulled") and s.get("week") and s.get("from")]
+    day = lambda d, n: (date.fromisoformat(d) + timedelta(n)).isoformat()
+    vec = lambda tot: np.array([float(tot.get(c, 0)) for c in model.RAW])
+    names = lambda ps: {p["name"] for p in ps}
+    rows, cats = [], []
+    for f0, s0 in snaps:
+        d = s0["from"]
+        _, s1 = max((x for x in snaps if x[1]["week"] == s0["week"]), key=lambda x: x[1]["from"])
+        end = min(day(s1["from"], -1), s0["week"]["end"])
+        if s0["pulled"][:10] != d or end < d:
+            continue
+        snap = yahoo.from_text(f0, write=False)
+        snap["matchup"] = {**snap.get("matchup", {}), "week_end": end}
+        past = logs_all[logs_all.GAME_DATE < pd.Timestamp(d)]
+        cur = past.groupby("key").agg(PLAYER_NAME=("PLAYER_NAME", "last"), TEAM_ABBREVIATION=("TEAM_ABBREVIATION", "last"),
+                                      GP=("GAME_ID", "count"), **{c: (c, "mean") for c in ["MIN"] + model.RAW})
+        inj = model.DATA / f"injuries_{day(d, -1)}.json"
+        ps = sorted(x for x in glob.glob(str(model.DATA / "projections_20??-??-??.json")) if x[-15:-5] <= d)
+        lg = model.League(snap, base, cur, sched, json.loads(inj.read_text(encoding="utf-8")) if inj.exists() else {},
+                          today=date.fromisoformat(d), logs=past, proj=json.loads(open(ps[-1], encoding="utf-8").read()) if ps else {})
+        same = {t: max(s1["teams"], key=lambda u: len(names(p) & names(s1["teams"][u]))) for t, p in s0["teams"].items()}
+        tot1, sf = {t: x for pr in s1["matchups"] for t, x in pr["totals"].items()}, lg._so_far()
+        ok = [t for t in lg.rosters if t in sf and same[t] in tot1]
+        left = {t: lg.week_vec(*lg._week_side(t)) for t in ok}
+        g0, g1 = ({t: g["played"] for pr in s["matchups"] for t, g in pr.get("games", {}).items()} for s in (s0, s1))
+        for t in ok:
+            var = np.array([model.DISPERSION.get(c, np.nan) for c in model.RAW]) * left[t] + (model.SCHED_CV * left[t]) ** 2
+            rows.append({"day": d, "pred": left[t], "act": vec(tot1[same[t]]) - vec(sf[t]), "sd": np.sqrt(var),
+                         "games": (sum(lg.starts(*lg._week_side(t), plays=True).values()), g1.get(same[t], np.nan) - g0.get(t, np.nan))})
+        for a, b in (pr["teams"] for pr in s0["matchups"] if all(t in ok for t in pr["teams"])):
+            p = model.cat_probs(left[a], left[b], model.CATS, vec(sf[a]), vec(sf[b]))
+            cats += zip(p, outcome(vec(tot1[same[a]]), vec(tot1[same[b]])))
+    P, A, SD, G = (np.array([r[k] for r in rows]) for k in ("pred", "act", "sd", "games"))
+    Z = (A - P) / SD
+    print(f"\n== the real league: {len(rows)} team-days from {len({r['day'] for r in rows})} pre-tip snapshots ==")
+    print(f"rest of week, actual / predicted: games {np.nansum(G[:, 1]) / G[:, 0].sum():.3f}  "
+          + "  ".join(f"{c} {a / p:.3f}" for c, a, p in zip(model.RAW, A.sum(0), P.sum(0))))
+    print("misses over the model's sd, mean / sd: " + "  ".join(
+        f"{c} {Z[:, i].mean():+.2f} / {Z[:, i].std():.2f}" for c in model.COUNTING for i in [model.RAW.index(c)]))
+    p, y = np.clip(np.array([c[0] for c in cats]), 1e-6, 1 - 1e-6), np.array([c[1] for c in cats])
+    print(f"category odds ({len(p)}):", {k: round(v, 4) for k, v in score(p, y).items()},
+          f"calibrated odds would score {float(-(p * np.log(p) + (1 - p) * np.log(1 - p)).mean()):.4f};", calibration(p, y, 5))
+
+
 # 2026-27's season on 2025-26's NBA weeks: 20 matchups (weeks 7 and 17 run two NBA weeks, 6-7 and 16-17), then three
 # one-week playoff rounds (NBA weeks 22-24, Mar 23 - Apr 12)
 SPANS = [[w] for w in range(6)] + [[6, 7]] + [[w] for w in range(8, 16)] + [[16, 17]] + [[w] for w in range(18, 25)]
@@ -1294,6 +1374,8 @@ if __name__ == "__main__":
         gameday()
     elif "lineups" in sys.argv:
         lineups()
+    elif "league" in sys.argv:
+        league()
     elif "returns" in sys.argv:
         returns()
     elif "corr" in sys.argv:

@@ -33,7 +33,7 @@ def remember(**choices):
     """Save choices into the snapshot file, so they survive restarts and refreshes."""
     global gen
     snap = {**json.loads(yahoo.OUT.read_text(encoding="utf-8")), **choices}
-    yahoo.OUT.write_text(json.dumps(snap, indent=1, ensure_ascii=False), encoding="utf-8")
+    model._write(yahoo.OUT, json.dumps(snap, indent=1, ensure_ascii=False))
     gen += 1  # after the write: a rebuild that read the old file is dropped, one reading the new file is fine
 
 
@@ -108,9 +108,7 @@ def chats(body):
 
 def write(path, data):
     """Write a copy, then swap it in, so a crash never leaves half a file."""
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(path)
+    model._write(path, json.dumps(data, indent=1, ensure_ascii=False))
 
 
 OFFERS = model.DATA / "offers.json"
