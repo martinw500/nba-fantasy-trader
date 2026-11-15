@@ -377,7 +377,7 @@ const S = {
   punt: new URLSearchParams(location.search).get("punt")?.split(",").filter(Boolean) ?? store.get("punt", []),  // ?punt=FT%25,TOV bookmarks a build
   healthyFa: store.get("healthyFa", false),  // Waivers' Healthy only: injured free agents off waivers, trades' free moves too
   state: null, error: null,
-  league: { team: null, data: null },
+  league: { team: null, data: null, period: "", ahead: {} },  // period: "" rest of season, else "week:n" (weeks from this one : how many); ahead: {period: /api/ahead's answer}
   week: {},  // { data, loading }; replaced on punt / team / refresh, so late answers land in the old object
   sched: {},  // { data, loading }: the schedule planner; replaced on punt / team / refresh
   plan: { sort: null, open: false, day: null },  // its NBA-teams table: sort, count only your open days; the picked day
@@ -477,7 +477,7 @@ const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() +
 // a game-day listing (probable / questionable / doubtful for one game) leads the tag: "Q Wed", counted at how often
 // players so listed play that game
 const listed = l => `${l.as[0].toUpperCase()} ${new Date(l.day + "T12:00").toLocaleDateString("en-US", { weekday: "short" })}`;
-const statusTag = p => p.status || p.injury || p.listed ? `<span class="tag ${OUT.has(p.status) && !p.listed ? "out" : ""}"${p.injury ? ` title="${esc((p.listed ? `Listed as ${p.listed.as} for ${mdy(p.listed.day)}: players listed that way played ${p.listed.plays}% of the time, so that game counts at ${p.listed.plays}%. ` : "") + p.injury)}"` : ""}>${p.listed ? listed(p.listed) : esc(p.status || "News")}${!p.listed && p.return && p.return >= localDay() ? ` · back ${mdy(p.return)}` : ""}</span>` : "";
+const statusTag = p => (p.what ? `<span class="tag" style="background:var(--warn-soft);color:var(--warn-ink)" title="What if (your call): ${esc(p.what)}. His numbers are on it">what if</span>` : "") + (p.status || p.injury || p.listed ? `<span class="tag ${OUT.has(p.status) && !p.listed ? "out" : ""}"${p.injury ? ` title="${esc((p.listed ? `Listed as ${p.listed.as} for ${mdy(p.listed.day)}: players listed that way played ${p.listed.plays}% of the time, so that game counts at ${p.listed.plays}%. ` : "") + p.injury)}"` : ""}>${p.listed ? listed(p.listed) : esc(p.status || "News")}${!p.listed && p.return && p.return >= localDay() ? ` · back ${mdy(p.return)}` : ""}</span>` : "");
 const gpNote = p => p.gp < 3 ? ` title="Only ${p.gp} games this season"` : "";
 // teammates' injuries: the minutes and shots he picks up while they sit, counted in his lines for those games only.
 // Tables tag a lift of a minute or more (most are smaller, spread over a whole rotation) with how long the biggest one
@@ -570,7 +570,36 @@ function playerCard() {
       <div class="sep"><dt title="Trade-market value (100 = the market's top player) and market rank, from Yahoo's preseason and current ranks">Market</dt><dd>${mktCell(d)}</dd></div>
       <div><dt title="His rank on your build (rest-of-season value over the games he'll play), valued on the same curve as the market">Your build</dt><dd>${Math.round(d.fit)} <span class="muted small">#${d.fit_rank}</span></dd></div></dl>
     <div class="small muted">${read}</div>
+    ${whatIf(d)}
     ${d.news?.length ? `<div><h3 class="small muted">Latest news <span title="ESPN's fantasy news. It never changes a number by itself">(ESPN)</span></h3><ul class="news">${d.news.map(x => newsItem(x)).join("")}</ul></div>` : ""}</div>`;
+}
+// What if (Q27): his line, production, minutes or health as you set them; every view is rebuilt on it until cleared
+const WHAT_LINE = [["", "As projected"], ["form", "Keeps up his last 14 days"], ["season", "This season's averages so far"], ["last", "Last season's level"]];
+const WHAT_HEALTH = [["", "As reported"], ["healthy", "Healthy from today"], ["sit", "Sits his next game"], ["until", "Out until…"], ["out", "Out for the season"]];
+function whatIf(d) {
+  const w = (S.state.what || []).find(x => x.name === d.name) || {};
+  const health = w.health === "out" && w.until ? "until" : w.health || "";
+  return `<div><h3 class="small muted">What if <span title="Change what the model assumes about him. Every number in the app is then rebuilt on it, on every tab, until you clear it">(your call, not the model's)</span></h3>
+    <div class="toolbar" style="margin-top:6px">
+      <label class="field">Plays like <select id="wi-line">${WHAT_LINE.map(([v, h]) => opt(v, h, w.line || "")).join("")}</select></label>
+      <label class="field" title="All of his counting stats up or down by this much, on top of the line picked">Production <select id="wi-pct">${[["", "As is"], ...[30, 20, 10, -10, -20, -30].map(x => [String(x), (x > 0 ? "+" : "−") + Math.abs(x) + "%"])].map(([v, h]) => opt(v, h, w.pct ? String(w.pct) : "")).join("")}</select></label>
+      <label class="field" title="Minutes a game. His line is scaled at the same production per minute">Minutes <input class="input" id="wi-min" type="number" min="4" max="44" step="1" inputmode="numeric" style="width:64px" placeholder="${d.lines?.ros?.MIN != null ? Math.round(d.lines.ros.MIN) : ""}" value="${w.min ?? ""}"></label>
+      <label class="field" title="Out: his teammates get his minutes until he's back">Health <select id="wi-health">${WHAT_HEALTH.map(([v, h]) => opt(v, h, health)).join("")}</select></label>
+      <input class="input" id="wi-until" type="date" aria-label="Out until" min="${S.state.matchup_days?.[0] || ""}" value="${w.until || ""}" ${health === "until" ? "" : "hidden"}>
+      <button class="btn primary" data-act="what-set" data-name="${esc(d.name)}">Apply</button>
+      ${w.text ? `<button class="btn ghost" data-act="what-clear" data-name="${esc(d.name)}">Clear</button>` : ""}
+    </div>${w.text ? `<div class="small" style="margin-top:6px">Now: <b>${esc(w.text)}</b>.</div>` : ""}</div>`;
+}
+async function setWhat(body, done) {
+  try {
+    const { name, t } = S.card, re = S.trade.result;
+    fresh(await api("/api/what", { ...body, punt: S.punt.join(","), healthy_fa: S.healthyFa }));
+    S.trade.result = S.trade.ask = null; S.improve = { kind: null, list: null };  // an open trade is scored again
+    toast(done);
+    if (re) evaluate();
+    if (name) return openCard(name, t, true);  // his card again, on the new numbers
+  } catch (err) { toast("What if: " + err.message); }
+  render();
 }
 // the top bar's search: under his name in a player table on screen, else in a panel at the top of the view (t -1)
 function showCard(name) {
@@ -587,8 +616,8 @@ async function pickGlobal(q, exact) {
   $("#top-player").value = "";
   showCard(p.name);
 }
-async function openCard(name, t) {
-  if (S.card.name === name && S.card.t === t) { S.card = {}; return render(); }
+async function openCard(name, t, again) {  // again: the open card reloaded (What if), not closed
+  if (!again && S.card.name === name && S.card.t === t) { S.card = {}; return render(); }
   const C = S.card = { name, t }; render();
   try { C.data = await api("/api/player", { name }); } catch (e) { C.error = e.message; }
   if (S.card === C) render();
@@ -779,7 +808,7 @@ function viewWeek() {
         ${w.live ? "" : "No live score yet, so this assumes nothing has been played, which is right on Monday. A new snapshot adds the real score."}</div></div>
     ${lineupPanel(w)}
     <div class="panel"><div class="panel-h"><div><h2>Streaming adds</h2><p>Free agents who most raise your odds this week, each swapped for whichever of your three cheapest healthy players helps most, on his best day: your drop plays until then. Season shows what keeping him does long-term.</p></div></div>
-      ${streamPlan(w)}
+      ${streamPlan(w)}${weekPaths(w)}
       ${w.adds && !w.adds.left ? `<div class="empty"><b>No adds left this week</b>You've used all ${w.adds.max}. They reset ${esc(dayName(w.adds.resets))}. Waivers' moves still count for the season.</div>`
         : playerTable(w.streams, { extra: streamCols, empty: "<b>No stream helps this week</b>Nobody on waivers raises your odds by 0.1% or more over your weakest players." })}</div>`;
 }
@@ -828,6 +857,17 @@ function sitDay(x, w, goal) {
       <th title="Change in ${unit} if you flip his call, with the best swap for it">If you change it${goal.length ? ` <span class="muted">(${and(goal.map(lab))} odds)</span>` : ""}</th></tr></thead><tbody>
     ${rows.map(([s, n]) => !n ? `<tr><td class="muted">${esc(s)}</td><td colspan="4" class="muted">Empty: ${x.bench.length ? "left open, see who sits below" : "nobody with a game this day can play it"}</td></tr>` : `<tr><td class="muted">${esc(s)}</td><td class="pname">${esc(n)}${x.bench.includes(n) ? `<span class="tag out" title="A starting spot fits him, but his game costs your odds more than it adds">spot open</span>` : ""}</td>
       ${by[n].locked ? `<td class="n muted">—</td>` : `<td class="n ${by[n].plays < 70 ? "neg" : by[n].plays < 85 ? "" : "muted"}">${by[n].plays}%</td>`}<td class="small">${boost(by[n].lift)}</td><td>${alt(by[n])}</td></tr>`).join("")}</tbody></table></div>`;
+}
+// every path this week (Nov 13): no move, the best found with 1, 2, ... adds, then the next best other plans
+function weekPaths(w) {
+  const ps = w.paths || [];
+  if (ps.length < 2) return "";
+  const on = d => d === w.today ? "Today" : esc(dayName(d));
+  return `<div class="panel-b small" style="border-bottom:1px solid var(--line)"><b>Every path this week.</b> No move, the best plan found with each number of adds, then the next best other plans, each with the games your lineup starts and where the week ends up. Nothing is held back for late news here.</div>
+    <div class="tw" style="border-bottom:1px solid var(--line)"><table><thead><tr><th class="n">Adds</th><th>Moves</th>${ps[0].games != null ? `<th class="n" title="Games your lineup starts the rest of this week">Starts</th>` : ""}<th class="n" title="Expected categories won and lost">Score</th><th class="n" title="Your chance to win more categories than you lose">Win</th><th class="n" title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, against no move">This week</th></tr></thead><tbody>
+    ${ps.map(x => `<tr${x.pick ? ` style="background:var(--accent-soft)"` : ""}><td class="n">${x.adds}</td>
+      <td>${x.moves.length ? x.moves.map(m => `<span class="muted">${on(m.day)}:</span> ${nameBtn(m.add)} for ${nameBtn(m.drop)}`).join("<br>") : `<span class="muted">No moves</span>`}${x.pick ? `<span class="tag" title="The plan above${w.plan?.news?.kept ? ", with its last add kept for late news" : ""}">the plan</span>` : ""}</td>
+      ${x.games != null ? `<td class="n">${x.games}</td>` : ""}<td class="n">${x.score[0].toFixed(1)}–${x.score[1].toFixed(1)}</td><td class="n val">${x.win.toFixed(1)}%</td><td class="n ${tone(x.gain)}">${x.adds ? delta(x.gain, "win%") : ""}</td></tr>`).join("")}</tbody></table></div>`;
 }
 // adds left this week (Q11) and the best way to spend them: one line for the last add, else the moves in order
 function streamPlan(w) {
@@ -968,13 +1008,42 @@ function viewLeague() {
     ${race.map(([t, r], i) => `<tr class="pick${i === po.seats - 1 && i < race.length - 1 ? " cut" : ""}" data-act="open-team" data-team="${esc(t)}"${t === st.me ? ` style="background:var(--accent-soft)"` : ""}><td><button class="rowbtn" data-act="open-team" data-team="${esc(t)}">${esc(t)}</button>${t === st.me ? ` <span class="tag">you</span>` : ""}</td>
       <td class="n muted">${r.w}–${r.l}–${r.t}</td><td class="n proj">${Math.round(r.proj[0])}–${Math.round(r.proj[0] + r.proj[1]) - Math.round(r.proj[0])}</td><td class="n val">${chance(r.playoffs)}</td><td class="n">${chance(r.title)}</td></tr>`).join("")}
     </tbody></table></div></div>` : "";
-  return `<div class="head"><div><h1>League</h1><p class="sub">${prof ? `Projected standings from every team's ${WIN().of} against the rest of the league. Weak spots are categories a team wins under 35% of weeks.` :"Every roster, valued on your build."}</p></div></div>
-    <div class="grid2" style="grid-template-columns: minmax(300px, 420px) 1fr">
-      <div class="panel" style="align-self:start">${list}</div>
+  // a period (Nov 13): the league over one schedule week or the next four, on the real NBA calendar (/api/ahead)
+  const P = S.league.period, wks = st.weeks || [], A = P && S.league.ahead[P];
+  if (P && !A && S.league.loading !== P) loadAhead(P);
+  const wkName = (w, i) => (i === 0 ? "This week" : i === 1 ? "Next week" : "Week " + (w.week ?? i + 1)) + " (" + span(w.start, w.end) + ")";
+  const picker = prof && wks.length ? `<label class="field">Period <select id="lg-period">${opt("", "Rest of season", P)}${wks.slice(0, 12).map((w, i) => opt(i + ":1", wkName(w, i), P)).join("")}${wks.length >= 4 ? opt("0:4", "Next 4 weeks (" + span(wks[0].start, wks[3].end) + ")", P) : ""}</select></label>` : "";
+  const one = A && A.weeks.length === 1, ms = one ? A.weeks[0].matchups : [];
+  const vs = t => { const m = ms.find(x => x.a === t || x.b === t); if (!m) return ""; const me = m.a === t, sc = me ? m.score : [m.score[1], m.score[0]], w = me ? m.win : 100 - m.win;
+    return `<span class="muted">vs ${esc(me ? m.b : m.a)}</span> ${sc[0].toFixed(1)}–${sc[1].toFixed(1)} <span style="color:${oddsColor(w / 100)}">${Math.round(w)}%</span>`; };
+  const aheadList = !P ? "" : !A ? `<div class="panel-b">${S.league.error ? `<span class="neg">Couldn't load that period: ${esc(S.league.error)}</span>` : `<div class="skel"></div><div class="skel"></div><div class="skel"></div>`}</div>`
+    : `<div class="tw"><table><thead><tr><th class="n">#</th><th>Team</th><th class="n" title="Share of categories it would win against every other team in ${one ? "that week" : "those weeks"}: who is strongest then, whoever it plays">Win %</th>${A.teams[0].games != null ? `<th class="n" title="Games its lineup has room for in the period (the most that can count under the daily lineup limit), out of the NBA games on its roster, each player from his return date">Games</th>` : ""}<th${one ? "" : ` class="n"`} title="${one ? "Its real matchup that week: expected categories won and lost, and its chance to win more than it loses" : "Expected categories won and lost in its real matchups over the period"}">${one ? "Matchup" : "Categories"}</th></tr></thead><tbody>
+      ${A.teams.map(x => `<tr class="pick${x.team === team ? " sel" : ""}" data-act="open-team" data-team="${esc(x.team)}"><td class="n muted">${x.rank}</td>
+        <td><button class="rowbtn" data-act="open-team" data-team="${esc(x.team)}">${esc(x.team)}</button>${x.team === st.me ? ` <span class="tag">you</span>` : ""}</td>
+        <td class="n val">${x.win.toFixed(1)}%</td>${x.games != null ? `<td class="n">${Math.round(x.starts)}<span class="muted small"> / ${x.games}</span></td>` : ""}<td class="${one ? "small" : "n"}">${one ? vs(x.team) : `${x.cats[0].toFixed(1)}–${x.cats[1].toFixed(1)}`}</td></tr>`).join("")}</tbody></table></div>`;
+  const mine = A?.you?.filter(y => y.opponent) || [];
+  const yours = !mine.length ? "" : `<div class="panel"><div class="panel-h"><div><h2>Your ${mine.length > 1 ? "matchups" : "matchup"}, ${span(A.from, A.to)}</h2><p>Projected totals on the real NBA schedule: each player's games in the week from his return date, at how often he plays. Only the games your lineup has room for count. Real odds, no punt conceded${mine.some(y => y.start <= st.matchup_days?.[0]) ? "; this week includes the score so far" : ""}.</p></div></div>
+    ${mine.length > 1 ? `<div class="tw"><table><thead><tr><th>Week</th><th>Opponent</th><th class="n" title="Games your lineup has room for that week, out of the NBA games on your roster">Games</th><th class="n">Score</th><th class="n" title="Your chance to win more categories than you lose">Win</th>${st.cats.map(c => `<th class="n ${punted(c) ? "punted-col" : ""}" title="Your chance to win ${lab(c)} that week">${lab(c)}</th>`).join("")}</tr></thead><tbody>
+      ${mine.map(y => `<tr><td>${span(y.start, y.end)}</td><td><button class="rowbtn" data-act="open-team" data-team="${esc(y.opponent)}">${esc(y.opponent)}</button></td><td class="n">${y.starts != null ? `${Math.round(y.starts)}<span class="muted small"> / ${y.games}</span>` : ""}</td><td class="n">${y.score[0].toFixed(1)}–${y.score[1].toFixed(1)}</td><td class="n val" style="color:${oddsColor(y.win / 100)}">${y.win.toFixed(1)}%</td>
+        ${st.cats.map(c => `<td class="n ${punted(c) ? "punted-col" : ""}" style="color:${oddsColor(y.cats[c].odds / 100)}">${Math.round(y.cats[c].odds)}%</td>`).join("")}</tr>`).join("")}</tbody></table></div>`
+    : `<div class="panel-b small" style="border-bottom:1px solid var(--line)">Against <b>${esc(mine[0].opponent)}</b>: ${mine[0].score[0].toFixed(1)}–${mine[0].score[1].toFixed(1)} expected, <b style="color:${oddsColor(mine[0].win / 100)}">${mine[0].win.toFixed(1)}%</b> to win the week${mine[0].starts != null ? `, room for ${mine[0].starts} of your ${mine[0].games} NBA games` : ""}.</div>
+      <div class="tw"><table><thead><tr><th>Category</th><th class="n">You</th><th class="n">${esc(mine[0].opponent)}</th><th class="n">Your odds</th></tr></thead><tbody>
+      ${st.cats.map(c => { const x = mine[0].cats[c]; return `<tr class="${punted(c) ? "cat punted" : ""}"><td>${lab(c)}</td><td class="n">${x.you ?? "—"}</td><td class="n">${x.them ?? "—"}</td><td class="n val" style="color:${oddsColor(x.odds / 100)}">${x.odds.toFixed(1)}%</td></tr>`; }).join("")}</tbody></table></div>`}</div>`;
+  return `<div class="head"><div><h1>League</h1><p class="sub">${!prof ? "Every roster, valued on your build." : P ? `Every team over ${A ? span(A.from, A.to) : "that period"}, with players in from their return dates. The win % ranks who is strongest then against the whole league.` : `Projected standings from every team's ${WIN().of} against the rest of the league. Weak spots are categories a team wins under 35% of weeks.`}</p></div>${picker ? `<div class="toolbar">${picker}</div>` : ""}</div>
+    <div class="grid2" style="grid-template-columns: minmax(300px, ${P ? 520 : 420}px) 1fr">
+      <div class="panel" style="align-self:start">${P ? aheadList : list}</div>
       <div class="panel" id="team-panel"><div class="panel-h"><div><h2>${esc(team)}</h2><p>${d && d.team === team ? (d.build.length ? `Weak in ${d.build.map(lab).join(", ")}` : "No weak spots") : "&nbsp;"}</p></div>
         ${team === st.me ? "" : `<button class="btn" data-act="trade-with" data-team="${esc(team)}"><svg class="i"><use href="#i-trade"/></svg>Trade with them</button>`}</div>${roster}</div>
     </div>
-    ${raceTable}${catTable}`;
+    ${yours}${raceTable}${catTable}`;
+}
+async function loadAhead(P) {
+  const [week, n] = P.split(":");
+  S.league.loading = P; S.league.error = null;
+  try { S.league.ahead[P] = await api(`/api/ahead?week=${week}&n=${n}` + (S.healthyFa ? "&healthy_fa=1" : "")); }
+  catch (e) { S.league.error = e.message; }
+  if (S.league.loading === P) S.league.loading = null;
+  if (S.view === "league" && S.league.period === P) render();
 }
 async function openTeam(team, go = true) {
   S.league.team = team; S.league.loading = team;
@@ -1006,7 +1075,7 @@ function viewTrades() {
       <button class="btn ghost" data-act="reset-trades" title="Start over: untick every player, unlock everyone, and put the finder's settings back (difficulty, goal, size, filters, Count my / their waiver moves)">Reset</button></div>
       <datalist id="all-players">${S.players.map(p => `<option value="${esc(p.name)}">${esc(p.team)}</option>`).join("")}</datalist></div>
     <div class="grid2">
-      <div class="panel picker"><div class="panel-h"><div><h2>You give</h2><p>${T.give.size ? [...T.give].map(esc).join(", ") : "Pick players from your roster"}</p></div></div>
+      <div class="panel picker"><div class="panel-h"><div><h2>You give</h2><p>${T.give.size ? [...T.give].map(esc).join(", ") : "Pick players from your roster"}</p></div>${T.result ? dropPick(T.result) : ""}</div>
         <div class="panel-b" style="padding-top:0"><div class="plist" style="margin-top:12px">${head}${st.roster.map(p => item(p, T.give)).join("")}</div></div></div>
       <div class="panel picker"><div class="panel-h"><div><h2>You get</h2><p>${T.get.size ? [...T.get].map(esc).join(", ") : "Pick players from their roster"}</p></div>
         <select id="trade-team" aria-label="Trade partner">${others.map(t => `<option ${t === T.team ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
@@ -1093,7 +1162,7 @@ function tradeResultOdds(r) {
       ${r.flags.length ? `<ul class="flags">${r.flags.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}
       ${playerTable(sides, { extra: [{ h: "Side", v: p => `<span class="muted">${p.side}</span>` }] })}</div>
     <div class="grid2">
-      <div class="panel"><div class="panel-h"><div><h2>Your roster after</h2><p>Sorted by value. Dropped players are listed last.</p></div></div>${playerTable(r.roster_after.you, { extra: [moveCol] })}</div>
+      <div class="panel"><div class="panel-h"><div><h2>Your roster after</h2><p>Sorted by value. Dropped players are listed last. Pick who you drop at the top, under You give.</p></div></div>${playerTable(r.roster_after.you, { extra: [moveCol] })}</div>
       <div class="panel"><div class="panel-h"><div><h2>${them} after</h2><p>What they'd be working with.</p></div></div>${playerTable(r.roster_after.them, { extra: [moveCol] })}</div>
     </div>`;
 }
@@ -1267,11 +1336,22 @@ async function copyOffer(r) {
 const late = (X, ask) => { if (X.ask === ask) return false; if (!X.ask) { X.busy = false; render(); } return true; };
 // still asking: a cancelled request (ask null) frees its button at once, so the new search or move needn't wait for it
 const running = X => X.busy && X.ask;
+// who you cut to fit the deal (Nov 13: "i wanna pick drops too"): one picker per drop it forces (at least one), "Pick
+// for me" = the model's (who costs your win % least, never a trade chip). Kept while the deal's players stay the same
+function dropPick(r) {
+  const T = S.trade, auto = r.roster_after.you.filter(p => p.move === "drop").map(p => p.name);
+  const mine = r.roster_after.you.filter(p => !p.move || p.move === "drop").map(p => p.name).sort();
+  const tip = "Who you cut to fit the deal. Pick for me: the player who costs your win % least, never one the market still rates as a trade piece. Picking a drop the deal doesn't need opens a spot for the best free agent.";
+  return `<div class="toolbar">${Array.from({ length: Math.max(1, auto.length) }, (_, i) => { const cur = (T.drop || [])[i] || "";
+    return `<label class="field" title="${tip}">${i ? "and" : "You drop"} <select data-tdrop="${i}">${opt("", cur ? "Pick for me" : auto[i] ? `Pick for me (${auto[i]})` : "Nobody", cur)}${mine.map(n => opt(n, n, cur)).join("")}</select></label>`; }).join("")}</div>`;
+}
 async function evaluate() {
   const T = S.trade, ask = T.ask = {};
+  const deal = [...T.give].sort().join("|") + ">" + [...T.get].sort().join("|");
+  if (T.dropFor !== deal) { T.drop = []; T.dropFor = deal; }  // another deal: back to the model's drop
   T.busy = true; render();
   let r;
-  try { r = await api("/api/trade", { give: [...T.give], get: [...T.get], free: S.find.mine, their_free: S.find.theirs }); }
+  try { r = await api("/api/trade", { give: [...T.give], get: [...T.get], free: S.find.mine, their_free: S.find.theirs, drop: T.drop }); }
   catch (err) { if (T.ask === ask) toast(err.message); }
   if (late(T, ask)) return;
   if (r) {
@@ -1649,7 +1729,9 @@ function render() {
   if (!S.state) return;
   const demo = S.state.demo && S.view === "team" ? `<div class="notice">This is a demo league drafted from real stats. Connect your Yahoo league with <code>python yahoo.py</code> (see README) to see your real team.</div>` : "";
   const st = S.state, age = st.pulled ? (Date.now() - new Date(st.pulled)) / 864e5 : 0;
-  const stale = st.rolled || age > 1 ? `<div class="notice">Your snapshot ${st.rolled ? "is from last week's matchup" : `is ${Math.floor(age)} day${age >= 2 ? "s" : ""} old`} (pulled ${when(st.pulled)}), so the score and recent moves aren't in. Drop a new snapshot in the project folder and press Refresh.</div>` : "";
+  const stale = st.waiting ? `<div class="notice">A newer snapshot is in the folder (${esc(st.waiting)}). Press Refresh to load it.</div>`
+    : st.rolled || age > 1 ? `<div class="notice">Your snapshot ${st.rolled ? "is from last week's matchup" : `is ${Math.floor(age)} day${age >= 2 ? "s" : ""} old`} (pulled ${when(st.pulled)}), so the score and recent moves aren't in. Save a new snapshot into the project folder: it loads by itself.</div>` : "";
+  const what = st.what?.length ? `<div class="notice"><b>What if:</b> ${st.what.map(x => `${nameBtn(x.name)} ${esc(x.text)}`).join("; ")}. Every number in the app is on ${st.what.length > 1 ? "these" : "this"} until you clear ${st.what.length > 1 ? "them" : "it"}. <button class="btn" data-act="what-clear" style="margin-left:6px;padding-block:1px">Clear${st.what.length > 1 ? " all" : ""}</button></div>` : "";
   // a cache that failed to refresh or never loaded, on every view like the snapshot's. Not news (it never moves a number)
   // or live scores (only on game nights: This week says when its scores are from, the sidebar flags them)
   const bad = (st.sources || []).filter(x => !["news", "live"].includes(x.key) && ["failed", "missing"].includes(x.status));
@@ -1661,7 +1743,7 @@ function render() {
   // the view is rebuilt on every change, so scrolled lists (Trades' pickers, deals) keep their place on the same view
   const keep = S.view === render.view ? [...v.querySelectorAll(".plist, .deals")].map(e => e.scrollTop) : [];
   render.view = S.view;
-  v.innerHTML = card + demo + stale + offline + ({ team: viewTeam, week: viewWeek, schedule: viewSchedule, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, compare: viewCompare, gm: viewGM }[S.view] || viewTeam)();
+  v.innerHTML = card + demo + stale + offline + what + ({ team: viewTeam, week: viewWeek, schedule: viewSchedule, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, compare: viewCompare, gm: viewGM }[S.view] || viewTeam)();
   v.querySelectorAll(".plist, .deals").forEach((e, i) => { if (keep[i]) e.scrollTop = keep[i]; });
   const m = $("#msgs"); if (m) m.scrollTop = m.scrollHeight;
 }
@@ -1707,6 +1789,13 @@ document.addEventListener("click", async e => {
   if (act === "plan") return plan();
   if (act === "plan-load") { const x = S.strategy.data.builds[+t.dataset.i].steps[+t.dataset.j].trade; setView("trades"); return loadDeal(x); }
   if (act === "plan-show") { S.strategy.sel = +t.dataset.i; render(); return reveal("#strategy"); }
+  if (act === "what-set") {
+    const h = $("#wi-health").value, until = $("#wi-until").value;
+    if (h === "until" && !until) return toast("Pick the date he's out until");
+    return setWhat({ player: t.dataset.name, line: $("#wi-line").value, pct: +$("#wi-pct").value || null, min: +$("#wi-min").value || null,
+                     health: h === "until" ? "out" : h, until: h === "until" ? until : "" }, "What if applied: every tab is on it");
+  }
+  if (act === "what-clear") return setWhat(t.dataset.name ? { player: t.dataset.name } : { clear: true }, "What if cleared");
   if (act === "card") return openCard(t.dataset.name, +t.dataset.t);
   if (act === "show-card") return showCard(t.dataset.name);  // Q21
   if (act === "cmp-add") return addCompare(t.dataset.name, true);
@@ -1798,6 +1887,10 @@ document.addEventListener("change", async e => {
     await loadState();
     return re && evaluate();
   }
+  if (t.dataset.tdrop != null) { S.trade.drop = [...new Set([...document.querySelectorAll("select[data-tdrop]")].map(e => e.value).filter(Boolean))]; return evaluate(); }
+  if (t.id === "lg-period") { S.league.period = t.value; S.league.error = null; return render(); }
+  if (t.id === "wi-health") { const u = $("#wi-until"); u.hidden = t.value !== "until"; if (!u.hidden) u.focus(); return; }
+  if (t.id.startsWith("wi-")) return;  // the rest of the card's What if waits for Apply
   if (t.id === "trade-team") { S.trade.team = t.value; S.trade.get.clear(); S.trade.result = S.trade.ask = null; return render(); }
   if (t.id === "find-player") return pickPlayer(t.value);
   if (t.id === "cmp-player") return pickCompare(t.value);
@@ -1850,7 +1943,7 @@ document.addEventListener("keydown", e => {
   if (e.target.matches("span[role=button]") && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.target.click(); }  // nameBtn
 });
 // new numbers in S.state (Refresh, or the server's own injury refetch): drop every view's cached answers
-const fresh = st => { S.state = st; S.league.data = null; S.trade.roster = null; S.find.list = S.find.ask = null; S.saved.evals = {}; S.players = null; S.week = {}; S.sched = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names); S.move.result = S.move.ask = null; S.loaded = Date.now(); };
+const fresh = st => { S.state = st; S.league.data = null; S.league.ahead = {}; S.trade.roster = null; S.find.list = S.find.ask = null; S.saved.evals = {}; S.players = null; S.week = {}; S.sched = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names); S.move.result = S.move.ask = null; S.loaded = Date.now(); };
 $("#refresh").addEventListener("click", async e => {
   const b = e.currentTarget; b.classList.add("busy"); b.disabled = true;
   try {
@@ -1867,6 +1960,16 @@ document.addEventListener("visibilitychange", async () => {
     render();
   } catch (e) { /* offline or restarting: keep what's on screen */ }
 });
+// a snapshot saved into the project folder loads by itself (the server looks every 15 seconds): take its numbers
+setInterval(async () => {
+  if (document.visibilityState !== "visible" || !S.state || $("#refresh").disabled) return;
+  try {
+    const now = await api("/api/stamp"), snap = now.fetched !== S.state.fetched;
+    if (!snap && JSON.stringify(now.what || []) === JSON.stringify(S.state.what || [])) return;
+    fresh(await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")) + (S.healthyFa ? "&healthy_fa=1" : "")));
+    S.loaded = Date.now(); render(); toast(snap ? "New snapshot loaded" : "What if changed");
+  } catch (e) { /* offline or restarting: keep what's on screen */ }
+}, 20e3);
 // games under way (M18): the server rebuilds on live scores every 5 minutes, so This week follows them while it's in view
 setInterval(async () => {
   if (document.visibilityState !== "visible" || S.view !== "week" || !S.week.data?.tonight?.on) return;

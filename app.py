@@ -23,7 +23,8 @@ import yahoo
 ROOT = Path(__file__).parent
 PORT = 8765
 load_dotenv(ROOT / ".env")
-lg = model.load()
+load = lambda refetch=(): model.load(refetch=refetch, what=model.whatif())  # every league here is on the saved what-ifs (Q27)
+lg = load()
 gm = None  # created on first chat so the app works without an API key
 gen = 0  # bumped whenever data/league.json changes under the app (remember(), Refresh): live() drops a rebuild it
          # started before (Nov 4 audit #23: a team switch made while it loaded was overwritten with the old team)
@@ -35,6 +36,82 @@ def remember(**choices):
     snap = {**json.loads(yahoo.OUT.read_text(encoding="utf-8")), **choices}
     model._write(yahoo.OUT, json.dumps(snap, indent=1, ensure_ascii=False))
     gen += 1  # after the write: a rebuild that read the old file is dropped, one reading the new file is fine
+
+
+def newest():
+    """The newest snapshot file in the folder: the latest date in the name ("...-2026-10-27.txt"), file time only
+    between same-day pulls, so an old snapshot copied back into the folder doesn't win."""
+    day = lambda p: m[0] if (m := re.search(r"\d{4}-\d{2}-\d{2}", p.name)) else ""
+    return max(model.snapshots(), key=lambda p: (day(p), p.stat().st_mtime), default=None)
+
+
+def waiting(l):
+    """A snapshot file in the folder that hasn't been loaded yet (Nov 11: a 9:31 AM file sat there two days while the
+    page said to drop a new one in): the newest one, when it isn't the file refresh() last read (`took`) or, since a
+    restart, isn't the loaded one or was saved a minute or more after the import (its time is kept to the minute)."""
+    snap = l.snap
+    if snap.get("text") and snap.get("fetched") and (f := newest()) and (
+            (f.name, f.stat().st_mtime) != took if took else f.name != Path(snap["text"]).name
+            or f.stat().st_mtime > datetime.strptime(snap["fetched"], "%Y-%m-%d %H:%M").timestamp() + 60):
+        return f
+
+
+def state(l, punt):
+    """The league's state, plus `waiting`: that file's name (the page says to press Refresh if watch() hasn't taken it)."""
+    st = l.state(punt)
+    if f := waiting(l):
+        st["waiting"] = f.name
+    return st
+
+
+refreshing = threading.Lock()  # Refresh and watch() one at a time
+took = None  # (name, file time) of the snapshot file refresh() last read
+
+
+def refresh():
+    """Refresh: the league again from its source (Yahoo's API, the newest snapshot file, or the demo), with injuries,
+    this season's stats and live scores refetched."""
+    global lg, gm, gen, took
+    with refreshing:
+        refetch = ()
+        if os.environ.get("YAHOO_LEAGUE_ID"):
+            yahoo.snapshot()
+        elif lg.snap.get("text"):  # imported from a snapshot file: read the newest one (and refetch injuries)
+            f = newest()
+            if f and f.parent != model.SNAPS:  # saved into the project folder: filed under snapshots/ (same name: replaced)
+                model.SNAPS.mkdir(exist_ok=True)
+                f = f.replace(model.SNAPS / f.name)
+            at = f and (f.name, f.stat().st_mtime)
+            yahoo.from_text(f or lg.snap["text"], lg.me)
+            took = at
+            refetch = ("injuries", "stats", "live")  # offline, the old copies stay (the sidebar says so)
+        else:
+            yahoo.demo()
+        gen += 1  # the new snapshot is written: drop a rebuild live() started on the old one
+        lg, gm = load(refetch), None
+
+
+def watch():
+    """A snapshot saved into the folder loads by itself (Martin, Nov 12), checked every 15 seconds: once the file is 5
+    seconds old (not still being written), and each save tried once, so one that can't be read isn't retried forever.
+    The page asks /api/stamp every 20 seconds and pulls the new numbers."""
+    global lg, gm, gen
+    tried, what = None, model.mtime(model.WHATIF)
+    while True:
+        time.sleep(15)
+        try:
+            if (at := model.mtime(model.WHATIF)) != what:  # a what-if set from the AI GM chat (model.py what): rebuild on it
+                what = at
+                if model.whatif() != {w["name"]: {k: v for k, v in w.items() if k not in ("name", "text")} for w in lg.whats()}:
+                    with refreshing:
+                        gen += 1
+                        lg, gm = load(), None
+            if (f := waiting(lg)) and time.time() - (at := f.stat().st_mtime) > 5 and (f.name, at) != tried:
+                tried = (f.name, at)
+                refresh()
+                print(f"Loaded {f.name}")
+        except Exception:
+            traceback.print_exc()
 
 
 GM_PROMPT = """You are the AI GM in the user's fantasy basketball app. Follow the playbook below, with these changes:
@@ -142,16 +219,17 @@ def api(path, q, body):
     global lg, gm, gen
     punt = model.punts(body.get("punt", q.get("punt", [""])[0]))
     # Waivers' "Healthy only": injured free agents off waivers for its suggestions and every trade's free moves
+    lg_in = lg
     fl = lg.healthy_fa() if body.get("healthy_fa", q.get("healthy_fa", [""])[0]) else lg
     if path == "/api/state":
-        return fl.state(punt)
+        return state(fl, punt)
     if path == "/api/team":
         t = body["team"]  # wants: what they'd want from you (Trades), category leagues only
         return {"team": t, "roster": lg.team_roster(t, punt), "build": lg.build(t),
                 **({"wants": lg.wants(t)} if t != lg.me and lg.mode != "points" else {})}
     if path == "/api/trade":
         return fl.trade(body["give"], body["get"], punt, free=bool(body.get("free", True)),
-                        their_free=bool(body.get("their_free")))
+                        their_free=bool(body.get("their_free")), drop=body.get("drop") or ())
     if path == "/api/ideas":
         return fl.ideas(body.get("mode", "fair"), punt, body.get("team") or None)
     if path == "/api/search":
@@ -169,6 +247,15 @@ def api(path, q, body):
         return lg.compare(body.get("players", []), punt)
     if path == "/api/move":  # Waivers' add/drop evaluator: any add and any drop, this week and the season
         return lg.add_drop(body["add"], body.get("drop") or None, punt, day=body.get("day") or None)
+    if path == "/api/ahead":  # League's period picker: the league over schedule weeks from `week` (0 = this one)
+        return fl.weeks_ahead(int(q.get("week", ["1"])[0]), int(q.get("n", ["1"])[0]))
+    if path == "/api/what":  # POST {player, line, pct, min, health, until} sets his what-if (none of them: clears it);
+        with refreshing:     # {clear: true} alone clears all. Every number is rebuilt on what's saved (Q27)
+            name = body.get("player") and lg.p.at[lg.find(body["player"]), "PLAYER_NAME"]
+            model.whatif(name, bool(body.get("clear")), **{k: body.get(k) for k in ("line", "pct", "min", "health", "until")})
+            gen += 1
+            lg, gm = load(), None
+        return state(lg.healthy_fa() if fl is not lg_in else lg, punt)
     if path == "/api/schedule":  # schedule planner: your games per day, NBA teams' games ahead
         return lg.planner(punt)
     if path == "/api/news":  # My team's News panel
@@ -179,8 +266,8 @@ def api(path, q, body):
         if body.get("team") not in lg.rosters:
             raise KeyError(f"Unknown team: {body.get('team')}")
         remember(me=body["team"], matchup=model.switched(lg.snap, body["team"]))  # the week stays, not the opponent (B1)
-        lg, gm = model.load(), None
-        return lg.state(punt)
+        lg, gm = load(), None
+        return state(lg, punt)
     if path == "/api/week":  # POST {opponent} sets this week's opponent until the week ends
         if opp := body.get("opponent"):
             if opp not in lg.rosters or opp == lg.me:
@@ -192,22 +279,10 @@ def api(path, q, body):
     if path == "/api/lineup":  # This week's Start / sit, playing for some categories only
         return fl.start_sit(punt=punt, cats=body.get("cats", []))
     if path == "/api/refresh":
-        refetch = ()
-        if os.environ.get("YAHOO_LEAGUE_ID"):
-            yahoo.snapshot()
-        elif lg.snap.get("text"):  # imported from a snapshot file: read the newest one (and refetch injuries)
-            # newest = latest date in the name ("...-2026-10-27.txt"), file time only between same-day pulls,
-            # so an old snapshot copied back into the folder doesn't win
-            day = lambda p: m[0] if (m := re.search(r"\d{4}-\d{2}-\d{2}", p.name)) else ""
-            newest = max(ROOT.glob("*snapshot*.txt"), key=lambda p: (day(p), p.stat().st_mtime),
-                         default=lg.snap["text"])
-            yahoo.from_text(newest, lg.me)
-            refetch = ("injuries", "stats", "live")  # offline, the old copies stay (the sidebar says so)
-        else:
-            yahoo.demo()
-        gen += 1  # the new snapshot is written: drop a rebuild live() started on the old one
-        lg, gm = model.load(refetch=refetch), None
-        return lg.state(punt)
+        refresh()
+        return state(lg, punt)
+    if path == "/api/stamp":  # when the league on screen was imported, and its what-ifs: the page's check for a snapshot
+        return {"fetched": lg.snap.get("fetched", ""), "what": lg.whats()}  # watch() loaded or a what-if the chat set
     if path == "/api/chats":
         return chats(body)
     if path == "/api/offers":  # Trades' Offers sent: what you copied for Yahoo and the answers
@@ -266,7 +341,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/compare", "/api/move", "/api/schedule", "/api/news",
-       "/api/players", "/api/me", "/api/week", "/api/lineup", "/api/refresh", "/api/chat", "/api/chats", "/api/offers"}
+       "/api/players", "/api/me", "/api/week", "/api/lineup", "/api/refresh", "/api/stamp", "/api/ahead", "/api/what", "/api/chat", "/api/chats", "/api/offers"}
 
 def live():
     """Every LIVE_MIN minutes, ESPN's injury feed again (and any other cache past its window: news, box scores...),
@@ -283,7 +358,7 @@ def live():
         due = time.time() - feed >= LIVE_MIN * 60 - 60
         g0 = gen
         try:
-            new = model.load(refetch=("injuries",) if due else ())
+            new = load(("injuries",) if due else ())
         except Exception:
             traceback.print_exc()
             continue
@@ -297,6 +372,7 @@ def live():
 
 if __name__ == "__main__":
     threading.Thread(target=live, daemon=True).start()
+    threading.Thread(target=watch, daemon=True).start()
     # ponytail: localhost-only, single user; no auth because it never listens on the network
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print(f"Running on http://localhost:{PORT}  ({lg.snap.get('name')}, you = {lg.me})")

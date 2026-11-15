@@ -184,6 +184,7 @@ def test_all():
     rest, hurt_ = sat("Player 150 will be rested Monday."), sat("Player 150 (knee) is out for the rest of Sunday's game.")
     assert (rest["status"], hurt_["status"], sat("He'll be rested.", tag="O")["status"]) == ("REST", "O", "REST")
     assert "REST" not in model.OUT and rest["avail"] == hurt_["avail"] and sat("(rest)", back="2026-10-26")["status"] == ""
+    assert sat("Player 150 has been ruled out for Monday's game due to rest.")["status"] == "REST"  # Turner, Nov 11
     # one gone from the game is out for the season whatever placeholder ESPN dates (Nov 6: Porziņģis, Jan 2)
     gone = sat("Player 150 announced he's stepping away from basketball.", back="2026-11-20")
     assert gone["avail"] == 0 and sat("Player 150 (knee) is out.", back="2026-11-20")["avail"] > 0
@@ -779,6 +780,11 @@ def test_all():
     assert q.gameday == {"twin a": ("2026-10-28", Q, "questionable")} and q._plays("twin a", "2026-10-30", q.rate_week) == rw
     assert np.isclose(q.week_vec(["twin a"])[model.RAW.index("PTS")], (Q + 2 * rw) * q.p_week.at["twin a", "PTS"])
     assert q.player("twin a")["listed"] == {"as": "questionable", "day": "2026-10-28", "plays": round(100 * Q)}
+    # ESPN's other wordings name the same game (Nov 12); "the rest of Sunday's game" and a plain injury note don't
+    day = lambda n: (m := model.LISTED.search(n)) and (m[1].lower(), m[2].lower())
+    assert [day(f"Twin (back) is {n}") for n in ("questionable for Wednesday against the Bucks.", "probable to play Wednesday.",
+            "questionable to face the Knicks on Wednesday.", "doubtful for Wednesdays' game.", "out for Wednesday's game.")] == [
+        ("questionable", "wednesday"), ("probable", "wednesday"), ("questionable", "wednesday"), ("doubtful", "wednesday"), None]
     # this week (M27): one who played his team's last game (before any games: untagged) plays his next game at
     # 1 - HAZARD x his missing share and each later one a little less (late news, fresh_plays()), not one flat
     # whole-week chance; This week's line is the sum. Twin C, out, isn't on the chain
@@ -939,6 +945,13 @@ def test_all():
         ("Twin D", False, True, "FA"), ("Twin A", True, False, "Me")]
     keys, since = asked[0]
     assert {"twin a", "twin b", "twin d", "twin e", "player 150"} <= keys and iso(48.01) < since < iso(47.99)
+    # the CLI's copy for the AI GM chat (brief()): your players' items whole, a teammate's latest headline, under 27 KB
+    item = lambda n, mine, h: {"name": n, "mine": mine, "date": iso(h), "headline": "h", "story": "s" * 600}
+    got = model.brief("news", [item("Mate", False, 1), item("Mine", True, 2), item("Mate", False, 3), item("Mine", True, 4)])
+    assert [(x["name"], "story" in x) for x in got] == [("Mate", False), ("Mine", True), ("Mine", True)]
+    long = model.brief("news", [item(f"Mate {i}", False, i) for i in range(300)] + [item("Mine", True, 400)])
+    assert len(model.json.dumps(long)) <= 27000 and long[-1]["name"] == "Mine" and long[0]["name"] == "Mate 0"
+    assert len(model.json.dumps(model.brief("news", [item("Mine", True, i) for i in range(100)]))) <= 27000
     assert nw.card("Twin A")["news"][0]["headline"] == "twin a" and "news" not in sl.card("Twin A")
     # news() itself: ESPN's names land on stats keys, a player is fetched again only when the index shows newer news,
     # and only news since `since` comes back (network and data/ swapped out)
@@ -1147,6 +1160,32 @@ def test_all():
     assert "Twin D" in gain and gain["Twin D"] > gain.get("Twin E", -99) and gain["Twin D"] > gain.get("Twin F", -99)
     assert next(s for s in wk["streams"] if s["name"] == "Twin D")["games"] == 4
     assert sl.this_week("Them", limit=50)["streams"][-1]["gain"] >= 0.1 and wk["games"]["you"] > 0
+    # the daily lineup limit in a later week (_capped, Nov 13): 16 players on the same four nights against 10 slots
+    # lose games and totals; five players all start, so nothing changes
+    ks, P = sl.rosters["Me"], model.RAW.index("PTS")
+    un, (cp, st) = sl.vec(ks, team="Me", wk=sl._sched_week(week[0], week[3])), sl._capped(ks, "Me", week[0], week[3])
+    assert st == sl.lineup * 4 and (cp <= un + 1e-9).all() and cp[P] < un[P]  # 10 of the 15 healthy ones a night
+    assert np.allclose(sl._capped(ks[:5], "Me", week[0], week[3])[0], sl.vec(ks[:5], team="Me", wk=sl._sched_week(week[0], week[3])))
+    # a trade's drop, your pick over the model's (Nov 13): he's the one cut; a player in the deal or not yours is refused
+    deal = (["Player 198"], ["Player 199", "Player 195"])
+    cut = lambda r: [x["name"] for x in r["roster_after"]["you"] if x["move"] == "drop"]
+    auto = lg.trade(*deal, free=False)
+    keep = next(x["name"] for x in auto["roster_after"]["you"] if not x["move"] and x["name"] not in cut(auto))
+    assert len(cut(auto)) == 1 and cut(lg.trade(*deal, free=False, drop=[keep])) == [keep] == cut(lg.trade(*deal, drop=[keep]))
+    for bad in (["Player 198"], ["Player 199"], ["Player 151"]):
+        try:
+            lg.trade(*deal, drop=bad)
+            assert False
+        except KeyError:
+            pass
+    # the week's paths (Nov 13): no move first, then plans by adds used; the plan is the best one found from every
+    # opening, so no path beats it by more than rounding, and it's the one marked
+    ps = wk["paths"]
+    assert ps[0]["adds"] == 0 and not ps[0]["moves"] and ps[0]["win"] == wk["win"] and ps[0]["score"] == wk["score"]
+    assert [x for x in ps if x.get("pick")] == [next(x for x in ps if {(m["add"], m["drop"], m["day"]) for m in x["moves"]}
+                                                                 == {(m["add"], m["drop"], m["day"]) for m in wk["plan"]["moves"]})]
+    assert max(x["gain"] for x in ps) <= wk["plan"]["gain"] + 0.11 and all(x["adds"] == len(x["moves"]) for x in ps)
+    assert all(x["games"] >= ps[0]["games"] for x in ps if x["gain"] > 0 and x["adds"] == 1)
     assert all(s["drop"] != "Twin C" for s in sl.this_week("Them", limit=50)["streams"])  # injured: never dropped
     assert wk["cats"]["FG%"]["you"][0] is None and 0 < wk["cats"]["PTS"]["you"][1] and not wk["live"]
     up = model.League({**snap, "matchup": {"opponent": "Them", "week_end": "2026-11-01",
@@ -1580,6 +1619,53 @@ def test_all():
           "teams": {**lg.snap["teams"], "Me": [{"name": f"Player {i}"} for i in range(100, 150, 4)]}}
     po = model.League(sn, base, cur, today=model.date(2026, 11, 1)).playoffs
     assert po["seats"] == 1 and po["weeks_left"] == 4
+    # weeks ahead (Nov 13): a schedule week's all-play ranking, its real matchups and yours by category; four weeks
+    # sum each matchup's categories; a drop next week shows before and after; a move this week belongs to add_drop()
+    al = model.League(sn, base, cur, today=model.date(2026, 11, 1))
+    a1, a4 = al.weeks_ahead(1), al.weeks_ahead(0, 4)
+    assert (a1["from"], a1["to"]) == (day(7), day(13)) and (a4["from"], a4["to"]) == (day(0), day(27)) and len(a4["you"]) == 4
+    assert [t["rank"] for t in a1["teams"]] == list(range(1, len(al.rosters) + 1)) and a1["teams"][0]["win"] >= a1["teams"][-1]["win"]
+    y = a1["you"][0]
+    assert y["opponent"] == "Them" and a1["weeks"][0]["matchups"] == [{"a": "Me", "b": "Them", "score": y["score"], "win": y["win"]}]
+    assert np.isclose(sum(y["score"]), 9) and set(y["cats"]) == set(al.cats) and y["win"] < 50  # Them is the stronger roster
+    assert np.isclose(next(t for t in a4["teams"] if t["team"] == "Me")["cats"][0], sum(x["score"][0] for x in a4["you"]), atol=0.21)
+    best = max(al.rosters["Me"], key=lambda k: al.value([k]).iloc[0])
+    mv = al.weeks_ahead(1, drop=[al.p.at[best, "PLAYER_NAME"]])
+    assert mv["before"][0]["score"] == y["score"] and mv["you"][0]["score"][0] < y["score"][0] and mv["drop"] == [al.p.at[best, "PLAYER_NAME"]]
+    for bad in (lambda: al.weeks_ahead(9), lambda: lg.weeks_ahead(1), lambda: al.weeks_ahead(1, drop=["Player 1"])):
+        try:
+            bad()
+            assert False
+        except KeyError:
+            pass
+    # what if (Q27): a line swapped (+50% production: more value, a better week), minutes scale the line, a rest of
+    # season out takes him to no games, "sit" is one rest day, and the card and state say so; nothing set, nothing moves
+    star = al.p.at[best, "PLAYER_NAME"]
+    wf = lambda w: model.League(sn, base, cur, today=model.date(2026, 11, 1), what={star: w})
+    up, mn, gone = wf({"pct": 50}), wf({"min": 20}), wf({"health": "out"})
+    assert np.isclose(up.p.at[best, "PTS"], 1.5 * al.p.at[best, "PTS"]) and up.value([best]).iloc[0] > al.value([best]).iloc[0]
+    assert up.outlook("Me")["win"] > al.outlook("Me")["win"] and up.outlook("Them")["win"] < al.outlook("Them")["win"]
+    assert mn.p.at[best, "MIN"] == 20 and np.isclose(mn.p.at[best, "PTS"] / 20, al.p.at[best, "PTS"] / al.p.at[best, "MIN"])
+    assert gone.meta[best]["status"] == "O" and gone.avail[best] < al.avail[best] and gone.outlook("Me")["win"] < al.outlook("Me")["win"]
+    assert up.player(best)["what"] == "+50% production" and up.state()["what"] == [{"name": star, "text": "+50% production", "pct": 50}]
+    assert "what" not in al.player(best) and al.state()["what"] == []
+    assert model.what_text({"line": "form", "min": 32, "health": "out", "until": "2026-12-01"}) == "keeps up his last 14 days, 32 minutes a game, out until Dec 1"
+    import tempfile
+    old_what = model.WHATIF
+    with tempfile.TemporaryDirectory() as tmp:
+        model.WHATIF = model.Path(tmp) / "whatif.json"
+        try:
+            assert model.whatif() == {} and model.whatif("A", pct=20, line="") == {"A": {"pct": 20.0}}
+            assert model.whatif("B", health="out", until="2026-12-01") == {"A": {"pct": 20.0}, "B": {"health": "out", "until": "2026-12-01"}}
+            assert model.whatif("A") == {"B": {"health": "out", "until": "2026-12-01"}} and model.whatif(clear=True) == {} == model.whatif()
+            for bad in ({"line": "hot"}, {"pct": 900}, {"min": 60}, {"health": "out", "until": "soon"}, {"games": 3}):
+                try:
+                    model.whatif("A", **bad)
+                    assert False
+                except KeyError:
+                    pass
+        finally:
+            model.WHATIF = old_what
     assert model.League({**sn, "settings": {**sn["settings"], "scoring": "one_win"}}, base, cur).playoffs is None
     po = po["teams"]
     assert po["Them"]["playoffs"] > 0.8 and abs(po["Me"]["playoffs"] + po["Them"]["playoffs"] - 1) < 1e-9
@@ -1833,6 +1919,10 @@ Sharks has an open SF slot.""")
     assert all(b["win"] <= flat["win"] for b in plan["builds"] if steady(b) and not any(s["free"] for s in b["steps"]))
     t = flat["steps"][1]["trade"]
     assert flat["steps"][1]["win"] == lg.trade(t["give"], t["get"])["win_after"] > flat["steps"][0]["win"]
+    # the CLI's copy for the AI GM chat (brief()): plans for the best 8 builds and balanced, short buy / sell rows
+    short = model.brief("strategy", model.json.loads(model.json.dumps(plan)))["builds"]
+    assert ["steps" in b for b in short] == [True] * 8 + [False] * (len(short) - 8) and short[0]["steps"] == flat["steps"]
+    assert all(set(x) <= {"name", "team", "fit_rank", "mkt_rank", "gap", "why"} for b in short[:8] for x in b["buy"] + b["sell"])
     # each trade's waiver moves (its drops and open-spot pickups, then the free moves it opens up) keep your roster size
     assert all(len(s["trade"]["get"]) - len(s["trade"]["give"]) + len(s["add"]) - len(s["drop"]) == 0
                for b in plan["builds"] for s in b["steps"][1:])
@@ -2067,6 +2157,19 @@ def test_live():
             model.FAILED.update(old_failed)
 
 
+def test_json():
+    """model._json(): ESPN's feeds are asked for gzipped (the injury feed is 1.2 MB plain) and read either way."""
+    import gzip, io, urllib.request
+    old, asked = urllib.request.urlopen, []
+    try:
+        for raw in (b'{"a": [1]}', gzip.compress(b'{"a": [1]}')):
+            urllib.request.urlopen = lambda req, timeout: asked.append(req.get_header("Accept-encoding")) or io.BytesIO(raw)
+            assert model._json("https://example.invalid/x") == {"a": [1]}
+        assert asked == ["gzip", "gzip"]
+    finally:
+        urllib.request.urlopen = old
+
+
 def test_notes():
     """model.note(): the AI GM's notes for Claude Code go to a file as open items; no text lists the open ones."""
     import tempfile
@@ -2086,5 +2189,6 @@ def test_notes():
 if __name__ == "__main__":
     test_all()
     test_live()
+    test_json()
     test_notes()
     print("ok")

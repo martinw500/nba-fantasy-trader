@@ -446,7 +446,7 @@ def yahoo_lines(top=1.0):
     import glob, json, yahoo
     g, base = model.gamelogs(model.CUR), model.baseline(model.fetch(model.LAST), model.fetch(model.OLDER))
     keys, first, out = base.index.union(g.key.unique()), {}, {"day": [], "first": []}
-    for f in sorted(glob.glob(str(model.ROOT / "*snapshot*.txt"))):
+    for f in map(str, model.snapshots()):
         s = yahoo.parse_text(open(f, encoding="utf-8").read())
         if not s.get("pulled"):
             continue
@@ -976,7 +976,7 @@ def gameday():
     lg = model.load()
     done, played = lg.logs.GAME_DATE.max().date(), set(zip(lg.logs.key, lg.logs.GAME_DATE.dt.date))
     pat = re.compile(r"\b(probable|questionable|doubtful|game-time decision|out|ruled out|won't play|will not play)\b"
-                     r"[^.]{0,60}?\b(" + "|".join(model.DAYS) + r")'s\b", re.I)
+                     r"[^.]{0,60}?" + model.DAY, re.I)
     seen = {}  # (name, note) -> the day it was written (ESPN's time) or first seen
     for f in sorted(glob.glob(str(model.DATA / "injuries_2026-*.json"))):
         day = date.fromisoformat(f[-15:-5])
@@ -1096,7 +1096,7 @@ def lineups():
     logs_all, base = model.gamelogs(model.CUR), model.baseline(model.fetch(model.LAST), model.fetch(model.OLDER))
     sched = json.loads((model.DATA / f"schedule_{model.CUR}.json").read_text(encoding="utf-8"))
     snaps = []
-    for f in sorted(glob.glob(str(model.ROOT / "*snapshot*.txt"))):
+    for f in map(str, model.snapshots()):
         txt = open(f, encoding="utf-8").read()
         s = yahoo.parse_text(txt)
         if s.get("pulled"):
@@ -1222,7 +1222,7 @@ def league():
     import yahoo
     logs_all, base = model.gamelogs(model.CUR), model.baseline(model.fetch(model.LAST), model.fetch(model.OLDER))
     sched = json.loads((model.DATA / f"schedule_{model.CUR}.json").read_text(encoding="utf-8"))
-    snaps = [(f, s) for f in sorted(glob.glob(str(model.ROOT / "*snapshot*.txt")))
+    snaps = [(f, s) for f in map(str, model.snapshots())
              if (s := yahoo.parse_text(open(f, encoding="utf-8").read())).get("pulled") and s.get("week") and s.get("from")]
     day = lambda d, n: (date.fromisoformat(d) + timedelta(n)).isoformat()
     vec = lambda tot: np.array([float(tot.get(c, 0)) for c in model.RAW])
