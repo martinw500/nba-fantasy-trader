@@ -1053,11 +1053,13 @@ function weekPaths(w) {
   const ps = w.paths || [];
   if (ps.length < 2) return "";
   const on = d => d === w.today ? "Today" : esc(dayName(d));
-  return `<div class="panel-b small" style="border-bottom:1px solid var(--line)"><b>Every path this week.</b> No move, the best plan found with each number of adds, then the next best other plans, each with the games your lineup starts and where the week ends up. Nothing is held back for late news here.</div>
-    <div class="tw" style="border-bottom:1px solid var(--line)"><table><thead><tr><th class="n">Adds</th><th>Moves</th>${ps[0].games != null ? `<th class="n" title="Games your lineup starts the rest of this week">Starts</th>` : ""}<th class="n" title="Expected categories won and lost">Score</th><th class="n" title="Your chance to win more categories than you lose">Win</th><th class="n" title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, against no move">This week</th></tr></thead><tbody>
+  const use = x => !x.key ? "" : x.pick ? (w.chosen ? `<button class="btn ghost" data-act="path-use" data-key="" title="Let the model pick the plan again">Undo</button>` : "")
+    : `<button class="btn ghost" data-act="path-use" data-key="${esc(x.key)}" title="Make this the plan: Today and the add plan above follow it. Nothing is sent to Yahoo">Use this</button>`;
+  return `<div class="panel-b small" style="border-bottom:1px solid var(--line)"><b>Every path this week.</b> No move, the best plan found with each number of adds, then the next best other plans, each with the games your lineup starts and where the week ends up. Nothing is held back for late news here. ${w.chosen ? "<b>You picked the plan</b>: Undo goes back to the model's." : "Use this makes a row the plan."}</div>
+    <div class="tw" style="border-bottom:1px solid var(--line)"><table><thead><tr><th class="n">Adds</th><th>Moves</th>${ps[0].games != null ? `<th class="n" title="Games your lineup starts the rest of this week">Starts</th>` : ""}<th class="n" title="Expected categories won and lost">Score</th><th class="n" title="Your chance to win more categories than you lose">Win</th><th class="n" title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, against no move">This week</th><th></th></tr></thead><tbody>
     ${ps.map(x => `<tr${x.pick ? ` style="background:var(--accent-soft)"` : ""}><td class="n">${x.adds}</td>
-      <td>${x.moves.length ? x.moves.map(m => `<span class="muted">${on(m.day)}:</span> ${nameBtn(m.add)} ${into(m, nameBtn)}`).join("<br>") : `<span class="muted">No moves</span>`}${x.pick ? `<span class="tag" title="The plan above${w.plan?.news?.kept ? ", with its last add kept for late news" : ""}">the plan</span>` : ""}</td>
-      ${x.games != null ? `<td class="n">${x.games}</td>` : ""}<td class="n">${x.score[0].toFixed(1)}–${x.score[1].toFixed(1)}</td><td class="n val">${x.win.toFixed(1)}%</td><td class="n ${tone(x.gain)}">${x.adds ? delta(x.gain, "win%") : ""}</td></tr>`).join("")}</tbody></table></div>`;
+      <td>${x.moves.length ? x.moves.map(m => `<span class="muted">${on(m.day)}:</span> ${nameBtn(m.add)} ${into(m, nameBtn)}`).join("<br>") : `<span class="muted">No moves</span>`}${x.pick ? `<span class="tag" title="The plan above${w.chosen ? ": you picked it" : w.plan?.news?.kept ? ", with its last add kept for late news" : ""}">${w.chosen ? "your pick" : "the plan"}</span>` : ""}</td>
+      ${x.games != null ? `<td class="n">${x.games}</td>` : ""}<td class="n">${x.score[0].toFixed(1)}–${x.score[1].toFixed(1)}</td><td class="n val">${x.win.toFixed(1)}%</td><td class="n ${tone(x.gain)}">${x.adds ? delta(x.gain, "win%") : ""}</td><td class="n">${use(x)}</td></tr>`).join("")}</tbody></table></div>`;
 }
 // Q34: lean on categories this week. Start / sit, streams and the plan favour them; the odds shown stay real
 function leanRow(w) {
@@ -1089,7 +1091,7 @@ function streamPlan(w) {
   const on = d => d === w.today ? "today" : "on " + esc(dayName(d));
   const tip = A && `Yahoo's count in the snapshot${A.listed != null ? ` (${A.listed})` : ""} or the adds and waiver claims in its transaction log since ${mdy(A.week_start)} (${A.counted}), whichever is higher. A move made after the snapshot counts once you mark it Done on Yahoo.`;
   const B = w.add_by, byTip = "Left in his IL slot once he's healthy, he blocks every add until you activate or drop him. Yahoo drops the injury tag once he plays, sometimes that morning.";
-  const left = (A ? `<b title="${esc(tip)}">${A.left ? `${A.left} of ${A.max} adds left` : "No adds left"}</b> this week (${A.used} used). ` : "")
+  const left = (w.chosen ? `<b>Your pick</b> from Every path below (Undo there). ` : "") + (A ? `<b title="${esc(tip)}">${A.left ? `${A.left} of ${A.max} adds left` : "No adds left"}</b> this week (${A.used} used). ` : "")
     + (B && (!A || A.left) ? `<b title="${esc(byTip)}">Make them by ${B.day < w.today ? "now" : B.day === w.today ? "today" : esc(dayName(B.day))}</b>: once ${esc(B.player)} plays, his tag drops and Yahoo blocks adds until he's moved. ` : "");
   const keep = P && P.keep.length ? ` You end the week with ${and(P.keep.map(esc))}: <span class="${tone(P.season)}">${delta(P.season, "win%")}</span> for the season.` : "";
   // M17: the last add only goes on a move worth more than keeping it for someone ruled out later in the week
@@ -1109,8 +1111,9 @@ function streamPlan(w) {
 async function loadWeek(opponent) {
   const W = S.week, goal = W.goal; W.loading = true; W.streamBusy = !!W.data;
   let r;
-  try { r = await api("/api/week", { ...(opponent ? { opponent } : {}), keep: S.keep, weights: S.lean, cats: goal || [] }); } catch (e) { r = { error: e.message }; }
+  try { r = await api("/api/week", { ...(opponent ? { opponent } : {}), keep: S.keep, weights: S.lean, cats: goal || [], choose: store.get("weekPick", "") }); } catch (e) { r = { error: e.message }; }
   if (W.goal !== goal) return;  // Play for changed meanwhile: that answer is the one to show
+  if (!r.error && !r.chosen && store.get("weekPick", "")) store.set("weekPick", "");  // that path is gone (a move made, a new snapshot)
   W.data = r; W.loading = W.streamBusy = false;
   if (S.week === W && S.view === "week") render();
 }
@@ -2151,6 +2154,11 @@ document.addEventListener("click", async e => {
     const { goal, sit, day, days } = S.week; S.week = { data: S.week.data, goal, sit, day, days }; render();
     return loadWeek().then(() => { if (S.week.goal?.length) loadSit(S.week); });
   }
+  if (act === "path-use") {  // Every path: this one is the plan (none: back to the model's pick), then the week again
+    store.set("weekPick", t.dataset.key);
+    const { goal, sit, day, days } = S.week; S.week = { data: S.week.data, goal, sit, day, days }; render();
+    return loadWeek();
+  }
   if (act === "keep") {  // This week's streams: never drop him (or allow it again), then the plan again
     S.keep = S.keep.includes(t.dataset.name) ? S.keep.filter(n => n !== t.dataset.name) : [...S.keep, t.dataset.name];
     store.set("keep", S.keep);
@@ -2296,7 +2304,7 @@ setInterval(async () => {
   try {
     const st = await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")) + (S.healthyFa ? "&healthy_fa=1" : ""));
     const { goal, sit, day, days } = S.week;  // B7: Play for and the day picked in Start / sit stay (Q32: it steers the streams too)
-    const w = await api("/api/week", { keep: S.keep, weights: S.lean, cats: goal || [] });
+    const w = await api("/api/week", { keep: S.keep, weights: S.lean, cats: goal || [], choose: store.get("weekPick", "") });
     fresh(st); S.week = { data: w, goal, sit, day, days }; render();
     if (goal?.length) loadSit(S.week);  // Play for's lineups again, on the new numbers
   } catch (e) { /* offline or restarting: keep what's on screen */ }

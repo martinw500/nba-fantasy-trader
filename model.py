@@ -2392,6 +2392,7 @@ class League:
             return match_prob(p, self.cats, WEEK_LOAD)
         return p.mean(-1) if self.lean is None else (p * self.lean).sum(-1) / self.lean.sum()
 
+    TIMED = 10  # This week: the plan's pool, the best free agents by their timed gains (every healthy one is timed)
     lean = None  # Q34: This week's category weights, by self.cats (_leaning() makes the copy carrying them)
 
     def _leaning(self, weights=None, keep=None):
@@ -3698,7 +3699,7 @@ class League:
         return (f"Add {self.names([f[0]['a']])[0]} {day}, no drop: {now}% to win this week goes to {f[0]['win']}%. "
                 "This week lists the others.")
 
-    def this_week(self, opp=None, punt=(), limit=5, keep=(), _on=None, weights=None, cats=()):
+    def this_week(self, opp=None, punt=(), limit=5, keep=(), _on=None, weights=None, cats=(), choose=None):
         """This week's matchup: totals so far + the rest of the week (week_vec; players in IL slots sit until they're
         back, then start in place of who's cut: _week_roster, M21) -> odds per
         category, the expected score, the chance to win more categories (win), a safe / chase / lost call per
@@ -3715,18 +3716,20 @@ class League:
         categories (`gain`s are on the weighted share, `weights` in the output says so); win, score and odds stay real.
         cats (Q32, Start / sit's Play for): those categories only, the rest weighted 0 (`goal` in the output); a stream's
         `win` and each row's and the plan's `cats` ({category: [odds now, after]}) stay real, so the cost shows.
-        With a lean or a goal the 20 best free agents are timed, not 10."""
+        Every healthy free agent is timed; the plan picks from the best TIMED of them (2x with a lean or a goal).
+        choose (Martin, Nov 17: pick how many adds to use): a path's `key` ("none" = no move): that path is the plan
+        (`chosen` true, no late-news check: you picked it), else the model's pick; an open-spot week's paths have no key."""
         if self.mode == "points":
             raise KeyError("This week needs a category league")
         if goal := self.goal(cats, punt) if cats else []:  # Play for: a lean with the rest at 0
             w0 = {punts([c])[0]: x for c, x in (weights or {}).items()}
-            out = self.this_week(opp, punt, limit, keep, _on, {c: w0.get(c, 1) if c in goal else 0 for c in self.cats})
+            out = self.this_week(opp, punt, limit, keep, _on, {c: w0.get(c, 1) if c in goal else 0 for c in self.cats}, choose=choose)
             return {**out, "goal": goal}
         never = {self.find(n) for n in keep}
         # B19: the list rules who's cut for a player back too (_il_cut), and Q34: category weights steer every pick,
         # so the whole week is built on a copy carrying both; its own copies (_fills) inherit them
         if (lg := self._leaning(weights, never)) is not self:
-            return lg.this_week(opp, punt, limit, keep, _on)
+            return lg.this_week(opp, punt, limit, keep, _on, choose=choose)
         me, m = self.me, self.matchup
         others = [t for t in self.rosters if t != me]
         opp = self._opponent(opp)
@@ -3743,30 +3746,29 @@ class League:
             st0 = {**st0, **_on[0]}
             wk[me], p = (mine, st0, ends), odds(self.week_vec(mine, st0, ends))
         win = float(match_prob(p, self.cats, WEEK_LOAD))  # M9: this week's categories move together
-        clears = self._clears
 
         # streams: each healthy free agent for whichever of your 3 cheapest healthy players (season win-% cost) helps most,
-        # scored on the whole lineup since an add only counts on days he cracks your top `lineup`. The 10 best (added
-        # today) are then timed: the drop plays until the day before the add's best day (_timed). Each one is an add,
+        # scored on the whole lineup since an add only counts on days he cracks your top `lineup`, each on his best day:
+        # the drop plays until the day before (_timed). Each one is an add,
         # so with none left this week there are none; plan = the best way to spend the adds left (_plan)
         healthy = lambda ks: [k for k in ks if self.meta.get(k, {}).get("status", "") not in OUT]
         cost = self._contrib(me, [k for k in healthy(play(me)) if k not in never], punt)
         drops, fas, cap = sorted(cost, key=cost.get)[:3], healthy(self.fa), self.adds()
         if _on and cap:
             cap = {**cap, "left": max(cap["left"] - _on[1], 0)}
-        swap = lambda a, d: [k for k in mine if k != d] + [a]
         streams, plan, paths, name = [], None, [], lambda k: self.p.at[k, "PLAYER_NAME"]
         if drops and fas and (cap is None or cap["left"]):
-            V = np.array([[self.week_vec(swap(a, d), {**st0, **clears(a)}, self._handoff(ends, ends, [d], a, self.today))
-                           for d in drops] for a in fas])
             s0 = float(self._wscore(p))
-            gain = 100 * (self._wscore(odds(V)) - s0)
-            cands = [fas[i] for i in np.argsort(-gain.max(1))[:max(limit, 10 if self.lean is None else 20)]]
             season0 = self.outlook(me, punt=punt)["win"]
             season = lambda out, inn: round(100 * (self.outlook(me, {me: self.vec(
                 [k for k in self.rosters[me] if k not in out] + list(inn))}, punt)["win"] - season0), 1)
-            timed = sorted(((*self._timed(mine, a, [d], odds, s0, st0, ends, ends, last), a, d) for a in cands for d in drops),
+            # every healthy free agent is timed (Martin, Nov 17: "the point of streaming is to get specialized players for
+            # specifically what i need"): ranked on being added today, the 10 kept missed Gafford for Huerter on Saturday,
+            # 58.4% against the plan's 56.1%, his worth being a late add that keeps the drop's games. The plan's pool
+            # (cands) is then the best on their timed gains
+            timed = sorted(((*self._timed(mine, a, [d], odds, s0, st0, ends, ends, last), a, d) for a in fas for d in drops),
                            key=lambda x: -x[0])
+            cands = list(dict.fromkeys(x[4] for x in timed))[:max(limit, self.TIMED if self.lean is None else 2 * self.TIMED)]
             fills = self._fills(odds, punt, _on and _on[0])  # B18: an open spot takes an add with no drop
             fk, seen = {f["a"]: f for f in fills}, set()
             for g, s, st, un, a, d in sorted([*timed, *((f["gain"], f["day"], *f["side"][1:], f["a"], None) for f in fills)],
@@ -3803,18 +3805,25 @@ class League:
                         "win": round(100 * float(match_prob(q, self.cats, WEEK_LOAD)), 1),
                         "score": [round(float(q.sum()), 1), round(len(self.cats) - float(q.sum()), 1)],
                         **({"games": sum(self.starts(ks, st2, un3).values())} if self.sched else {}), **kw}
-            found, full = {}, []  # {moves: path}, and each opening's whole plan
+            found, full, raw = {}, [], {}  # {moves: path}, each opening's whole plan, {moves: (its moves, until)}
             for _, _, _, _, a, d in timed[:8]:
                 mv, _, un2, _ = self._plan(mine, cands, drops, odds, s0, n_left, ends, False, (a, d), st0, last)
                 for k in range(1, len(mv) + 1):
                     part = [x for x in mv if x["order"] < k]
                     key = frozenset((x["add"], x["drop"], x["day"]) for x in part)
                     if key not in found:
-                        found[key] = path(part, un2)
+                        found[key], raw[key] = path(part, un2), (part, un2)
                     if k == len(mv):
                         full.append(((a, d), key))
             top = max(full, key=lambda x: found[x[1]]["share"], default=None)
             moves, st, un, news = self._plan(mine, cands, drops, odds, s0, n_left, ends, cap is not None, top and top[0], st0, last)
+            keyed = lambda fs: "; ".join(sorted(f"{d} {name(a)}>{name(x)}" for a, x, d in fs)) or "none"
+            mine_k = next((k for k in [frozenset(), *raw] if choose and keyed(k) == choose), None)
+            if mine_k is not None:  # your pick: the plan is that path, as Every path scored it
+                mv, un2 = raw.get(mine_k, ([], {}))
+                moves, news = sorted(mv, key=lambda x: (x["day"], x["order"])), None
+                st = {**st0, **{x["add"]: x["day"] for x in moves}}
+                un = {**ends, **{x["add"]: x["end"] for x in moves if x["end"]}, **{x["drop"]: un2[x["drop"]] for x in moves}}
             if moves or news:
                 g = self.starts(mine + [x["add"] for x in moves], st, un)
                 kept = [x["add"] for x in moves if x["add"] not in un]
@@ -3844,6 +3853,8 @@ class League:
                           **({"games": sum(self.starts(*wk[me]).values())} if self.sched else {}), **({} if picked else {"pick": True})},
                          *({k: v for k, v in {**found[key], **({"pick": True} if key == picked else {})}.items() if k != "share"}
                            for key in rows)]
+                for x, key in zip(paths, [frozenset(), *rows]):
+                    x["key"] = keyed(key)
             if fill:
                 # B18: the plan opens with the best add into the open spot (no drop: it beat every swap here, +2.8 vs
                 # +1.5 on Nov 17), then it's this week's plan on the league after it, one add spent. The last add
@@ -3897,6 +3908,7 @@ class League:
                              "them": [total(so_far[opp], c), total(so_far[opp] + left[opp], c)],
                              "odds": round(100 * float(x), 1), "call": call(c, x)} for c, x in zip(self.cats, p)},
                 "today": max(self.today, m.get("from", "")), "adds": cap, "streams": streams, "plan": plan, "paths": paths,
+                **({"chosen": True} if choose and any(x.get("pick") and x.get("key") == choose for x in paths) else {}),
                 **({} if self.lean is None else {"weights": {c: float(x) for c, x in zip(self.cats, self.lean) if x != 1}}),
                 "drops": self.names(drops), "keep": self.names([k for k in self.rosters[me] if k in never]),
                 # today's NBA games (M18): under way (tipped off), final, still to come; when the live scores were fetched
@@ -4929,6 +4941,7 @@ def main():
     ap.add_argument("--players", default="", help='compare: 2 to 4 players, e.g. "A, B"')
     ap.add_argument("--keep", default="", help='week, today: your players no stream may drop, e.g. "John Collins, Paul George"')
     ap.add_argument("--weight", default="", help='week, lineup, today: lean on categories, e.g. "PTS=2" (double) or "PTS=2,TOV=0.5"; 0 to 5, the rest count 1')
+    ap.add_argument("--choose", help='week: a path\'s key from Every path ("none" = no move): the plan follows it')
     ap.add_argument("--add", default="", help="move: the free agent to add")
     ap.add_argument("--drop", default="", help="move: your player to drop (none: an open spot, else who you'd miss least). trade: who you cut to fit the deal, over the model's pick")
     ap.add_argument("--day", help="move: the day this week to make it, YYYY-MM-DD (default: its best day)")
@@ -4976,7 +4989,7 @@ def main():
            "waivers": lambda: lg.waivers(punt, cats=split(a.cats)),
            "movers": lambda: lg.movers(punt),
            "week": lambda: lg.this_week(a.vs, punt, keep=[x.strip() for x in a.keep.split(",") if x.strip()], weights=weights(a.weight),
-                                        cats=split(a.cats)),
+                                        cats=split(a.cats), choose=a.choose),
            "strategy": lambda: lg.strategy(a.size),
            "news": lg.roster_news,
            "compare": lambda: lg.compare(split(a.players), punt),

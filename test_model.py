@@ -1718,6 +1718,16 @@ def test_all():
     assert 0 < len(mv) <= 5 and all(x["gain"] >= 0.1 for x in mv) and len({x["add"] for x in mv}) == len(mv)
     assert abs(wk["plan"]["gain"] - sum(x["gain"] for x in mv)) <= 0.05 * len(mv) + 0.01 and wk["plan"]["keep"]
     assert wk["plan"]["news"] is None  # no weekly cap: no add is kept for late news (M17)
+    # Use this (Nov 17): a path picked by its key is the plan, as that row scored it; "none" empties it; an unknown
+    # key is the model's pick
+    alt = next(p for p in wk["paths"] if not p.get("pick") and p["adds"])
+    ch = sl.this_week("Them", choose=alt["key"])
+    row = next(p for p in ch["paths"] if p.get("pick"))
+    assert ch["chosen"] and row["key"] == alt["key"] and row["win"] == alt["win"] and abs(ch["plan"]["gain"] - alt["gain"]) <= 0.05 * alt["adds"] + 0.01
+    assert [(m["day"], m["add"], m["drop"]) for m in ch["plan"]["moves"]] == [(m["day"], m["add"], m["drop"]) for m in alt["moves"]]
+    none = sl.this_week("Them", choose="none")
+    assert none["chosen"] and none["plan"] is None and none["paths"][0].get("pick")
+    assert "chosen" not in sl.this_week("Them", choose="junk") and sl.this_week("Them", choose="junk")["plan"] == wk["plan"]
     for st in wk["streams"]:  # the best day beats adding him on any other of his game days
         k = sl.find(st["name"])
         assert st["day"] in sl.game_days(k, sl.week_end, sl._clears(k).get(k))

@@ -301,7 +301,7 @@ def api(path, q, body):
             remember(matchup=lg.matchup)
             fl = lg.healthy_fa() if fl is not lg else lg  # the copy was made before the new opponent
         keep, wts = body.get("keep") or (), body.get("weights") or None
-        w = fl.this_week(punt=punt, keep=keep, weights=wts, cats=body.get("cats") or ())  # Healthy only: no injured free agent as a stream (audit #15); keep: never dropped
+        w = fl.this_week(punt=punt, keep=keep, weights=wts, cats=body.get("cats") or (), choose=body.get("choose") or None)  # Healthy only: no injured free agent as a stream (audit #15); keep: never dropped
         return {**w, "night": fl.game_night(punt=punt, keep=keep, weights=wts, week=w)} if w.get("opponent") else w  # Q31: the Today panel
     if path == "/api/today":  # Q31: game day, tonight's games, lineups, live lines and the week day by day
         return fl.game_night(punt=punt, keep=body.get("keep") or (), weights=body.get("weights") or None)
