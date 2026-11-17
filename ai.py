@@ -43,7 +43,8 @@ categories won-lost this week (lead with it in a categories league), "win" the c
 "gain" is this week's win % and "season" what keeping him does to the season-long win %, "day" the best day to make
 the add (the drop plays until then). "adds" = adds used and left this week (4 a week in the user's league): "plan"
 is the best way to spend the ones left (its "news": the last add is kept for a player ruled out later in the week
-unless its move beats "worth"), and with none left there are no streams. If it returns no opponent,
+unless its move beats "worth"), and with none left there are no streams. A stream or plan move with "drop": null
+goes into the user's open roster spot (no drop); "then" says who's cut when their player in an IL slot is back. If it returns no opponent,
 ask who the user plays. Early in the season, small samples swing hard.
 For trades: say who wins, which categories move, the risk (injury, role, age, sample size), and when asked,
 write a short casual pitch the user can paste to the other manager. Keep answers short and concrete.
@@ -130,16 +131,21 @@ class GM:
             return dump(lg.profile() if lg.mode != "points" else {"mode": "points"})
 
         @beta_tool
-        def this_week(opponent: str | None = None) -> str:
+        def this_week(opponent: str | None = None, keep: str = "", weights: str = "") -> str:
             """This week's matchup: odds per category and for the week, totals so far and projected, a
             safe / chase / lost call per category, streaming adds scored on this week's odds (each with its best
             "day"), adds used and left this week ("adds") and "plan": the best streams for the adds left.
 
             Args:
                 opponent: exact team name; omit to use the opponent saved for this week
+                keep: the user's players no stream may drop, comma-separated ("drops" lists who the plan may drop)
+                weights: categories the user wants to lean on, like "PTS=2" (counts double) or "PTS=2,TOV=0.5"; 0 to 5,
+                    the rest count 1. Streams, the plan and Start / sit then favour them; "gain" is on that weighted
+                    share, while "win", "score" and the odds stay real: quote the real win next to any leaned plan
             """
             try:
-                return dump(lg.this_week(opponent, gm.punt))
+                return dump(lg.this_week(opponent, gm.punt, keep=[x.strip() for x in keep.split(",") if x.strip()],
+                                         weights=model.weights(weights)))
             except KeyError as e:
                 return f"Error: {e}"
 
@@ -159,7 +165,7 @@ class GM:
                 return f"Error: {e}"
 
         @beta_tool
-        def evaluate_move(add: str, drop: str | None = None, day: str | None = None) -> str:
+        def evaluate_move(add: str | None = None, drop: str | None = None, day: str | None = None) -> str:
             """Evaluate one add/drop: the change in the user's season win % and this week's vs the saved opponent
             ("week", null without one), per-category odds before -> after, the added player's games this week (a
             waiver claim counts from the day it clears; "week.day" = the day it's made, the drops play until then).
@@ -168,12 +174,34 @@ class GM:
             left, so the move waits for next week (no week numbers).
 
             Args:
-                add: a free agent's name
+                add: a free agent's name; omit for a drop alone (it activates a healthy player stuck in an IL slot)
                 drop: one of the user's players; omit for an open spot, or the player they'd miss least
                 day: YYYY-MM-DD this matchup week to make the move; omit for its best day
             """
             try:
                 return dump(lg.add_drop(add, drop, gm.punt, day=day))
+            except KeyError as e:
+                return f"Error: {e}"
+
+        @beta_tool
+        def roster_check() -> str:
+            """What's wrong with the user's roster right now, worst first: a healthy player stuck in an IL slot (Yahoo
+            blocks adds until he's moved), more players than active spots, an injured player who could go to a free
+            IL slot, an open active spot, today's lineup. Each problem has plain "text" and a "fix". "notes": nothing to
+            fix now: a player due back from an IL slot this week, and whether to leave him parked or which day to
+            activate him and for whom."""
+            return dump(lg.roster_check(gm.punt))
+
+        @beta_tool
+        def who_to_drop() -> str:
+            """Who to drop: a row per player the user could cut (and any healthy one stuck in an IL slot, activated
+            in every other row): this week's chance to win ("week"), next week's ("next"), season win % ("season"),
+            playoff / title odds, "then" (who's cut when the next IL player is back; "wait": he's left in his IL slot
+            this week, so that cut is next week's), "chip" (worth more in a trade
+            than dropped), "fa" (the best free agent beats keeping the IL player). "picks": best this week, for the
+            season, and overall."""
+            try:
+                return dump(lg.drops(gm.punt))
             except KeyError as e:
                 return f"Error: {e}"
 
@@ -197,17 +225,23 @@ class GM:
             return dump(lg.team_roster(team, gm.punt))
 
         @beta_tool
-        def note(text: str = "") -> str:
+        def note(text: str = "", close: int = 0) -> str:
             """Write down something for Claude Code, the developer, to fix: a number the user says is wrong, a rule of
             the league the model misses, a feature the user asks for. One note per issue, with what the user said, the
             numbers you saw and where they came from. Never ordinary advice. No text: the notes still open.
+            A note you wrote on a misunderstanding: close it (its number in the open list, 1 = the first) with the
+            reason as text, instead of writing a correction.
 
             Args:
-                text: the note
+                text: the note, or with close the reason it's closed
+                close: the open note to close (0: none)
             """
-            return dump(model.note(text))
+            try:
+                return dump(model.note(text, close or None))
+            except KeyError as e:
+                return f"Error: {e.args[0]}"
 
-        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, this_week, compare_players, evaluate_move, schedule_planner, roster, note]
+        return [evaluate_trade, find_trades, waivers, sell_high_buy_low, league_overview, this_week, compare_players, evaluate_move, roster_check, who_to_drop, schedule_planner, roster, note]
 
     def ask(self, text, punt=()):
         self.punt = list(punt)

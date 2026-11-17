@@ -23,7 +23,8 @@ import yahoo
 ROOT = Path(__file__).parent
 PORT = 8765
 load_dotenv(ROOT / ".env")
-load = lambda refetch=(): model.load(refetch=refetch, what=model.whatif())  # every league here is on the saved what-ifs (Q27)
+# every league here is on the saved what-ifs (Q27) and roster moves (Q30)
+load = lambda refetch=(): model.load(refetch=refetch, what=model.whatif(), made=model.moves())
 lg = load()
 gm = None  # created on first chat so the app works without an API key
 gen = 0  # bumped whenever data/league.json changes under the app (remember(), Refresh): live() drops a rebuild it
@@ -59,6 +60,7 @@ def waiting(l):
 def state(l, punt):
     """The league's state, plus `waiting`: that file's name (the page says to press Refresh if watch() hasn't taken it)."""
     st = l.state(punt)
+    st["watch"] = model.watching(l, punt)  # Q32: the watchlist (data/watch.json), at the top of Waivers
     if f := waiting(l):
         st["waiting"] = f.name
     return st
@@ -102,7 +104,9 @@ def watch():
         try:
             if (at := model.mtime(model.WHATIF)) != what:  # a what-if set from the AI GM chat (model.py what): rebuild on it
                 what = at
-                if model.whatif() != {w["name"]: {k: v for k, v in w.items() if k not in ("name", "text")} for w in lg.whats()}:
+                if (model.whatif() != {w["name"]: {k: v for k, v in w.items() if k not in ("name", "text")} for w in lg.whats()}
+                        or [m["id"] for m in model.moves()] != [m["id"] for m in lg.moves]  # a move the chat recorded
+                        or any(m.get("plan") != (x["state"] == "plan") for m, x in zip(model.moves(), lg.moves) if x["state"] != "stale")):
                     with refreshing:
                         gen += 1
                         lg, gm = load(), None
@@ -246,13 +250,34 @@ def api(path, q, body):
     if path == "/api/compare":  # 2 to 4 players side by side
         return lg.compare(body.get("players", []), punt)
     if path == "/api/move":  # Waivers' add/drop evaluator: any add and any drop, this week and the season
-        return lg.add_drop(body["add"], body.get("drop") or None, punt, day=body.get("day") or None)
+        return lg.add_drop(body.get("add") or None, body.get("drop") or None, punt, day=body.get("day") or None)
+    if path == "/api/waivers":  # Q32: Waivers' Play for, free agents ranked on some categories (none: as in state)
+        return {**fl.waivers(punt, 40, body.get("cats") or ()), "dropped": fl.dropped(punt)}
+    if path == "/api/watch":  # Q32: POST {add} or {remove} a player on the watchlist; the rows either way
+        return model.watching(fl, punt, body.get("add"), body.get("remove"))
+    if path == "/api/check":  # Q29: what's wrong with your roster now (also in /api/state as "check")
+        return lg.roster_check(punt)
+    if path == "/api/drops":  # Q29: Who to drop, each cut this week, next week and the season (~1 s)
+        return lg.drops(punt)
     if path == "/api/ahead":  # League's period picker: the league over schedule weeks from `week` (0 = this one)
         return fl.weeks_ahead(int(q.get("week", ["1"])[0]), int(q.get("n", ["1"])[0]))
     if path == "/api/what":  # POST {player, line, pct, min, health, until} sets his what-if (none of them: clears it);
         with refreshing:     # {clear: true} alone clears all. Every number is rebuilt on what's saved (Q27)
             name = body.get("player") and lg.p.at[lg.find(body["player"]), "PLAYER_NAME"]
             model.whatif(name, bool(body.get("clear")), **{k: body.get(k) for k in ("line", "pct", "min", "health", "until")})
+            gen += 1
+            lg, gm = load(), None
+        return state(lg.healthy_fa() if fl is not lg_in else lg, punt)
+    if path == "/api/moved":  # Q30: POST a roster move made on Yahoo ({add, drop, activate, park, give, get, their_drop};
+        with refreshing:      # plan: picked, not made yet), {undo: id | "all"} or {done: a plan's id}; every number rebuilt
+            if body.get("undo") or body.get("done"):
+                model.moves(undo=body.get("undo"), done=body.get("done"))
+            else:
+                if old := [m["id"] for m in lg.moves if m["state"] == "plan"] if body.get("plan") else []:
+                    model.moves(undo=old)  # one pick at a time: a new Use this replaces the last
+                    lg = load()
+                model.moves(new=lg.made(**{k: body.get(k) or () for k in ("add", "drop", "activate", "park", "give", "get", "their_drop")},
+                                        plan=bool(body.get("plan"))))
             gen += 1
             lg, gm = load(), None
         return state(lg.healthy_fa() if fl is not lg_in else lg, punt)
@@ -275,14 +300,15 @@ def api(path, q, body):
             lg.snap["matchup"] = lg.matchup = {**lg.matchup, "opponent": opp, "week_end": lg.week_end}
             remember(matchup=lg.matchup)
             fl = lg.healthy_fa() if fl is not lg else lg  # the copy was made before the new opponent
-        return fl.this_week(punt=punt)  # Healthy only: no injured free agent as a stream (audit #15)
+        return fl.this_week(punt=punt, keep=body.get("keep") or (), weights=body.get("weights") or None, cats=body.get("cats") or ())  # Healthy only: no injured free agent as a stream (audit #15); keep: never dropped
     if path == "/api/lineup":  # This week's Start / sit, playing for some categories only
-        return fl.start_sit(punt=punt, cats=body.get("cats", []))
+        return fl.start_sit(punt=punt, cats=body.get("cats", []), weights=body.get("weights") or None)
     if path == "/api/refresh":
         refresh()
         return state(lg, punt)
     if path == "/api/stamp":  # when the league on screen was imported, and its what-ifs: the page's check for a snapshot
-        return {"fetched": lg.snap.get("fetched", ""), "what": lg.whats()}  # watch() loaded or a what-if the chat set
+        return {"fetched": lg.snap.get("fetched", ""), "what": lg.whats(),  # watch() loaded, or a what-if or a roster
+                "moves": [[m["id"], m["state"]] for m in lg.moves]}  # move (Q30) the chat set
     if path == "/api/chats":
         return chats(body)
     if path == "/api/offers":  # Trades' Offers sent: what you copied for Yahoo and the answers
@@ -341,7 +367,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/compare", "/api/move", "/api/schedule", "/api/news",
-       "/api/players", "/api/me", "/api/week", "/api/lineup", "/api/refresh", "/api/stamp", "/api/ahead", "/api/what", "/api/chat", "/api/chats", "/api/offers"}
+       "/api/players", "/api/me", "/api/week", "/api/lineup", "/api/refresh", "/api/stamp", "/api/ahead", "/api/what", "/api/moved", "/api/check", "/api/drops", "/api/waivers", "/api/watch", "/api/chat", "/api/chats", "/api/offers"}
 
 def live():
     """Every LIVE_MIN minutes, ESPN's injury feed again (and any other cache past its window: news, box scores...),

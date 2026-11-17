@@ -1,9 +1,9 @@
 # nba-fantasy-trader (Fantasy GM)
 
-Local Yahoo NBA fantasy GM app. Python 3.13 + pandas backend, one-file vanilla HTML/JS UI. User-facing docs and every workflow: README.md. **What's untested and what to build next: ROADMAP.md**, whose **pathway** at the top is the one ordered list of open work. Read it before starting new work and tick items off (in the pathway and in the item's section) as they're done.
+Local Yahoo NBA fantasy GM app. Python 3.13 + pandas backend, one-file vanilla HTML/JS UI. User-facing docs and every workflow: README.md. **What's untested and what to build next: ROADMAP.md**, whose **pathway** at the top is the one ordered list of open work. Read it before starting new work and tick items off (in the pathway and under the item's brief) as they're done. Everything built before Nov 16 is in `docs/HISTORY.md` (410 KB: grep an item's ID, never load it whole).
 
 ## AI GM notes
-The AI GM chat can't change code; it writes what Martin flags (wrong numbers, missed rules, feature asks) to `data/notes.md` with `model.py note --text` (`model.note()`, ai.py's `note` tool). **Before new work, read the open ones (`- [ ]`)** and tell Martin what's there. When one is handled, tick it (`- [x]`) and add the date and what changed; if it's not a bug, say why on the line.
+The AI GM chat can't change code; it writes what Martin flags (wrong numbers, missed rules, feature asks) to `data/notes.md` with `model.py note --text` (`model.note()`, ai.py's `note` tool), and can close one it wrote by mistake (`note --close N --text why`: ticked with its reason, never deleted). **Before new work, read the open ones (`- [ ]`)** and tell Martin what's there. When one is handled, tick it (`- [x]`) and add the date and what changed; if it's not a bug, say why on the line.
 
 ## Read before you change code
 The detail lives in `docs/`, moved out of this file on Nov 15 so it isn't loaded into every session. Nothing was dropped. **Read the one that covers what you're about to touch before editing**, and add what you learn there, not here:
@@ -25,7 +25,7 @@ Python lives in `.venv` (Homebrew Python blocks global pip): use `.venv/bin/pyth
 - `python test_model.py`: run it after touching `model.py` or `app.py`'s model calls. Prints `ok`.
 - `python backtest.py`: calibration check (~1 min). Run it after changing projections or odds maths. Its other modes (`replay`, `teammates`, `ahead`, `returns`, `gameday`, `league`, `lineups`, `playoffs`, `season`, ...): `docs/COMMANDS.md`.
 - `python app.py --no-browser`: run the app without opening a tab. `#view` and `?punt=FT%25,TOV` deep-link a view and build.
-- `python model.py {team|trade|ideas|search|waivers|movers|roster|week|strategy|news|compare|schedule|move|sources|wants|lineup|ahead|what|note} [--punt ...]`: prints JSON; flags in `docs/COMMANDS.md`. `strategy` takes ~40s.
+- `python model.py {team|trade|ideas|search|waivers|movers|roster|week|strategy|news|compare|schedule|move|sources|wants|lineup|ahead|what|note|check|drop} [--punt ...]`: prints JSON; flags in `docs/COMMANDS.md`. `strategy` takes ~40s.
 
 ## Rules that hold everywhere
 The short list. Each has its full rule, numbers and history in `docs/MODEL.md`.
@@ -39,7 +39,7 @@ The short list. Each has its full rule, numbers and history in `docs/MODEL.md`.
 - `trade()` rejects players you don't own or from more than one team (KeyError): AI tool input comes through it. `_after()` and `search()` do the same roster maths; `test_model.py` checks they agree.
 - Player lookup goes through `League.find()`, punts through `punts()`.
 - Lifts only count while the injured player sits; `ros()` reads this season net of `had()` so a boost isn't counted twice.
-- What-ifs (`data/whatif.json`) are read by `app.py` and `model.py`'s CLI only, never by tests or backtests.
+- What-ifs and saved roster moves (`data/whatif.json`; moves go on the snapshot in `load(made=)` before the league is built) are read by `app.py` and `model.py`'s CLI only, never by tests or backtests.
 - Keep `model.py`'s CLI output under ~30 KB: the in-app chat sees a 2 KB preview of anything bigger (`brief()` cuts `news` and `strategy`).
 - `SEASON`s are `OLDER` / `LAST` / `CUR` at the top of `model.py`; bump them each October.
 

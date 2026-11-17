@@ -50,7 +50,7 @@ Martin asked for everything to be gone through, issues found and fixed, backtest
 
 **Nov 13, evening: controls, weeks ahead, the week's paths (ROADMAP Q27, Q28, M29).** One model finding on the way: the add plan's greedy first move blocked better weeks (vs Shanghai +3.4 → +6.0 from another opening); the plan now takes the best ending of 8 openings. Weeks ahead reuse the playoff odds' per-week arrays, nothing new fitted. Later the same evening (Martin): later weeks count the daily lineup limit (`_capped()`; 24 real team-weeks: 676 games started, 712 fit, 785 scheduled; totals' mean error 21.5% against 21.8% without) and a trade takes your own drop (`trade(drop=)`). What-ifs change inputs only (an injury entry, a player's line) and are read by the app and CLI alone; `test_model.py` and every backtest are untouched by a saved one.
 
-**Still guesses (no data to fit them here):** `FILL`, `GAMES_WEEK`, `MARKET`, `PACKAGE`, `CHASE`, `CHIP`, `TIERS`, `accept()` (M6: no offers marked yet).
+**Still guesses (no data to fit them here):** `GAMES_WEEK` (`FILL` measured Nov 16: #9), `MARKET`, `PACKAGE`, `CHASE`, `CHIP`, `TIERS`, `accept()` (M6: no offers marked yet).
 
 ---
 
@@ -205,7 +205,7 @@ Odds sum, 8 seats, 18 regular-season weeks left (this one included), playoff wee
 **Check with Martin:** Yahoo's playoff bracket. The sim *reseeds* each round. If mchc uses a fixed bracket, title odds move a little (your 16% vs Mumbai/Shanghai), not playoff-make odds.
 
 ### 9. GAP — season-long week still ignores the 10-slot cap and uses FILL 0.5
-Documented. Average week = `GAMES_WEEK` 3.4 × (avail × line + (1 − avail) × 0.5 × waiver line). Daily cap costs 0.1–0.9% of games season-long. FILL is a guess (not in the backtest; those rosters never stream). A team that actually streams its open slot / empty IL (Mathmagicians does not) is stronger than the model vs one that doesn't. Small on *your* roster (full, 3 IL used).
+Documented. Average week = `GAMES_WEEK` 3.4 × (avail × line + (1 − avail) × 0.5 × waiver line). Daily cap costs 0.1–0.9% of games season-long. FILL is a guess (not in the backtest; those rosters never stream). **Nov 16: measured.** `python backtest.py fill`: 0.47 of 245 missed games on the real league were covered (0.36 IL move + pickup, 0.11 lineup full anyway), so 0.5 holds league-wide; by team 0.11 (Mathmagicians) to 0.93 (fatty zhou). Per-team fill is ROADMAP M31. A team that actually streams its open slot / empty IL (Mathmagicians does not) is stronger than the model vs one that doesn't. Small on *your* roster (full, 3 IL used).
 
 ---
 
@@ -309,6 +309,7 @@ Not user-facing.
 - 0 unmatched roster names; Jr/III/accents through `norm()` + `match()`.
 - REST regex vs Out; every ESPN row has a return date today.
 - `python test_model.py` ok.
+- Lineup slots and a guard-heavy roster, season-long (Nov 16, Martin: "no space for jalen suggs today and that should affect win rate right"; scratch run on the Nov 15 snapshot, the 15 schedule weeks Nov 23–Mar 21, everyone playing). This week already has it: `lineup` sits Suggs Nov 16 ("no slot left: the open one is a C"), 48 games, 46 started. Rest of season on fatty zhou's 13 (Gafford and Washington cut): 685 games, 10 sit (1.5%), 2 of them a guard (Suggs, twice); with positions ignored 9 sit, 0 a guard. All 6 pure guards (5 slots take one: PG, SG, G, 2 Util) play on the same night 2 days of 103. League-wide (rosters with IL players in) the limit costs 0.9–6.6% of a team's games, positions 0.0–0.8% of them. All-play category share over those weeks with `_capped()` against without: fatty zhou 59.5 / 59.5 (+0.1), the biggest move John Ball −0.4. So `week`, trades and playoff odds leaving the limit out still holds; no change made.
 
 ---
 
@@ -320,3 +321,31 @@ Not user-facing.
 4. Leave M6 / M7 / M16 / M9 as they are (waiting on data, or not a categories-league number).
 
 Don't retune `AVAIL_*`, `SHARE`, or `GAMEDAY` from this week of 2026-27.
+
+---
+
+## Nov 16: is availability too low for a player just back from one injury? (checked, not changed)
+
+Martin, on Jalen Suggs (64% after missing 8 of Orlando's 12 with one injury, listed among the streams' three cheapest drops): "he js came back from injury why does it think hes worse". Replayed 2022-23 to 2025-26 like `backtest.py availability` (the 200 best each Monday who played their team's last game, rookies out: 10,284 player-Mondays), with each player's absences so far that season.
+
+| Group | n | Guess | Played | Guess − played |
+|---|---|---|---|---|
+| Everyone | 10,284 | 0.775 | 0.782 | −0.007 |
+| No game missed yet | 3,601 | 0.790 | 0.811 | −0.021 |
+| 5+ missed, one absence | 1,368 | 0.707 | 0.742 | −0.035 |
+| 5+ missed, several absences | 2,097 | 0.740 | 0.726 | +0.015 |
+| 1–3 games back from a 5+ game absence | 298 | 0.674 | 0.702 | −0.028 |
+| Weeks 1–6, 6+ missed in one absence, 1–2 games back (Suggs) | 36 | 0.669 | 0.744 | −0.075 |
+
+**Verdict: a real but small lean, no fix shipped.** The last group is low in all four seasons (−0.05, −0.19, −0.05, −0.03) but is 36 player-Mondays. Counting the longest absence (5+ games) at half a game each takes the one-absence group to +0.003 and the pooled squared error from 0.0389 to 0.0386, but leave-one-season-out it wins 2022-23 and 2023-24 and loses 2024-25 (0.0402 → 0.0405) and 2025-26 (0.0410 → 0.0414), and the several-absences group goes from +0.015 to +0.029. Under the bar the other constants were held to. Suggs would read about 0.71; on fatty zhou's roster that makes him worth 5.2 win % against Collins's 5.1 and Black's 5.4, so he'd still be one of the three cheapest. Same day: `FILL` measured at 0.47 on the real league (#9, `backtest.py fill`), per-team rates left to ROADMAP M31. Rerun with 2026-27 in once the season's done; the scratch script wasn't kept (it is `mondays_played()` plus each player's runs of missed games).
+
+## Nov 17: does a 15–25 minute player sitting lift his backup? (measured, not shipped)
+
+**Why (Martin):** Mo Bamba (free agent, 16.6 min) played 36 min / 26 pts on Nov 15, the one game Jaxson Hayes (21.5 min, out with a knee) missed. The model gives Bamba nothing for Hayes: only regulars (`REGULAR` 25+ min) hand out minutes. M25 (Nov 4) tested spreading a 15–25 min sitter's minutes like a starter's and lost; this tested two narrower versions aimed at the like-for-like backup.
+
+**How:** `python backtest.py backups [season]` (~15 min a season) on all four seasons, 2022-23 to 2025-26: next week's lines on full weeks (`teammates`' scoring, each team's own split on). With `REGULAR` 15: A, the rule hands out nothing (`SHARE_LOW` 0) and only each team's own split (`onoff()`) moves minutes the games show; B, `SHARE_LOW` 0.2 / 0.35 sent mostly to the most similar player (`ROLE_LOW` 2 / 4). Each with the sitter's shots handed out as now and minutes only (`USAGE_LOW` 0, `backups usage`). Groups: everyone, and the "backups" B lifts 1.5+ min a game that the shipped rule doesn't (159–287 a season: the Bamba case).
+
+**Result (stats error, lower is better; shipped → best variant):**
+- **Backups:** shipped wins on stats in all four seasons, every variant: 0.4767 → 0.4784 (A, minutes only), 0.4543 → 0.4548 (B 0.2/2), 0.5072 → 0.5089 (A), 0.4909 → 0.4933 (B 0.35/2). Their *minutes* do get better under every variant in all four (e.g. A 0.1950 → 0.1893, 0.1851 → 0.1791, 0.2043 → 0.1971, 0.2097 → 0.2094) and the shipped line runs 1.0–1.7 min short for them, but the extra minutes don't come with the stats: the backup's line is already about right on production.
+- **Everyone:** minutes a hair better with A (0.1418 → 0.1417, 0.1449 → 0.1444, 0.1456 → 0.1450, 0.1513 → 0.1504), stats worse in 2022-23 and 2024-25 (0.3887 → 0.3891, 0.3946 → 0.3951), level in 2023-24, better by 0.0003 in 2025-26. B is worse than A almost everywhere, more so at 0.35 and `ROLE_LOW` 4.
+- **So nothing ships and no roadmap item:** a backup does play ~1 more minute while a 15–25 min teammate sits, but fantasy stats don't follow, in any season. The switches (`ROLE_LOW`, `USAGE_LOW`, as `SHARE_LOW` / `CAP_GIVE` before them) stay in `model.py`, off. Rerun when this season's box scores are a full season (they only add 2026-27 if `backups 2026-27` is run). Bamba's 36-minute game is one game; his this-week line (18.9 min vs 16.6 season) already carries it through `recent()`.

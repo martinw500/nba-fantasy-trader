@@ -28,6 +28,8 @@ python backtest.py lineups: whose games count on a night the snapshot was pulled
 snapshot's lineup, against the next snapshot's totals (B8), and This week's expected starts for that night.
 python backtest.py league: the real league's weeks end to end: each pre-tip snapshot's rest-of-week totals and category
 odds against what the teams banked by the week's last snapshot (Nov 9; rerun as snapshots pile up).
+python backtest.py fill: the real league's missed games, and how many were covered by an IL move or a full lineup
+(checks FILL, league-wide and by team; rerun as snapshots pile up).
 python backtest.py recency: replay's error by minutes shrink and recent games' weight, 2022-23 to 2025-26 (fits
 MIN_SHRINK, RECENT).
 python backtest.py season: the season line's rest-of-season error by its minutes shrink and share of had() netted,
@@ -52,7 +54,7 @@ import pandas as pd
 import model
 
 ARGS = [a for a in sys.argv[1:]
-        if a not in ("replay", "teammates", "onoff", "minor", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season", "league")]
+        if a not in ("replay", "teammates", "onoff", "minor", "backups", "usage", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season", "league", "fill")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
@@ -635,7 +637,7 @@ def knobs(**kv):
     return old
 
 
-def scored(weeks, configs, wide=None):
+def scored(weeks, configs, wide=None, focus=None):
     """teammates()' table for each config (model knobs to set): next week's error per player group. wide: knobs for
     a second "injured teammate" group, the players a wider rule lifts (M25: sitters at 15+ minutes) that the shipped
     rule doesn't."""
@@ -648,10 +650,15 @@ def scored(weeks, configs, wide=None):
         old = knobs(ONOFF_K=0, **wide)
         extra = [lifted(m)[1].index.difference(h) for m, h in zip(weeks, hits)]
         knobs(**old)
+    near = None
+    if focus:  # (knobs, minutes): players that rule lifts by at least that much a game and the shipped rule doesn't
+        old = knobs(ONOFF_K=0, **focus[0])
+        near = [(b := lifted(m)[1]).index[b.MIN >= focus[1]].difference(h) for m, h in zip(weeks, hits)]
+        knobs(**old)
     for cfg in configs:
         old = knobs(**cfg)
-        rows = {k: [] for k in ("act", "off", "on", "fwd", "hit", "new", "full")}
-        for m, lift_rule, new_rule in zip(weeks, hits, extra or [None] * len(weeks)):
+        rows = {k: [] for k in ("act", "off", "on", "fwd", "hit", "new", "near", "full")}
+        for m, lift_rule, new_rule, near_rule in zip(weeks, hits, extra or [None] * len(weeks), near or [None] * len(weeks)):
             act = per_game(m["nxt"])
             act = act[act.index.isin(m["line"].index)]
             on, boost = lifted(m)
@@ -662,14 +669,17 @@ def scored(weeks, configs, wide=None):
             rows["on"].append(on.loc[act.index, cols] + add); rows["fwd"].append(fwd.loc[act.index, cols] + add)
             rows["hit"].append(pd.Series(act.index.isin(lift_rule), index=act.index))
             rows["new"].append(pd.Series(act.index.isin(new_rule) if new_rule is not None else False, index=act.index))
+            rows["near"].append(pd.Series(act.index.isin(near_rule) if near_rule is not None else False, index=act.index))
             rows["full"].append(act.GP >= games.fillna(np.inf))
         knobs(**old)
         act, hit, full = pd.concat(rows["act"]), pd.concat(rows["hit"]).to_numpy(), pd.concat(rows["full"]).to_numpy()
         new, big = pd.concat(rows["new"]).to_numpy(bool), (pd.concat(rows["off"]).MIN >= 20).to_numpy()
+        close = pd.concat(rows["near"]).to_numpy(bool)
         print("  " + " ".join(f"{k} {v}" for k, v in cfg.items()))
         groups = (("injured teammate", hit & full), ("  20+ min", hit & full & big), ("everyone", full),
                   ("  20+ min", full & big), ("injured, all weeks", hit))
-        for name, sub in groups + ((("lifted by 15+ only", new & full),) if extra else ()):
+        for name, sub in groups + ((("lifted by 15+ only", new & full),) if extra else ()) + (
+                (("  backup, big lift", close & full), ("  backup, all weeks", close)) if near else ()):
             a = act[sub]
             err = lambda p: ((p[sub] - a).abs() / a.mean()).mean()
             out = {v: (err(pd.concat(rows[v])), (a - pd.concat(rows[v])[sub]).MIN.mean()) for v in ("off", "on", "fwd")}
@@ -685,6 +695,21 @@ def minor(seasons=None):
                                                    for x in (0.1, 0.2, 0.35, 0.5) for c in (False, True)]
     print(f"\n== {SEASON}: next week's lines, sitters under 25 minutes and the cap (M25) ==")
     scored(list(mondays()), configs, wide={"REGULAR": 15, "SHARE_LOW": 0.5})
+    knobs(**base)
+
+
+def backups():
+    """Can a 15-25 minute sitter's absence (Jaxson Hayes, 21 min, Nov 17) lift his backup (Mo Bamba)? M25 spread
+    their minutes like a starter's and lost. Here: A, only each team's own split (SHARE_LOW 0: the rule hands out
+    nothing, onoff() moves what the games show); B, a share sent mostly to the most similar player (ROLE_LOW). Scored on
+    everyone, on the players any 15+ rule lifts, and on the backups B lifts 1.5+ minutes a game."""
+    base = {"REGULAR": model.REGULAR, "SHARE_LOW": model.SHARE_LOW, "ROLE_LOW": model.ROLE_LOW, "USAGE_LOW": model.USAGE_LOW}
+    configs = [base] + [{"REGULAR": 15, "SHARE_LOW": x, "ROLE_LOW": r, "USAGE_LOW": u}
+                        for u in ((None, 0) if "usage" not in sys.argv else (0,))
+                        for x, r in ((0, None),) + tuple((x, r) for x in (0.2, 0.35) for r in (2, 4))]
+    print(f"\n== {SEASON}: next week's lines, backups of 15-25 minute sitters ==")
+    scored(list(mondays()), configs, wide={"REGULAR": 15, "SHARE_LOW": 0.5},
+           focus=({"REGULAR": 15, "SHARE_LOW": 0.35, "ROLE_LOW": 4}, 1.5))
     knobs(**base)
 
 
@@ -1205,6 +1230,48 @@ def lineups():
                                   for r in ("model", "lineup", "lineup + fill-ins")))
 
 
+def fill():
+    """FILL on the real league (Nov 16; Martin: "if he gets injured i can js ir him and pick pj up after"): every game
+    a rostered player missed on a snapshot's day (his NBA team played, he didn't, box scores), as his team stood that
+    morning: parked in an IL slot with the active spots full (his replacement plays), in an active slot on a night 10
+    of his active teammates played (the lineup was full anyway), or not covered. Players who hadn't played yet this
+    season are left out: they were parked before any prediction, which vec() counts exactly. Prints the covered share
+    overall, by his n-th straight missed game and by team. Nov 16 (19 snapshot days, 245 missed games): 0.47 covered
+    (0.36 by an IL move, 0.11 lineup full), so FILL 0.5 holds league-wide; 0.20 of first missed games, 0.76 from the
+    6th on; by team 0.11 (Mathmagicians) to 0.93 (fatty zhou, 14 of 15).
+    ponytail: the morning's roster (a park made later that day isn't seen, so first games read low); positions aren't
+    checked for the full lineup; the replacement is taken to be waiver level"""
+    import unicodedata
+    import yahoo
+    strip = lambda n: "".join(c for c in unicodedata.normalize("NFD", n) if unicodedata.category(c) != "Mn").replace(".", "").lower()
+    g = model.gamelogs(model.CUR)
+    g = g.assign(d=g.GAME_DATE.dt.strftime("%Y-%m-%d"), nm=g.PLAYER_NAME.map(strip))
+    team_days, played = g.groupby("TEAM_ABBREVIATION").d.apply(set).to_dict(), g.groupby("nm").d.apply(set).to_dict()
+    team_of, rows = g.sort_values("d").groupby("nm").TEAM_ABBREVIATION.last().to_dict(), []
+    for f in map(str, model.snapshots()):
+        s, d = yahoo.parse_text(open(f, encoding="utf-8").read()), f[-14:-4]
+        if d > g.d.max():
+            continue
+        for t, ps in s["teams"].items():
+            il = [x for x in ps if (x.get("slot") or "") in model.IL_SLOTS]
+            n_act = len(ps) - len(il)
+            n_play = sum(d in played.get(strip(x["name"]), ()) for x in ps if x not in il)
+            for x in ps:
+                nm = strip(x["name"])
+                nba, before = team_of.get(nm) or x.get("nba"), [y for y in played.get(nm, ()) if y < d]
+                if d in team_days.get(nba, ()) and d not in played.get(nm, ()) and before:
+                    rows.append({"team": t, "run": sum(max(before) < y <= d for y in team_days[nba]),
+                                 "il": x in il and n_act >= s["settings"].get("roster", 13),
+                                 "full": x not in il and n_play >= s["settings"].get("starters", 10)})
+    m = pd.DataFrame(rows)
+    m["covered"] = m.il | m.full
+    print(f"\n== FILL on the real league: {len(m)} missed games ==")
+    print(f"covered {m.covered.mean():.3f} (IL move {m.il.mean():.3f}, lineup full anyway {m.full.mean():.3f}); model.FILL = {model.FILL}")
+    by = pd.cut(m.run, [0, 1, 2, 3, 5, 999], labels=["1st", "2nd", "3rd", "4-5th", "6th+"])
+    print("by his n-th straight missed game (games, covered):", {k: (int(x.size), round(float(x.mean()), 2)) for k, x in m.groupby(by, observed=True).covered})
+    print("by team (games, covered):", {t: (int(x.size), round(float(x.mean()), 2)) for t, x in m.groupby("team").covered})
+
+
 def league():
     """The real league's weeks, end to end (Nov 9): every snapshot pulled before its day's first tip-off, as the app
     stood then (box scores before that day, the day before's last injury feed, that day's ESPN projections): each
@@ -1376,6 +1443,8 @@ if __name__ == "__main__":
         lineups()
     elif "league" in sys.argv:
         league()
+    elif "fill" in sys.argv:
+        fill()
     elif "returns" in sys.argv:
         returns()
     elif "corr" in sys.argv:
@@ -1396,6 +1465,8 @@ if __name__ == "__main__":
         yahoo_lines()
     elif "minor" in sys.argv:
         minor()
+    elif "backups" in sys.argv:
+        backups()
     elif "onoff" in sys.argv:
         teammates(ks=(0, 1, 2, 4, 8, 16))
     elif "teammates" in sys.argv:

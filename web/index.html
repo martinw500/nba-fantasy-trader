@@ -118,6 +118,15 @@ h2 { font-size: 15px; font-weight: 650; margin: 0; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .notice { padding: 9px 14px; border-radius: var(--radius); background: var(--warn-soft); color: var(--warn-ink); font-size: 13px; }
 .notice code { font-size: 12px; }
+.notice.moves > div { margin-top: 4px; }
+.notice.moves s { opacity: .7; }
+/* Q29: a roster problem to fix on Yahoo (My team, This week): a panel-weight strip with a red dot, never a warn notice
+   (those are for data sources); the nav's My team button carries the same dot while one is open */
+.alert { display: flex; gap: 10px; align-items: baseline; padding: 11px 14px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--shadow); font-size: 13px; }
+.alert > .dot { background: var(--neg); flex: none; margin: 0; transform: translateY(-1px); }
+.alert p { margin: 0; }
+.alert .btn { padding-block: 1px; margin-left: 4px; }
+.nav .flag { width: 7px; height: 7px; border-radius: 50%; background: var(--neg); margin-left: auto; flex: none; }
 .muted { color: var(--muted); }
 .small { font-size: 12.5px; }
 
@@ -384,13 +393,17 @@ const S = {
   news: {},  // { data, error }: My team's News panel; replaced on team / refresh
   strategy: {},  // { data, busy, sel }: the punt planner (sel: the build whose plan shows), ignores your punt, so only team / refresh / Healthy only replace it
   trade: { give: new Set(), get: new Set(), team: null, roster: null, result: null, busy: false },
+  keep: store.get("keep", []),  // players This week's streams never drop, kept in this browser
+  lean: store.get("lean", {}),  // Q34: This week's category weights ({PTS: 2}), kept in this browser
   locks: new Set(store.get("locks", [])),  // players the finder never trades, kept in this browser; Trades' Reset clears them
   find: { ...FIND0(), mine: store.get("mine", true), theirs: store.get("theirs", false) },
   improve: { kind: null, list: null, busy: false, sort: null },
   saved: { list: store.get("saved", []), evals: {}, loading: false },
   players: null,
   card: {},  // { name, t, data, error }: the open player card, under that name in the t-th player table of the view
+  drops: {},  // { data, loading, error }: Who to drop (Q29, /api/drops), loaded with a roster alert; replaced on punt / team / refresh
   move: { add: "", drop: "", day: "", result: null, busy: false },  // Waivers' add/drop evaluator (Q7); result is dropped on punt / team / refresh
+  wv: { pos: store.get("wvPos", ""), q: "", sort: store.get("wvSort", ""), goal: store.get("wvGoal", []), data: null, for: null },  // Q32: Waivers' filters, sort and Play for (data: /api/waivers for the goal, on S.state `for`)
   compare: { names: store.get("compare", []), line: "ros" },  // + data, busy, error; data is dropped on punt / team / refresh
   pool: null,  // every rostered player and free agent, for Compare's search
   offers: null,  // Trades' Offers sent (data/offers.json), loaded on first view
@@ -416,6 +429,7 @@ function reveal(sel) {  // scroll to a panel (a selector or the element), clear 
 }
 
 async function loadState() {
+  S.drops = {};
   try {
     S.state = await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")) + (S.healthyFa ? "&healthy_fa=1" : ""));
     S.error = null; S.loaded = Date.now();
@@ -441,6 +455,8 @@ const and = xs => xs.length > 1 ? xs.slice(0, -1).join(", ") + " and " + xs.at(-
 // has one on screen, else at the top: showCard). An inline span, not a <button>: a line can break after a button's box,
 // which left a list's comma at the start of the next line (Nov 4); Enter / Space click it like a button
 const nameBtn = n => !n ? "" : `<span class="rowbtn nm" role="button" tabindex="0" data-act="show-card" data-name="${esc(n)}" title="Open his player card">${esc(n)}</span>`;
+// B18: an add into your open spot (drop null): who goes once your player in an IL slot is back
+const thenBack = t => (t || []).map(x => x.parked ? `${esc(x.back)} stays in his IL slot this week` : `When ${esc(x.back)} is back ${esc(dayName(x.day))}, ${esc(x.cut)} is the one to drop for him`).join(". ");
 const into = (m, nm = esc) => m.drop ? "for " + nm(m.drop) : m.park ? "into an IL slot" : "into the open spot";  // B5: an injured add parks
 const freeList = (ms, more = 0, nm = esc) => and([...ms.map(m => `${nm(m.add)} ${into(m, nm)} (${delta(m.gain, "win%")})`),
   ...(more > 0 ? [`${more} more`] : [])]);
@@ -488,7 +504,9 @@ const liftWhen = l => `${esc(l.by)} is out (back ${mdy(l.return)}, ${l.games} ga
 // what he really did this season with and without that teammate (the evidence the model's split leans on)
 const nGames = n => `${n} game${n === 1 ? "" : "s"}`;
 const liftSeen = l => l.without ? ` This season without him: ${l.without.MIN.toFixed(1)} min, ${l.without.PTS.toFixed(1)} pts in ${nGames(l.without.games)}; with him: ${l.with.MIN.toFixed(1)} min, ${l.with.PTS.toFixed(1)} pts in ${nGames(l.with.games)}.` : "";
-const liftTag = p => liftMin(p) >= 1 ? `<span class="tag" title="${p.lift.map(l => `+${l.MIN.toFixed(1)} min${l.PTS >= 0.1 ? `, +${l.PTS.toFixed(1)} pts` : ""} a game while ${liftWhen(l)}.${liftSeen(l)}`).join(" ")} Counted in his lines for those games">+${liftMin(p).toFixed(1)} min ${TERM[p.lift.reduce((a, b) => b.MIN > a.MIN ? b : a).term]}</span>` : "";
+// Q32: the tag says who's out and until about when, so you see why a free agent ranks where he does and when it ends
+const liftTag = p => { if (liftMin(p) < 1) return ""; const top = p.lift.reduce((a, b) => b.MIN > a.MIN ? b : a);
+  return `<span class="tag" title="${p.lift.map(l => `+${l.MIN.toFixed(1)} min${l.PTS >= 0.1 ? `, +${l.PTS.toFixed(1)} pts` : ""} a game while ${liftWhen(l)}.${liftSeen(l)}`).join(" ")} Counted in his lines for those games">+${liftMin(p).toFixed(1)} min while ${esc(top.by)}${p.lift.length > 1 ? ` +${p.lift.length - 1}` : ""} is out, until about ${mdy(top.return)}</span>`; };
 // recent form: his value over the last 14 days (this season without box scores). The model arrows it when it's far
 // (about one 14-day standard deviation) from his rest-of-season value
 const formWin = () => S.state.movers?.window || "the last 14 days";
@@ -559,7 +577,7 @@ function playerCard() {
   const read = mktRead(d), inCmp = S.compare.names.includes(d.name);
   return `<div class="pcard">
     <div class="pcard-h"><div><b>${esc(d.name)}</b>${statusTag(d)} <span class="muted small">${[esc(d.nba), esc(d.pos), own].filter(Boolean).join(" · ")}</span></div>
-      <div class="toolbar">${act}<button class="btn" data-act="cmp-add" data-name="${esc(d.name)}" title="${inCmp ? "Open Compare" : "Add him to Compare (2 to 4 players side by side)"}">${inCmp ? "Open compare" : "Compare"}</button><button class="btn ghost" data-act="card" data-name="${esc(C.name)}" data-t="${C.t}">Close</button></div></div>
+      <div class="toolbar">${act}${(w => `<button class="btn" data-act="watch" data-name="${esc(d.name)}"${w ? ` data-on="1"` : ""} aria-pressed="${w}" title="${w ? "On your watchlist (top of Waivers): click to stop watching" : "Keep an eye on him: he goes on the watchlist at the top of Waivers, marked when something changes"}">${w ? "Watching" : "Watch"}</button>`)((S.state.watch || []).some(x => x.name === d.name))}<button class="btn" data-act="cmp-add" data-name="${esc(d.name)}" title="${inCmp ? "Open Compare" : "Add him to Compare (2 to 4 players side by side)"}">${inCmp ? "Open compare" : "Compare"}</button><button class="btn ghost" data-act="card" data-name="${esc(C.name)}" data-t="${C.t}">Close</button></div></div>
     ${d.injury ? `<div class="small">${esc(d.injury)}${d.return ? ` <span class="muted">Expected back ${mdy(d.return)}.</span>` : ""}</div>` : ""}
     ${d.lift ? `<div class="small">${d.lift.map(l => `While ${liftWhen(l)}: ${[["MIN", "min"], ...cats.filter(c => l[c] != null).map(c => [c, lab(c)])]
       .filter(([c]) => c === "MIN" || Math.abs(l[c]) >= 0.2).map(([c, n]) => `<span class="${punted(c) ? "punted-col" : ""}">${l[c] > 0 ? "+" : ""}${l[c].toFixed(1)} ${n}</span>`).join(", ")} a game.${liftSeen(l)}`).join(" ")}
@@ -589,6 +607,46 @@ function whatIf(d) {
       <button class="btn primary" data-act="what-set" data-name="${esc(d.name)}">Apply</button>
       ${w.text ? `<button class="btn ghost" data-act="what-clear" data-name="${esc(d.name)}">Clear</button>` : ""}
     </div>${w.text ? `<div class="small" style="margin-top:6px">Now: <b>${esc(w.text)}</b>.</div>` : ""}</div>`;
+}
+// ---------- "I made this move" (Q30): a drop, pickup or trade made on Yahoo since the snapshot (or a drop picked but
+// not made yet), saved by the server and put on the rosters before anything is computed, so every tab is on it. A new
+// snapshot that shows a move clears it by itself; one it contradicts stays here, not counted, until it's cleared
+const madeOf = m => ({ add: [m.add], drop: m.drop ? [m.drop] : [], park: m.park ? [m.add] : [] });  // a suggested {add, drop, park}
+const doneBtn = (m, label = "Done on Yahoo", tip = "You made this move on Yahoo: every tab counts it until your next snapshot shows it") =>
+  `<button class="btn ghost" data-act="moved" data-move="${esc(JSON.stringify(m))}" title="${esc(tip)}">${label}</button>`;
+function movesBanner(ms) {
+  if (!ms.length) return "";
+  const btn = (act, id, h) => `<button class="btn" data-act="${act}" data-id="${esc(id)}" style="margin-left:6px;padding-block:1px">${h}</button>`;
+  const line = m => m.state === "stale" ? `<s>${esc(m.text)}</s> <span>isn't in your new snapshot, so it isn't counted.</span>${btn("moved-undo", m.id, "Clear")}`
+    : m.state === "plan" ? `<b>Your pick, not made on Yahoo yet:</b> ${esc(m.text.charAt(0).toLowerCase() + m.text.slice(1))}.${btn("moved-done", m.id, "Done on Yahoo")}${btn("moved-undo", m.id, "Undo")}`
+    : `${esc(m.text)}.${btn("moved-undo", m.id, "Undo")}`;
+  const on = ms.filter(m => m.state !== "stale").length;
+  return `<div class="notice moves"><b>Since your snapshot</b>${on ? `, counted on every tab until a new snapshot shows ${on > 1 ? "them" : "it"}` : ""}:
+    ${ms.map(m => `<div>${line(m)}</div>`).join("")}</div>`;
+}
+async function setMoved(body, done) {
+  try {
+    const re = S.trade.result, mv = S.move.result;
+    fresh(await api("/api/moved", body));
+    S.trade.result = S.trade.ask = null; S.improve = { kind: null, list: null };  // an open trade is scored again
+    if (mv) S.move = { add: "", drop: "", day: "", result: null, busy: false };  // the move tried is made (or undone)
+    toast(done);
+    if (body.give) { S.trade.give.clear(); S.trade.get.clear(); history.replaceState(null, "", "#trades"); }  // the deal is made
+    else if (re) evaluate();
+  } catch (err) { toast(err.message); }
+  render();
+}
+// a trade they said yes to: on the rosters, and marked Accepted under Offers sent (logged first if it never was: M6's data)
+async function accepted(r) {
+  const give = r.give.map(p => p.name), get = r.get.map(p => p.name);
+  try {
+    const keep = ["net", "unit", "their_net", "their_view", "win", "win_after", "market", "accept", "verdict"];
+    const same = o => o.team === r.other_team && !o.outcome && String([...o.give].sort()) === String([...give].sort()) && String([...o.get].sort()) === String([...get].sort());
+    let list = S.offers || await api("/api/offers", {}), o = list.find(same);
+    if (!o) { list = await api("/api/offers", { log: { ...Object.fromEntries(keep.map(k => [k, r[k]])), me: S.state.me, team: r.other_team, give, get, text: "" } }); o = list[0]; }
+    S.offers = await api("/api/offers", { set: o.id, outcome: "yes" });
+  } catch (err) { toast(err.message); }
+  return setMoved({ give, get, drop: r.you_drop || [], their_drop: r.they_drop || [] }, "Trade made: every tab is on your new roster");
 }
 async function setWhat(body, done) {
   try {
@@ -647,14 +705,14 @@ function viewTeam() {
   const moves = st.waivers.moves.slice(0, 3), sells = st.movers.sell_high.slice(0, 3);
   const todo = (moves.length || sells.length) ? `<div class="panel"><div class="panel-h"><div><h2>Worth doing now</h2><p>Top waiver upgrades and sell-high candidates on your build.</p></div></div>
     <div class="tw"><table class="wrap"><tbody>
-      ${moves.map(m => `<tr><td>Add <b>${nameBtn(m.add)}</b>${m.drop ? `, drop ${nameBtn(m.drop)}` : m.park ? " into a free IL slot, no drop" : " into your open spot"}</td><td class="n pos val" title="${m.unit === "win%" ? "Change in your " + WIN().of : "Value gain"}">${delta(m.gain, m.unit)}</td><td class="n"><button class="btn ghost" data-go="waivers">Waivers</button></td></tr>`).join("")}
+      ${moves.map(m => `<tr><td>Add <b>${nameBtn(m.add)}</b>${m.drop ? `, drop ${nameBtn(m.drop)}` : m.park ? " into a free IL slot, no drop" : " into your open spot"}</td><td class="n pos val" title="${m.unit === "win%" ? "Change in your " + WIN().of : "Value gain"}">${delta(m.gain, m.unit)}</td><td class="n" style="white-space:nowrap"><button class="btn ghost" data-go="waivers">Waivers</button>${doneBtn(madeOf(m))}</td></tr>`).join("")}
       ${sells.map(p => `<tr><td>Sell high on <b>${esc(p.name)}</b>: ${sign(p.gap)} above his real value over ${formWin()}</td><td class="n muted">${p.form_gp} GP</td><td class="n"><button class="btn ghost" data-act="shop" data-name="${esc(p.name)}">Find a buyer</button></td></tr>`).join("")}
     </tbody></table></div></div>` : "";
   const po = prof?.playoffs?.teams[st.me];
   const outlook = prof ? `Projected ${ord(prof.rank)} of ${n} · wins ${pct(prof.win)} of ${oneWin() ? "weekly matchups" : "categories"} · ${po ? `${chance(po.playoffs)} to make the playoffs · ` : ""}` : "";
-  return `<div class="head"><div><h1>${esc(st.me)}</h1><p class="sub">${outlook}${st.roster.length} players${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}</p></div></div>
-    ${strip}${todo}
-    <div class="panel"><div class="panel-h"><div><h2>Roster</h2><p>Category cells are z-scores vs a typical rostered player. Green helps you, red hurts.</p></div></div>${playerTable(st.roster)}${ilPlan(st.il_plan)}</div>
+  return `<div class="head"><div><h1>${esc(st.me)}</h1><p class="sub">${outlook}${st.check ? `${st.check.active} active${st.check.il ? `, ${st.check.il} in ${st.check.il > 1 ? "IL slots" : "an IL slot"}` : ""}` : `${st.roster.length} players`}${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}</p></div></div>
+    ${needDrop() ? dropPanel() : ""}${strip}${todo}
+    <div class="panel"><div class="panel-h"><div><h2>Roster</h2><p>Category cells are z-scores vs a typical rostered player. Green helps you, red hurts.</p></div></div>${playerTable(st.roster)}${needDrop() ? "" : ilPlan(st.il_plan)}</div>
     ${newsPanel()}
     ${prof ? strategyPanel() : ""}${vs}`;
 }
@@ -662,6 +720,61 @@ function viewTeam() {
 // who to cut once the players in your IL slots are back: the best set of players to keep on your build, every way tried
 // (il_plan), and what cutting the lowest-rated instead costs
 const ilPlan = d => d ? `<div class="panel-b small" style="border-top:1px solid var(--line)">When ${and(d.back.map(x => `<b>${esc(x.name)}</b>${x.return ? ` (back ${mdy(x.return)})` : ""}`))} ${d.back.length > 1 ? "are" : "is"} back, cut ${and(d.cut.map(n => `<b>${esc(n)}</b>`))}.${d.gain >= 0.1 ? ` <span class="muted">Every combination tried on your build. Cutting ${and(d.rule.filter(n => !d.cut.includes(n)).map(esc))} instead (lowest-rated) costs ${d.gain.toFixed(1)} win %.</span>` : ""}</div>` : "";
+
+// ---------- roster check and who to drop (Q29): what's wrong with your roster now, each cut scored this week, next week
+// and for the season (/api/drops); every number from model.py, the page only names the picks
+const needDrop = () => S.state.check?.problems.some(p => p.kind === "drop");
+function drops() {
+  const D = S.drops;
+  if (!D.data && !D.loading && !D.error) loadDrops();
+  return D.data;
+}
+async function loadDrops() {
+  const D = S.drops; D.loading = true;
+  try { D.data = await api("/api/drops", {}); } catch (e) { D.error = e.message; }
+  D.loading = false;
+  if (S.drops === D && ["team", "week"].includes(S.view)) render();
+}
+const backOn = b => `${and(b.map(x => esc(x.name)))} ${b.length > 1 ? "are" : "is"} back${b[0].return ? ` (${esc(dayName(b[0].return))})` : ""}`;
+// B17: the next cut waits while This week leaves the player back in his IL slot (then.wait)
+const thenCut = t => t ? ` now, then ${and(t.cut.map(esc))} ${t.wait ? `next week, when you activate ${and(t.wait.map(esc))}` : `when ${backOn(t.back)}`}` : "";
+function rosterAlert() {
+  const ps = S.state.check?.problems || [], ns = S.state.check?.notes || [];
+  if (!ps.length && !ns.length) return "";
+  const drop = needDrop(), d = drop ? drops() : null, pk = d?.picks?.overall, row = d?.rows.find(r => r.name === pk);
+  const best = pk ? ` Best: drop <b>${nameBtn(pk)}</b>${thenCut(row.then)}.` : "";
+  const go = drop ? `<button class="btn ghost" data-act="drops-go">Who to drop</button>` : "";
+  const text = ps.map(p => esc(p.text) + (p.kind === "drop" ? best : p.kind === "il" && drop ? "" : ` <span class="muted">${esc(p.fix)}</span>`)).join(" ");
+  const note = ns.map(n => `${esc(n.text)}${n.fix ? ` <span class="muted">${esc(n.fix)}</span>` : ""}`).join(" ");
+  return `<div class="alert" role="status"><span class="dot" aria-hidden="true"${ps.length ? "" : ` style="background:var(--muted)"`}></span><p>${text}${go}${text && note ? "<br>" : ""}${note}</p></div>`;
+}
+function dropPanel() {
+  const D = S.drops, d = drops(), st = S.state;
+  const head = `<div class="panel-h"><div><h2>Who to drop</h2><p>Each row is your team with him gone${d?.activate.length ? ` and ${and(d.activate.map(esc))} activated today` : ""}: your chance to win this week${d?.opponent ? ` vs ${esc(d.opponent)}` : ""}, next week${d?.next ? ` vs ${esc(d.next.opponent)}` : ""}, and the season. The same simulation on every row, so small gaps are real. Until you pick one, This week counts the Overall pick as made: <b>Use this</b> puts another drop under it, <b>Done on Yahoo</b> once you've made it.</p></div></div>`;
+  if (D.error) return `<div class="panel" id="drops">${head}<div class="panel-b small neg">Couldn't score the drops: ${esc(D.error)}</div></div>`;
+  if (!d) return `<div class="panel" id="drops">${head}<div class="panel-b">${SKEL}</div></div>`;
+  const pk = d.picks, p1 = v => v == null ? `<span class="muted">—</span>` : v.toFixed(1) + "%", by = n => d.rows.find(r => r.name === n);
+  const ov = by(pk.overall), sp = by(pk.season);
+  const why = pk.overall === pk.season ? "" : ` His season number is within 0.1 of ${esc(pk.season)}'s, so this week decides.`;
+  const picks = `<div class="panel-b small" style="border-bottom:1px solid var(--line)"><b>Drop ${nameBtn(pk.overall)}${thenCut(ov.then)}.</b>${why}
+    <span class="muted">Best for this week: ${esc(pk.week)} (${p1(by(pk.week).week)}). Best for the season: ${esc(pk.season)} (${sp.season.toFixed(2)}%).</span></div>`;
+  const tag = (on, t, tip, cls = "") => on ? `<span class="tag ${cls}" title="${esc(tip)}">${t}</span>` : "";
+  const cut = r => ({ drop: [r.name], activate: r.stuck ? d.activate.filter(n => n !== r.name) : d.activate });  // the row's roster
+  const rows = d.rows.map(r => `<tr><td class="pname">${nameBtn(r.name)}${tag(r.name === pk.overall, "Overall", "The season pick, unless another drop is within 0.1 on the season: then the better one this week", "safe")}${tag(r.name === pk.week && r.name !== pk.overall, "This week", "Best for this week")}${tag(r.name === pk.season && r.name !== pk.overall, "Season", "Best for the season")}
+      ${tag(r.stuck, "IL slot", "Drop him, or leave him in the IL slot: the same numbers, but Yahoo won't let you add anyone while he's there")}${tag(r.status, esc(r.status), "Injury tag", "out")}
+      ${tag(r.chip, "trade chip", "The market ranks him in its first 8 rounds: he's worth more in a trade than dropped")}${r.fa ? tag(true, `${esc(r.fa.name)} over ${and(d.activate.map(esc))}`, `Dropping him and adding ${r.fa.name} instead of activating ${d.activate.join(" and ")}: ${r.fa.season.toFixed(2)}% for the season`) : ""}</td>
+    <td class="n val">${p1(r.week)}</td><td class="n">${p1(r.next)}</td><td class="n">${r.season.toFixed(2)}%</td>
+    ${r.playoffs != null ? `<td class="n">${chance(r.playoffs)}</td><td class="n">${(100 * r.title).toFixed(1)}%</td>` : ""}
+    <td class="names small">${r.then ? and(r.then.cut.map(esc)) : `<span class="muted">—</span>`}</td>
+    <td class="n" style="white-space:nowrap"><button class="btn ghost" data-act="drop-try" data-drop="${esc(r.name)}" title="Open this drop in Waivers' Try a move">Try</button>${doneBtn({ ...cut(r), plan: true }, "Use this", "Pick this drop without making it yet: This week, Start / sit, the add plan and Schedule are rebuilt on it")}${doneBtn(cut(r))}</td></tr>`).join("");
+  const po = d.rows.some(r => r.playoffs != null);
+  return `<div class="panel" id="drops">${head}${picks}<div class="tw"><table><thead><tr><th>Drop</th>
+      <th class="n" title="${oneWin() ? "Chance you win the matchup" : "Chance you win more categories than you lose"} this week with him gone">This week</th>
+      <th class="n" title="The same for next week${d.next ? `, vs ${esc(d.next.opponent)}` : ""}">Next week</th>
+      <th class="n" title="Your season ${WIN().of} with him gone${S.punt.length ? ", on your build" : ""}">Season</th>
+      ${po ? `<th class="n" title="Chance to make the playoffs">Playoffs</th><th class="n" title="Chance to win the league">Title</th>` : ""}
+      <th title="Who goes next, when the next player in an IL slot is back">Then cut</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
 
 // ---------- news on your players and their NBA teammates (rotation), loaded with My team ----------
 function newsPanel() {
@@ -794,23 +907,37 @@ function viewWeek() {
   const il = [back(w.back?.you, "yours:"), back(w.back?.them, esc(w.opponent) + "'s:")].filter(Boolean);
   const addOn = { h: `<span title="The best day to make the add: your drop plays his games until then">Add on</span>`,
     v: p => when(p.day) + (p.waiver ? `<span class="tag" title="On waivers: he only counts from the day the claim clears">claim by ${esc(p.waiver)}</span>` : "") };
-  const streamCols = [{ h: `<span title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}">This week</span>`, v: p => `<span class="val ${tone(p.gain)}">${delta(p.gain, "win%")}</span>` },
-    { h: "Drop", v: p => esc(p.drop) }, { h: `<span title="Change in your season-long ${WIN().of} if you keep him">Season</span>`, v: p => `<span class="${tone(p.season)}">${delta(p.season, "win%")}</span>` }, addOn];
+  const goalW = w.goal?.length ? `your ${and(w.goal.map(lab))} odds (Play for)` : w.weights ? "this week's categories, leaning as set" : "";
+  const streamCols = [{ h: `<span title="${goalW ? `Change in ${goalW}` : oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}">This week</span>`, v: p => `<span class="val ${tone(p.gain)}">${delta(p.gain, "win%")}</span>` },
+    { h: `<span title="Your real chance to win the week with him (now ${Math.round(w.win)}%)">Win</span>`, v: p => p.win == null ? "" : `<span class="${tone(p.win - w.win)}">${Math.round(p.win)}%</span>` },
+    { h: `<span title="The categories whose odds he moves most this week, now → with him (his starts against the drop's)">Gives</span>`, cls: "small", v: p => gives(p.cats) + (p.games != null && p.drop ? ` <span class="muted">· ${plural(p.games, "start")} for ${esc(p.drop)}'s ${p.kept}</span>` : "") },
+    { h: "Drop", v: p => p.drop ? esc(p.drop) : `<span class="muted" title="${thenBack(p.then) || "No drop: he takes your open roster spot"}">nobody: open spot</span>` }, { h: `<span title="Change in your season-long ${WIN().of} if you keep him">Season</span>`, v: p => `<span class="${tone(p.season)}">${delta(p.season, "win%")}</span>` }, addOn];
   return head(`Week ends ${end}${w.live ? tonight : " · no live score yet"}${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}`) + `
     <div class="panel"><div class="panel-h"><div class="verdict"><span class="pill ${verdict[0]}" style="text-transform:none">${verdict[1]}</span>
-      <dl class="side-by">${oneWin() ? winOdds + score : score + winOdds}${games}</dl></div></div>
+      <dl class="side-by">${oneWin() ? winOdds + score : score + winOdds}${games}</dl></div></div>${assumed(w)}
       <div class="tw"><table><thead><tr><th>Category</th><th class="n" title="${w.live ? "So far → projected final" : "Projected final"}">You</th><th class="n">${esc(w.opponent)}</th>
         <th class="n" title="Chance you win the category this week">Your odds</th><th>Call</th></tr></thead><tbody>
       ${cats.map(([c, d]) => `<tr class="${punted(c) ? "punted-col" : ""}"><td class="pname">${lab(c)}</td><td class="n">${side(c, d.you)}</td><td class="n">${side(c, d.them)}</td>
         <td class="n val"><span class="dot" style="background:${oddsColor(d.odds / 100)}"></span>${Math.round(d.odds)}%</td>
         <td><span class="tag ${d.call === "safe" ? "safe" : d.call === "lost" ? "out" : d.call}" title="${CALL_TIP[d.call]}">${CALL[d.call]}</span></td></tr>`).join("")}</tbody></table></div>
-      <div class="panel-b small muted" style="border-top:1px solid var(--line)">${advice} ${yg ? `Games played so far: ${yg.you.played} vs ${yg.them.played}.` : ""} Projected = ${w.live ? "the score so far plus " : ""}each player's games left × his per-game line × his chance of playing. Players in IL slots sit until they're back, then start in place of who's cut${il.length ? `: ${il.join("; ")}` : ""}.${tonight && w.live ? ` Games that have tipped off add their live box scores (nba.com) to the score so far, ${tn.lineups ? "for the starters in today's snapshot (Yahoo only scores starting slots, and a slot left empty goes to the best bench player who plays)" : "for whoever your best per-game lineup started (the snapshot isn't from today, so its lineups aren't known)"}, and lock those players: Start / sit leaves them be, and a move that drops one waits for tomorrow.` : ""}
+      ${leanRow(w)}
+      <div class="panel-b small muted" style="border-top:1px solid var(--line)">${advice} ${yg ? `Games played so far: ${yg.you.played} vs ${yg.them.played}.` : ""} Projected = ${w.live ? "the score so far plus " : ""}each player's games left × his per-game line × his chance of playing. Players in IL slots sit until they're back, then start in place of who's cut (yours on the day that wins the week most, or not this week)${il.length ? `: ${il.join("; ")}` : ""}.${tonight && w.live ? ` Games that have tipped off add their live box scores (nba.com) to the score so far, ${tn.lineups ? "for the starters in today's snapshot (Yahoo only scores starting slots, and a slot left empty goes to the best bench player who plays)" : "for whoever your best per-game lineup started (the snapshot isn't from today, so its lineups aren't known)"}, and lock those players: Start / sit leaves them be, and a move that drops one waits for tomorrow.` : ""}
         ${w.live ? "" : "No live score yet, so this assumes nothing has been played, which is right on Monday. A new snapshot adds the real score."}</div></div>
     ${lineupPanel(w)}
-    <div class="panel"><div class="panel-h"><div><h2>Streaming adds</h2><p>Free agents who most raise your odds this week, each swapped for whichever of your three cheapest healthy players helps most, on his best day: your drop plays until then. Season shows what keeping him does long-term.</p></div></div>
-      ${streamPlan(w)}${weekPaths(w)}
+    <div class="panel"${W.streamBusy ? ` style="opacity:.6"` : ""}><div class="panel-h"><div><h2>Streaming adds</h2><p>Free agents who most raise your odds this week, each into your open spot if you have one (no drop), else swapped for whichever of your three cheapest healthy players helps most, on his best day: your drop plays until then. Season shows what keeping him does long-term.${w.goal?.length ? ` <b>Playing for ${and(w.goal.map(lab))}</b> (Start / sit's Play for): This week counts ${w.goal.length > 1 ? "those categories" : "it"} only. Win is your real chance to win the week.` : ""}</p></div></div>
+      ${keepRow(w)}${streamPlan(w)}${weekPaths(w)}
       ${w.adds && !w.adds.left ? `<div class="empty"><b>No adds left this week</b>You've used all ${w.adds.max}. They reset ${esc(dayName(w.adds.resets))}. Waivers' moves still count for the season.</div>`
         : playerTable(w.streams, { extra: streamCols, empty: "<b>No stream helps this week</b>Nobody on waivers raises your odds by 0.1% or more over your weakest players." })}</div>`;
+}
+// Q29: a player stuck in an IL slot is counted in for whoever This week cuts, a move not made yet: say so
+function assumed(w) {
+  const xs = (w.assumes || []).map(a => `${esc(a.in)} in${a.for ? ` for ${esc(a.for)}` : ""}${a.from ? ` from ${a.from === w.today ? "today" : esc(dayName(a.from))}` : ""}`);
+  // B17: a player due back from an IL slot is left parked, or comes in on the day that wins the week most
+  const hs = (w.held || []).map(h => h.parked
+    ? `This leaves <b>${esc(h.name)}</b> in his IL slot all week: ${esc(h.for)} keeps playing (${h.win[0].toFixed(1)}% to win, against ${h.win[1].toFixed(1)}% activating him ${esc(dayName(h.day))}).`
+    : `This counts <b>${esc(h.name)}</b> in from ${h.day === w.today ? "today" : esc(dayName(h.day))} for ${esc(h.for)} (${h.win[0].toFixed(1)}% to win, against ${h.win[1].toFixed(1)}% leaving him in his IL slot).`);
+  const a = xs.length ? `This counts ${and(xs)}: you haven't made ${xs.length > 1 ? "those moves" : "that move"} yet. <button class="btn ghost" data-act="drops-go" style="padding-block:0">Who to drop</button> compares every option.` : "";
+  return a || hs.length ? `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${[a, ...hs].filter(Boolean).join(" ")}</div>` : "";
 }
 // start/sit (Q18): who starts each day left for the most category wins this week (or for the categories picked), every
 // sit, start and swap tested on the matchup odds; the picked day lists the lineup in slot order and what changing each call does
@@ -837,9 +964,9 @@ function lineupPanel(w) {
   if (!X.days.some(x => x.date === W.day)) W.day = (X.days.find(x => x.in.length || x.out.length) || X.days[0]).date;
   const day = d => d === w.today ? "Today" : esc(dayName(d));
   const rows = X.days.map(x => `<tr${x.date === W.day ? ` class="sel"` : ""}><td><button class="rowbtn" data-act="sit-day" data-date="${x.date}" aria-pressed="${x.date === W.day}" title="Show this day's lineup and every option">${day(x.date)}</button></td>
-    <td class="names">${x.sit.length ? and(x.sit.map(esc)) : `<span class="muted">Everyone starts</span>`}</td><td class="names">${change(x)}</td><td class="names">${why(x)}</td></tr>`).join("");
+    <td class="names">${x.sit.length ? (x.benched || x.sit.map(n => ({ name: n }))).map(b => `${esc(b.name)}${b.why ? ` <span class="muted">(${esc(b.why)})</span>` : ""}`).join("<br>") : `<span class="muted">Everyone starts</span>`}</td><td class="names">${change(x)}</td><td class="names">${why(x)}</td></tr>`).join("");
   return `<div class="panel" id="start-sit">${head}<div class="panel-b" style="border-bottom:1px solid var(--line)">${chips}<p class="small" style="margin:10px 0 0">${sum}</p></div>
-    <div class="tw"${W.sitBusy ? ` style="opacity:.5"` : ""}><table><thead><tr><th>Day</th><th>Sit</th><th title="What this plan does differently from starting your best per-game values">Change</th>
+    <div class="tw"${W.sitBusy ? ` style="opacity:.5"` : ""}><table><thead><tr><th>Day</th><th title="On your bench that day, still on your roster: his game doesn't count">Benched</th><th title="What this plan does differently from starting your best per-game values">Change</th>
       <th title="Your odds in each category from that day's changes">Moves</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${sitDay(X.days.find(x => x.date === W.day), w, goal)}</div>`;
 }
@@ -855,7 +982,7 @@ function sitDay(x, w, goal) {
     <div class="tw"><table><thead><tr><th>Slot</th><th>Player</th><th class="n" title="Chance he plays this game: how often he suits up, cut by an injury tag if he sat his team's last game. His line counts this share of a game">Plays</th>
       <th title="Teammates out that day whose minutes and shots he takes: counted in his line for the games before they're back">Boost</th>
       <th title="Change in ${unit} if you flip his call, with the best swap for it">If you change it${goal.length ? ` <span class="muted">(${and(goal.map(lab))} odds)</span>` : ""}</th></tr></thead><tbody>
-    ${rows.map(([s, n]) => !n ? `<tr><td class="muted">${esc(s)}</td><td colspan="4" class="muted">Empty: ${x.bench.length ? "left open, see who sits below" : "nobody with a game this day can play it"}</td></tr>` : `<tr><td class="muted">${esc(s)}</td><td class="pname">${esc(n)}${x.bench.includes(n) ? `<span class="tag out" title="A starting spot fits him, but his game costs your odds more than it adds">spot open</span>` : ""}</td>
+    ${rows.map(([s, n]) => !n ? `<tr><td class="muted">${esc(s)}</td><td colspan="4" class="muted">Empty: ${x.bench.length ? "left open, see who's benched below" : "nobody with a game this day can play it"}</td></tr>` : `<tr><td class="muted">${esc(s)}</td><td class="pname">${esc(n)}${x.bench.includes(n) ? `<span class="tag out" title="A starting spot fits him, but his game costs your odds more than it adds">spot open</span>` : ""}</td>
       ${by[n].locked ? `<td class="n muted">—</td>` : `<td class="n ${by[n].plays < 70 ? "neg" : by[n].plays < 85 ? "" : "muted"}">${by[n].plays}%</td>`}<td class="small">${boost(by[n].lift)}</td><td>${alt(by[n])}</td></tr>`).join("")}</tbody></table></div>`;
 }
 // every path this week (Nov 13): no move, the best found with 1, 2, ... adds, then the next best other plans
@@ -866,34 +993,62 @@ function weekPaths(w) {
   return `<div class="panel-b small" style="border-bottom:1px solid var(--line)"><b>Every path this week.</b> No move, the best plan found with each number of adds, then the next best other plans, each with the games your lineup starts and where the week ends up. Nothing is held back for late news here.</div>
     <div class="tw" style="border-bottom:1px solid var(--line)"><table><thead><tr><th class="n">Adds</th><th>Moves</th>${ps[0].games != null ? `<th class="n" title="Games your lineup starts the rest of this week">Starts</th>` : ""}<th class="n" title="Expected categories won and lost">Score</th><th class="n" title="Your chance to win more categories than you lose">Win</th><th class="n" title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, against no move">This week</th></tr></thead><tbody>
     ${ps.map(x => `<tr${x.pick ? ` style="background:var(--accent-soft)"` : ""}><td class="n">${x.adds}</td>
-      <td>${x.moves.length ? x.moves.map(m => `<span class="muted">${on(m.day)}:</span> ${nameBtn(m.add)} for ${nameBtn(m.drop)}`).join("<br>") : `<span class="muted">No moves</span>`}${x.pick ? `<span class="tag" title="The plan above${w.plan?.news?.kept ? ", with its last add kept for late news" : ""}">the plan</span>` : ""}</td>
+      <td>${x.moves.length ? x.moves.map(m => `<span class="muted">${on(m.day)}:</span> ${nameBtn(m.add)} ${into(m, nameBtn)}`).join("<br>") : `<span class="muted">No moves</span>`}${x.pick ? `<span class="tag" title="The plan above${w.plan?.news?.kept ? ", with its last add kept for late news" : ""}">the plan</span>` : ""}</td>
       ${x.games != null ? `<td class="n">${x.games}</td>` : ""}<td class="n">${x.score[0].toFixed(1)}–${x.score[1].toFixed(1)}</td><td class="n val">${x.win.toFixed(1)}%</td><td class="n ${tone(x.gain)}">${x.adds ? delta(x.gain, "win%") : ""}</td></tr>`).join("")}</tbody></table></div>`;
 }
+// Q34: lean on categories this week. Start / sit, streams and the plan favour them; the odds shown stay real
+function leanRow(w) {
+  const L = S.lean, on = Object.keys(L).length > 0;
+  const chip = c => `<button class="chip pick ${punted(c) ? "punted-col" : ""}" data-act="lean" data-cat="${c}" aria-pressed="${(L[c] || 1) > 1}" title="${(L[c] || 1) > 1 ? `Counts ${L[c]} times. Click for ${L[c] >= 3 ? "once again" : `${L[c] + 1} times`}` : "Click to count it double when picking your lineups, streams and plan"}">${lab(c)}${(L[c] || 1) > 1 ? ` ×${L[c]}` : ""}</button>`;
+  return `<div class="panel-b small" style="border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+    <span class="sugs" role="group" aria-label="Categories to lean on"><span class="field" title="For a category you think you can still take. Yahoo counts every category once, so leaning can only trade other categories for it: check Win before and after">Lean on</span>${S.state.cats.map(chip).join("")}</span>
+    ${on ? `<button class="btn ghost" data-act="lean" data-cat="">Clear</button><span>Start / sit, streams and the plan now favour ${and(Object.entries(L).map(([c, x]) => `${lab(c)} ×${x}`))}. Their gains count it that many times; Win, Score and the odds are real.</span>` : `<span class="muted">Click a category you think you can still win: your lineups, streams and plan then favour it.</span>`}</div>`;
+}
 // adds left this week (Q11) and the best way to spend them: one line for the last add, else the moves in order
+// who the streams may drop (the 3 you'd miss least over the season), and the ones you've said never to drop
+function keepRow(w) {
+  if (!w.drops?.length && !w.keep?.length) return "";
+  const chip = (n, on) => `<button class="chip pick" aria-pressed="${on}" data-act="keep" data-name="${esc(n)}" title="${on ? "Kept: no stream drops him, and he isn't the one cut when your player in an IL slot is back. Click to allow it again" : "Click to keep him: no stream will drop him, and the next cheapest player takes his place here"}">${esc(n)}</button>`;
+  return `<div class="panel-b small" style="border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+    <span>Streams may drop:</span>${w.drops.map(n => chip(n, false)).join("") || `<span class="muted">nobody</span>`}
+    ${w.keep.length ? `<span style="margin-left:8px">Never drop:</span>${w.keep.map(n => chip(n, true)).join("")}` : `<span class="muted">Click one to never drop him.</span>`}</div>`;
+}
+// Q32 (Martin, Nov 16: "is it possible to see like what they provide and why i should do that"): a move's biggest
+// category changes this week in words, gains first, then what it costs
+function gives(cs) {
+  const xs = Object.entries(cs || {}).map(([c, [a, b]]) => [c, a, b, b - a]).filter(x => Math.abs(x[3]) >= 0.5);
+  const one = ([c, a, b, d]) => `<span class="${punted(c) ? "punted-col" : ""}" style="white-space:nowrap">${lab(c)} ${Math.round(a)} → <span class="${tone(d)}">${Math.round(b)}%</span></span>`;
+  const up = xs.filter(x => x[3] > 0).sort((x, y) => y[3] - x[3]).slice(0, 3), down = xs.filter(x => x[3] < 0).sort((x, y) => x[3] - y[3]).slice(0, 2);
+  return [up.map(one).join(", "), down.length && `costs ${down.map(one).join(", ")}`].filter(Boolean).join("; ") || `<span class="muted">nothing moves much</span>`;
+}
 function streamPlan(w) {
   const A = w.adds, P = w.plan, m = P?.moves || [];
   const on = d => d === w.today ? "today" : "on " + esc(dayName(d));
-  const tip = A && `Yahoo's count in the snapshot${A.listed != null ? ` (${A.listed})` : ""} or the adds and waiver claims in its transaction log since ${mdy(A.week_start)} (${A.counted}), whichever is higher. Moves made after the snapshot aren't counted.`;
-  const left = A ? `<b title="${esc(tip)}">${A.left ? `${A.left} of ${A.max} adds left` : "No adds left"}</b> this week (${A.used} used). ` : "";
+  const tip = A && `Yahoo's count in the snapshot${A.listed != null ? ` (${A.listed})` : ""} or the adds and waiver claims in its transaction log since ${mdy(A.week_start)} (${A.counted}), whichever is higher. A move made after the snapshot counts once you mark it Done on Yahoo.`;
+  const B = w.add_by, byTip = "Left in his IL slot once he's healthy, he blocks every add until you activate or drop him. Yahoo drops the injury tag once he plays, sometimes that morning.";
+  const left = (A ? `<b title="${esc(tip)}">${A.left ? `${A.left} of ${A.max} adds left` : "No adds left"}</b> this week (${A.used} used). ` : "")
+    + (B && (!A || A.left) ? `<b title="${esc(byTip)}">Make them by ${B.day < w.today ? "now" : B.day === w.today ? "today" : esc(dayName(B.day))}</b>: once ${esc(B.player)} plays, his tag drops and Yahoo blocks adds until he's moved. ` : "");
   const keep = P && P.keep.length ? ` You end the week with ${and(P.keep.map(esc))}: <span class="${tone(P.season)}">${delta(P.season, "win%")}</span> for the season.` : "";
   // M17: the last add only goes on a move worth more than keeping it for someone ruled out later in the week
   const N = P?.news, newsTip = "Players who are playing get ruled out for their next game about 7% of the time, more if they often miss games, and about 4 in 10 of those miss the rest of the week (2022-23 to 2025-26 box scores). This is that chance for each of your games left times what a stream into his games wins then, on average.";
   const hold = !N ? "" : N.kept
-    ? ` <b title="${esc(newsTip)}">Keep your last add for late news</b>: if one of your players is ruled out later this week, an add then is worth <span class="pos">${delta(N.worth, "win%")}</span> on average, more than ${esc(N.move.add)} for ${esc(N.move.drop)} now (<span class="${tone(N.move.gain)}">${delta(N.move.gain, "win%")}</span>).`
+    ? ` <b title="${esc(newsTip)}">Keep your last add for late news</b>: if one of your players is ruled out later this week, an add then is worth <span class="pos">${delta(N.worth, "win%")}</span> on average, more than ${esc(N.move.add)} ${into(N.move)} now (<span class="${tone(N.move.gain)}">${delta(N.move.gain, "win%")}</span>).`
     : ` <span title="${esc(newsTip)}">That last add beats keeping it for late news (<span class="pos">${delta(N.worth, "win%")}</span> on average).</span>`;
   if (!m.length) return A?.left ? `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}${hold}</div>` : "";
   if (A && A.left === 1) { const x = m[0];
-    return `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}Your last one is best spent ${on(x.day)}: add <b>${nameBtn(x.add)}</b> for ${nameBtn(x.drop)} (<span class="pos">${delta(x.gain, "win%")}</span>${x.games != null ? `, ${plural(x.games, "start")}` : ""}).
+    return `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}Your last one is best spent ${on(x.day)}: add <b>${nameBtn(x.add)}</b> ${into(x, nameBtn)} (<span class="pos">${delta(x.gain, "win%")}</span>${x.games != null ? `, ${plural(x.games, "start")}` : ""}${P.cats ? `; ${gives(P.cats)}` : ""}).${doneBtn({ add: [x.add], drop: x.drop ? [x.drop] : [] })} ${thenBack(x.then)}${x.then?.length ? "." : ""}
       ${x.day > w.today ? `Hold it until then: ${x.kept ? `${esc(x.drop)} starts ${plural(x.kept, "more game")} first` : "waiting costs nothing"}, and the add is still yours if someone gets hurt.` : ""}${hold}${keep}</div>`; }
   return `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}${A ? `The best way to spend ${A.left > 1 ? "them" : "it"}` : "The best streams in a row (no weekly add limit)"}, each on top of the one before. A later one can replace an earlier streamer once his games are used.</div>
-    <div class="tw" style="border-bottom:1px solid var(--line)"><table><thead><tr><th>Day</th><th>Add</th><th>Drop</th><th class="n" title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, on top of the moves above">This week</th>${m[0].games != null ? `<th class="n" title="Games he starts for you this week">Starts</th>` : ""}</tr></thead><tbody>
-    ${m.map(x => `<tr><td>${x.day === w.today ? "Today" : esc(dayName(x.day))}</td><td class="pname">${nameBtn(x.add)}${x.end ? `<span class="tag" title="Cut after this day, when your player in an IL slot is back">until ${esc(dayName(x.end))}</span>` : ""}</td><td>${nameBtn(x.drop)}</td><td class="n val ${tone(x.gain)}">${delta(x.gain, "win%")}</td>${x.games != null ? `<td class="n">${x.games}</td>` : ""}</tr>`).join("")}</tbody></table></div>
-    <div class="panel-b small muted" style="border-bottom:1px solid var(--line)">Together <span class="pos">${delta(P.gain, "win%")}</span> this week.${hold}${keep}</div>`;
+    <div class="tw" style="border-bottom:1px solid var(--line)"><table><thead><tr><th>Day</th><th>Add</th><th>Drop</th><th class="n" title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, on top of the moves above">This week</th>${m[0].games != null ? `<th class="n" title="Games he starts for you this week">Starts</th>` : ""}<th></th></tr></thead><tbody>
+    ${m.map(x => `<tr><td>${x.day === w.today ? "Today" : esc(dayName(x.day))}</td><td class="pname">${nameBtn(x.add)}${x.end ? `<span class="tag" title="Cut after this day, when your player in an IL slot is back">until ${esc(dayName(x.end))}</span>` : ""}</td><td>${x.drop ? nameBtn(x.drop) : `<span class="muted">nobody: open spot</span>`}</td><td class="n val ${tone(x.gain)}">${delta(x.gain, "win%")}</td>${x.games != null ? `<td class="n">${x.games}</td>` : ""}<td class="n">${doneBtn({ add: [x.add], drop: x.drop ? [x.drop] : [] })}</td></tr>`).join("")}</tbody></table></div>
+    <div class="panel-b small muted" style="border-bottom:1px solid var(--line)">Together <span class="pos">${delta(P.gain, "win%")}</span> this week${P.cats ? `: ${gives(P.cats)}` : ""}.${m.some(x => x.then?.length) ? ` ${thenBack(m.find(x => x.then?.length).then)}.` : ""}${hold}${keep}</div>`;
 }
 async function loadWeek(opponent) {
-  const W = S.week; W.loading = true;
-  try { W.data = await api("/api/week", opponent ? { opponent } : {}); } catch (e) { W.data = { error: e.message }; }
-  W.loading = false;
+  const W = S.week, goal = W.goal; W.loading = true; W.streamBusy = !!W.data;
+  let r;
+  try { r = await api("/api/week", { ...(opponent ? { opponent } : {}), keep: S.keep, weights: S.lean, cats: goal || [] }); } catch (e) { r = { error: e.message }; }
+  if (W.goal !== goal) return;  // Play for changed meanwhile: that answer is the one to show
+  W.data = r; W.loading = W.streamBusy = false;
   if (S.week === W && S.view === "week") render();
 }
 // Start / sit for the categories picked (none: the week's own lineups, already loaded)
@@ -901,7 +1056,7 @@ async function loadSit(W) {
   const goal = W.goal;
   if (!goal.length) { W.sit = null; W.sitBusy = false; return render(); }
   W.sitBusy = true; render();
-  try { const r = await api("/api/lineup", { cats: goal }); if (W.goal === goal) W.sit = r; }
+  try { const r = await api("/api/lineup", { cats: goal, weights: S.lean }); if (W.goal === goal) W.sit = r; }
   catch (e) { toast(`Couldn't test lineups: ${e.message}`); if (W.goal === goal) W.goal = W.sit?.goal || []; }
   if (W.goal === goal) W.sitBusy = false;
   if (S.week === W && S.view === "week") render();
@@ -918,7 +1073,7 @@ function viewSchedule() {
   if (!d) { if (!P.loading) loadSchedule(); return head + `<div class="panel">${SKEL}</div>`; }
   if (d.error) return head + `<div class="panel err">Couldn't load the schedule: ${esc(d.error)} <button class="btn" data-act="sched-retry">Try again</button></div>`;
   if (!d.weeks.length) return head + `<div class="panel"><div class="empty"><b>No NBA schedule yet</b>The planner needs the NBA's game schedule, which the app downloads from stats.nba.com and keeps for a day. Press Refresh once it can be reached.</div></div>`;
-  return head + calendarPanel(d) + `<div class="panel"><div class="panel-h"><div><h2>Your players</h2><p>NBA games per week after any return date. A red number after it is games he'd sit because ${d.lineup} better players have one that day. The rows add up to the calendar's Starts and Sit; a game already under way isn't one left.${d.roster.some(p => p.il) ? ` Back from an IL slot this week: ${and(d.roster.filter(p => p.il).map(p => esc(p.name)))}, from his first game.` : ""}${d.il.length ? ` In IL slots, not counted: ${and(d.il.map(x => esc(x.name) + (x.return ? ` (back ${mdy(x.return)})` : "")))}.` : ""}</p></div></div>
+  return head + calendarPanel(d) + `<div class="panel"><div class="panel-h"><div><h2>Your players</h2><p>NBA games per week after any return date. A red number after it is games he'd sit because ${d.lineup} better players have one that day. The rows add up to the calendar's Starts and Sit; a game already under way isn't one left.${d.roster.some(p => p.il) ? ` Back from an IL slot this week: ${and(d.roster.filter(p => p.il).map(p => esc(p.name)))}, from the day This week brings him in.` : ""}${d.il.length ? ` In IL slots, not counted: ${and(d.il.map(x => esc(x.name) + (x.return ? ` (back ${mdy(x.return)})` : "")))}.` : ""}</p></div></div>
     ${playerTable(d.roster.map(p => ({ ...p, games: undefined })), { extra: d.weeks.map((w, i) => ({ h: `<span${i ? "" : ` title="NBA games left in your matchup week"`}>${weekName(w, i)}</span>`,
       v: p => { const x = p.sched[i]; if (!x) return `<span class="muted" title="In an IL slot: counted from his return this week only">—</span>`;
         const lost = x.games - x.starts; return `<span class="${x.games >= 4 ? "pos" : x.games <= 1 ? "neg" : ""}">${x.games}</span>${lost ? ` <span class="small neg" title="${lost} of his ${x.games} games land on days your lineup is full">−${lost}</span>` : ""}`; } })) })}</div>`
@@ -1100,7 +1255,7 @@ function tradeResult(r) {
       <dl class="side-by"><div><dt>You</dt><dd class="${tone(r.net)}">${sign(r.net)}</dd></div>
         <div><dt>${esc(r.other_team || "Them")}${r.their_build?.length ? ` (weak ${r.their_build.map(lab).join("/")})` : ""}</dt><dd class="${tone(r.their_net)}">${sign(r.their_net)}</dd></div>
         <div><dt title="How it looks to them on this season's numbers">How it looks to them</dt><dd class="${tone(r.their_view)}">${sign(r.their_view)}</dd></div></dl></div>
-      <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="copy-offer" title="Copies the offer and a short pitch to paste into Yahoo's trade note, and logs it under Offers sent">Copy offer</button><button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div></div>
+      <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="copy-offer" title="Copies the offer and a short pitch to paste into Yahoo's trade note, and logs it under Offers sent">Copy offer</button><button class="btn" data-act="pitch">Ask AI GM for a pitch</button><button class="btn" data-act="accepted" title="The trade went through on Yahoo: both rosters change on every tab until your next snapshot shows it, and the offer is marked Accepted under Offers sent">They accepted</button></div></div>
     ${isPoints() ? "" : `<div class="cats" style="--n:${cats.length}">${cats.map(([c, v]) => `<div class="cat ${punted(c) ? "punted" : ""}"><span class="lbl">${lab(c)}</span><span class="rk ${tone(v)}" style="font-size:17px">${sign(v)}</span>
       <div class="bar"><i style="width:${Math.min(Math.abs(v) / 3, 1) * 100}%;background:${v >= 0 ? "var(--pos)" : "var(--neg)"}"></i></div></div>`).join("")}</div>`}
     <div class="panel-b small muted" style="border-top:1px solid var(--line)">Uneven trades include the cost of dropping (or the gain of picking up) a waiver-level player. ${r.their_view > 0.3 && r.their_net < 0 ? "They'd likely see this as a win on hype alone." : ""}</div></div>`;
@@ -1143,7 +1298,7 @@ function tradeResultOdds(r) {
         ${r.playoffs ? `<div><dt title="Chance to make the playoffs: your record so far plus the rest of the season simulated, both rosters updated">Playoff odds</dt><dd><span class="${tone(r.playoffs.you[1] - r.playoffs.you[0])}">${delta(r.playoffs.you[1] - r.playoffs.you[0], "win%")}</span> <span class="muted small">${r.playoffs.you.map(v => chance(v / 100)).join(" → ")} · them ${r.playoffs.them.map(v => chance(v / 100)).join(" → ")}</span></dd></div>` : ""}
         ${r.title ? `<div><dt title="Chance to win the league: the same simulation through the playoff bracket">Title odds</dt><dd><span class="${tone(r.title.you[1] - r.title.you[0])}">${delta(r.title.you[1] - r.title.you[0], "win%")}</span> <span class="muted small">${r.title.you.map(v => chance(v / 100)).join(" → ")} · them ${r.title.them.map(v => chance(v / 100)).join(" → ")}</span></dd></div>` : ""}
         <div><dt title="Mostly the market, a little how it really helps them">Will they say yes</dt><dd>${acceptPill(r.accept)}</dd></div></dl></div>
-      <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="copy-offer" title="Copies the offer and a short pitch to paste into Yahoo's trade note, and logs it under Offers sent">Copy offer</button><button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div></div>
+      <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="copy-offer" title="Copies the offer and a short pitch to paste into Yahoo's trade note, and logs it under Offers sent">Copy offer</button><button class="btn" data-act="pitch">Ask AI GM for a pitch</button><button class="btn" data-act="accepted" title="The trade went through on Yahoo: both rosters change on every tab until your next snapshot shows it, and the offer is marked Accepted under Offers sent">They accepted</button></div></div>
     ${base}${cats}
     <div class="panel-b small muted" style="border-top:1px solid var(--line)">${WIN().h} = ${WIN().def}, with both rosters updated. ${moves}
       On this season's hot and cold starts alone it looks ${r.their_view > 0.3 ? "good" : r.their_view < -0.3 ? "bad" : "even"} to them (${sign(r.their_view)}).
@@ -1210,7 +1365,7 @@ function findPanel() {
       <label class="field" title="Consolidate: you send more players than you get. Depth: you get more.">Shape <select id="f-shape">${opt("", "Any", F.shape)}${opt("consolidate", "Consolidate", F.shape)}${opt("depth", "Depth", F.shape)}</select></label>
       <label class="field" title="The most you'll overpay on market value. Each difficulty allows up to 30%">Max overpay <select id="f-overpay">${opt("", "Default", F.overpay)}${["20", "10", "0"].map(k => opt(k, k + "%", F.overpay)).join("")}</select></label>
       <label class="field" title="Keep the market's top players out of it on both sides, for deals between role players. Players you check stay in.">Players <select id="f-outside">${opt("", "Any", F.outside)}${["60", "100"].map(k => opt(k, `Outside the top ${k}`, F.outside)).join("")}</select></label>
-      <label class="field"><input type="checkbox" id="f-healthy" ${F.healthy ? "checked" : ""}>Healthy only</label>
+      <label class="field" title="Leave out deals that bring you an injured player. Waivers' Healthy only is a different box: it takes injured free agents off waivers"><input type="checkbox" id="f-healthy" ${F.healthy ? "checked" : ""}>Skip injured players I'd get</label>
       <label class="field" title="On: your gain is measured against the waiver moves you could make without a trade (listed below), so a deal gets no credit for a pickup. Off: on your roster as it is today, as if you make no pickups."><input type="checkbox" id="f-mine" ${F.mine ? "checked" : ""}>Count my waiver moves</label>
       <label class="field" title="On: the other team is measured against the waiver moves it could make instead. Off: it's judged on the trade alone, the way most managers look at an offer."><input type="checkbox" id="f-theirs" ${F.theirs ? "checked" : ""}>Count their waiver moves</label>`}`;
   const can = !running(F) && !(F.goal === "cats" && !F.cats.length && !isPoints());
@@ -1440,21 +1595,74 @@ function viewWaivers() {
   // Try: load a move into Try a move (a side left undefined keeps what's there; a null drop is the open spot)
   const tryBtn = (add, drop) => `<button class="btn ghost" data-act="mv-try"${add === undefined ? "" : ` data-add="${esc(add)}"`}${drop === undefined ? "" : ` data-drop="${esc(drop || "")}"`} title="Score ${add === undefined ? "dropping him" : drop === undefined ? "adding him" : "this move"} under Try a move">Try</button>`;
   const moves = w.moves.length ? `<div class="tw"><table><thead><tr><th>Add</th><th>Drop</th><th class="n"${odds && lostTip() ? ` title="${lostTip()}"` : ""}>${odds ? WIN().h : "Gain"}</th><th></th></tr></thead><tbody>
-    ${w.moves.map(m => `<tr><td class="pname">${nameBtn(m.add)}</td><td>${m.drop ? nameBtn(m.drop) : `<span class="muted" title="${m.park ? "He's out: he goes into a free IL slot and starts once he's back" : ""}">${m.park ? "IL slot, no drop" : "Open spot"}</span>`}${m.sell ? `<div class="small muted" title="The model would drop ${esc(m.sell)} here, but the market rates him as a trade piece: sell him instead of cutting him">Keeps ${esc(m.sell)}: sell him instead</div>` : ""}</td><td class="n pos val">${delta(m.gain, m.unit)}</td><td class="n">${tryBtn(m.add, m.drop)}</td></tr>`).join("")}</tbody></table></div>`
+    ${w.moves.map(m => `<tr><td class="pname">${nameBtn(m.add)}</td><td>${m.drop ? nameBtn(m.drop) : `<span class="muted" title="${m.park ? "He's out: he goes into a free IL slot and starts once he's back" : ""}">${m.park ? "IL slot, no drop" : "Open spot"}</span>`}${m.sell ? `<div class="small muted" title="The model would drop ${esc(m.sell)} here, but the market rates him as a trade piece: sell him instead of cutting him">Keeps ${esc(m.sell)}: sell him instead</div>` : ""}</td><td class="n pos val">${delta(m.gain, m.unit)}</td><td class="n" style="white-space:nowrap">${tryBtn(m.add, m.drop)}${doneBtn(madeOf(m))}</td></tr>`).join("")}</tbody></table></div>`
     : `<div class="empty"><b>No clear upgrades</b>Nobody on waivers beats your weakest healthy player by enough to bother.</div>`;
   const tryCol = { h: "", v: p => tryBtn(p.name) }, dropCol = { h: "", v: p => tryBtn(undefined, p.name) };
   const A = S.state.adds, addsLeft = !A ? "" : A.left ? ` ${A.left} of ${A.max} adds left this week.` : ` You've used all ${A.max} adds this week: these moves wait until ${esc(dayName(A.resets))}.`;
   return `<div class="head"><div><h1>Waivers</h1><p class="sub">${odds ? `Free agents ranked by how much they'd raise your ${WIN().of}, swapped for your best drop.` : "Free agents ranked on your build."} Injured players on your roster are never suggested as drops.${addsLeft}</p></div>
       <label class="field" title="Leave injured free agents (out, IL, suspended) out of these suggestions, This week's streams, and the waiver moves trades and Strategy are scored on top of"><input type="checkbox" id="w-healthy" ${S.healthyFa ? "checked" : ""}>Healthy only</label></div>
+    ${watchPanel(tryBtn)}
     ${movePanel()}
     <div class="grid2"><div class="panel"><div class="panel-h"><div><h2>Suggested moves</h2><p>${odds ? `Add/drop pairs that clearly raise your ${WIN().of}.` : "Add/drop pairs worth at least +0.3."}${w.free?.length ? ` Trades are scored as if you'd made these first: ${freeList(w.free)}.` : ""}</p></div></div>${moves}</div>
       <div class="panel"><div class="panel-h"><div><h2>Drop candidates</h2><p>${odds ? "The healthy players you'd miss least." : "Your three weakest healthy players."}</p></div></div>${playerTable(w.drop_candidates, { extra: [dropCol] })}</div></div>
-    <div class="panel"><div class="panel-h"><div><h2>Best available</h2><p>Top ${w.free_agents.length} free agents.</p></div></div>${playerTable(w.free_agents, { extra: [...(odds ? [{ h: "If added", v: p => `<span class="${tone(p.fit)} val">${delta(p.fit, "win%")}</span>` }] : []),
-      ...(w.free_agents.some(p => p.owned != null) ? [{ h: `<span title="Share of Yahoo leagues that roster him">Owned</span>`, v: p => p.owned != null ? `${p.owned}%` : "" }] : []),
-      ...(w.free_agents.some(p => p.waiver) ? [{ h: "Add", v: p => p.waiver ? `<span class="tag" title="On waivers: put in a claim">claim by ${esc(p.waiver)}</span>` : `<span class="muted">now</span>` }] : []), tryCol], empty: "No free agent data. Refresh from Yahoo." })}</div>
+    ${bestAvailable(w, odds, tryCol)}
     ${w.dropped?.length ? `<div class="panel"><div class="panel-h"><div><h2>Recently dropped</h2><p>Players let go in the snapshot's latest moves, newest first. Nobody has picked them up since.</p></div></div>
       ${playerTable(w.dropped, { extra: [{ h: "Dropped by", v: p => esc(p.by) }, { h: "When", v: p => `<span class="muted">${esc(p.when)}</span>` },
         ...(w.dropped.some(p => p.waiver) ? [{ h: "Add", v: p => p.waiver ? `<span class="tag" title="On waivers: put in a claim">claim by ${esc(p.waiver)}</span>` : `<span class="muted">now</span>` }] : [])] })}</div>` : ""}`;
+}
+
+// Q32: the watchlist (data/watch.json, so the AI GM sees it too): each player's status, value on your build, what
+// adding him today is worth and for whom, and what changed since the last snapshot
+function watchPanel(tryBtn) {
+  const ws = S.state.watch || [], me = S.state.me;
+  if (!ws.length) return "";
+  const live = ws.filter(x => !x.missing), gone = ws.filter(x => x.missing);
+  const off = n => `<button class="btn ghost" data-act="watch" data-on="1" data-name="${esc(n)}" title="Take him off the watchlist">Unwatch</button>`;
+  const cols = [
+    { h: `<span title="What changed since the last snapshot, else when you started watching him">Since</span>`, cls: "small", v: p => p.changes.length ? p.changes.map(c => `<span class="tag safe">${esc(c)}</span>`).join(" ") : `<span class="muted">watching since ${mdy(p.since)}</span>` },
+    { h: `<span title="Free agents: the change in your season ${WIN().of} if you add him today, for your best drop (as Waivers scores it). Others: whose he is">If added</span>`, cls: "small",
+      v: p => p.team === "FA" ? (p.gain == null ? "" : `<span class="${tone(p.gain)} val">${delta(p.gain, "win%")}</span> <span class="muted">${p.drop ? "for " + esc(p.drop) : "into the open spot"}</span>`) : `<span class="muted">${p.team === me ? "yours" : esc(p.team)}</span>` },
+    { h: "", v: p => `<span style="white-space:nowrap">${p.team === "FA" ? tryBtn(p.name) : p.team && p.team !== me ? `<button class="btn ghost" data-act="offers" data-name="${esc(p.name)}" data-team="${esc(p.team)}">Find offers</button>` : ""}${off(p.name)}</span>` }];
+  return `<div class="panel" id="watch"><div class="panel-h"><div><h2>Watchlist</h2><p>Players you're keeping an eye on (Watch on any player card). A green tag is something that changed since the last snapshot: back from injury, dropped, picked up, or newly worth adding.</p></div></div>
+    ${playerTable(live, { extra: cols })}${gone.length ? `<div class="panel-b small muted">No longer in the player pool: ${gone.map(x => `${esc(x.name)} ${off(x.name)}`).join(" ")}</div>` : ""}</div>`;
+}
+// Q32: Best available you can steer: position, a name, a sort, and Play for (ranked on those categories' odds, the
+// full number beside it). Filters run here on the model's 40 best (and 40 best on the categories played for)
+const WV_POS = ["PG", "SG", "SF", "PF", "C"];
+const plain = x => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+async function loadWaivers(V) {
+  V.for = S.state; V.data = null;
+  try { const r = await api("/api/waivers", { cats: V.goal }); if (V.for === S.state) V.data = r; }
+  catch (e) { toast(`Couldn't rank for ${and(V.goal.map(lab))}: ${e.message}`); V.goal = []; store.set("wvGoal", []); }
+  if (S.view === "waivers") render();
+}
+function bestAvailable(w, odds, tryCol) {
+  const V = S.wv, goal = V.goal.filter(c => !punted(c)), cats = S.state.cats;
+  if (goal.length && V.for !== S.state) loadWaivers(V);
+  const src = goal.length ? V.data : w, busy = goal.length && !V.data;
+  const key = { week: p => p.week ?? -99, value: p => p.value, games: p => p.games ?? -1, next: p => p.next ?? -1 }[V.sort] || (cats.includes(V.sort) ? p => p.z[V.sort] : null);
+  const steered = V.pos || V.q.trim() || key;
+  let list = (src?.free_agents || []).filter(p => (!V.pos || (p.pos || "").split(",").includes(V.pos)) && (!V.q.trim() || plain(p.name).includes(plain(V.q.trim()))));
+  if (key) list = [...list].sort((a, b) => key(b) - key(a));
+  if (!steered) list = list.slice(0, 15);
+  const gl = and(goal.map(lab));
+  const bar = `<div class="toolbar" style="padding:10px 16px;border-bottom:1px solid var(--line)">
+    <label class="field">Position <select id="wv-pos">${opt("", "Any", V.pos)}${WV_POS.map(x => opt(x, x, V.pos)).join("")}</select></label>
+    <label class="field">Name <input type="search" class="input" id="wv-q" value="${esc(V.q)}" placeholder="Search" autocomplete="off" style="width:150px;max-width:100%"></label>
+    <label class="field">Sort by <select id="wv-sort">${opt("", odds ? (goal.length ? `If added (${gl})` : "If added") : "Value", V.sort)}${odds ? opt("week", "This week", V.sort) + opt("value", "Value", V.sort) : ""}${opt("games", "Games this week", V.sort)}${opt("next", "Games next week", V.sort)}${odds ? cats.map(c => opt(c, lab(c), V.sort)).join("") : ""}</select></label>
+    ${odds ? `<span class="sugs" role="group" aria-label="Categories to play for"><span class="field" title="Rank free agents on these categories' odds only. The full number stays beside it: chasing a category can cost the rest">Play for</span>
+      <button class="chip pick" data-wvcat="" aria-pressed="${!goal.length}">All</button>${cats.map(c => `<button class="chip pick ${punted(c) ? "punted-col" : ""}" data-wvcat="${c}" aria-pressed="${goal.includes(c)}"${punted(c) ? ` disabled title="You're punting ${lab(c)}"` : ""}>${lab(c)}</button>`).join("")}</span>` : ""}</div>`;
+  const extra = [...(odds ? [...(goal.length ? [{ h: `<span title="Change in the average of your ${gl} odds over a season if you add him, for his best drop on them">${gl}</span>`, v: p => `<span class="${tone(p.goal_fit)} val">${delta(p.goal_fit, "win%")}</span>${p.goal_drop ? ` <span class="muted small">for ${esc(p.goal_drop)}</span>` : ""}` }] : []),
+      { h: `<span title="Change in your season ${WIN().of} if you add him, for your best drop">${goal.length ? "All" : "If added"}</span>`, v: p => `<span class="${tone(p.fit)} ${goal.length ? "" : "val"}">${delta(p.fit, "win%")}</span>` },
+      ...(list.some(p => p.week != null) ? [{ h: `<span title="Change in your share of this week's categories if you add him today for whichever of your three cheapest players helps most. This week's Streaming adds times each one">This week</span>`, v: p => p.week == null ? "" : `<span class="${tone(p.week)}">${delta(p.week, "win%")}</span>` }] : [])] : []),
+    ...(list.some(p => p.next != null) ? [{ h: `<span title="His NBA games in the next matchup week">Next wk</span>`, v: p => p.next ?? "" }] : []),
+    ...(list.some(p => p.owned != null) ? [{ h: `<span title="Share of Yahoo leagues that roster him">Owned</span>`, v: p => p.owned != null ? `${p.owned}%` : "" }] : []),
+    ...(list.some(p => p.waiver) ? [{ h: "Add", v: p => p.waiver ? `<span class="tag" title="On waivers: put in a claim">claim by ${esc(p.waiver)}</span>` : `<span class="muted">now</span>` }] : []), tryCol];
+  const n = (src?.free_agents || []).length;
+  const sub = goal.length ? `Ranked on your ${gl} odds over a season; All is the full number, since chasing ${goal.length > 1 ? "them" : "it"} can cost the rest.` : `Top ${steered ? n : list.length} free agents${steered ? `, ${list.length} shown` : ""}.`;
+  const none = V.q.trim() ? `<b>Nobody here matches</b>This list holds the ${n} best free agents. <button class="btn ghost" data-act="mv-try" data-add="${esc(V.q.trim())}">Try ${esc(V.q.trim())}</button> scores any free agent.` : "No free agent fits those filters.";
+  return `<div class="panel" id="best"><div class="panel-h"><div><h2>Best available</h2><p>${sub}</p></div></div>${bar}
+    ${busy ? SKEL : playerTable(list, { extra, empty: n ? none : "No free agent data. Refresh from Yahoo." })}</div>`;
 }
 
 // ---------- try a move (Q7): any add and any drop, this week and the season, on today's roster ----------
@@ -1471,33 +1679,37 @@ function movePanel() {
       <datalist id="mv-fas">${fas.map(p => `<option value="${esc(p.name)}">Free agent</option>`).join("")}</datalist>
       <label class="field">Drop <select id="mv-drop" title="Pick for me: your open spot if you have one, else the healthy player you'd miss least">${opt("", "Pick for me", M.drop)}${mine.map(p => opt(p.name, p.name + (p.il ? " · IL slot" : "") + (p.status ? ` (${p.status})` : ""), M.drop)).join("")}</select></label>
       ${days.length ? `<label class="field">Make it on <select id="mv-day" title="This week's number counts the move from this day, and your drop plays his games until then. Best day: whichever helps this week most">${opt("", "Best day", M.day)}${days.map(d => opt(d, dayName(d), M.day)).join("")}</select></label>` : ""}
-      <button class="btn primary" data-act="mv-eval" ${M.add && !running(M) ? "" : "disabled"}>${running(M) ? "Evaluating…" : "Evaluate move"}</button>
+      <button class="btn primary" data-act="mv-eval" ${(M.add || M.drop) && !running(M) ? "" : "disabled"}>${running(M) ? "Evaluating…" : "Evaluate move"}</button>
       ${M.add || M.drop ? `<button class="btn ghost" data-act="mv-clear">Clear</button>` : ""}</div>`;
   const desc = isPoints() ? "Pick any free agent and any of your players to see what the swap does to your fantasy points per game."
-    : `Pick any free agent and any of your players to see what the swap does to your ${WIN().of}, this week and for the season. Scored on today's roster, the same way as Suggested moves (not on top of them).`;
+    : `Pick any free agent and any of your players to see what the swap does to your ${WIN().of}, this week and for the season (or only a drop, to open a spot or activate a player from an IL slot). Scored on today's roster, the same way as Suggested moves (not on top of them).`;
   return `<div class="panel" id="move"><div class="panel-h"><div><h2>Try a move</h2><p>${desc}</p></div></div>${form}${r ? moveResult(r) : ""}</div>`;
 }
 function moveResult(r) {
-  const add = r.add, picked = r.drop.find(x => !x.auto), auto = r.drop.filter(x => x.auto), wk = r.week, gone = r.drop.filter(x => !x.parked);
+  const add = r.add || {}, picked = r.drop.find(x => !x.auto), auto = r.drop.filter(x => x.auto), wk = r.week, gone = r.drop.filter(x => !x.parked);
   const notes = [
     auto.length && (picked ? (picked.parked ? `Dropping ${esc(picked.name)} frees no active spot, so ${and(auto.map(x => esc(x.name)))} goes too (the player you'd miss least).`
       : `No room for him: ${and(auto.map(x => esc(x.name)))} goes too (the player you'd miss least).`)
       : `You'd drop ${and(auto.map(x => esc(x.name)))}, the healthy player you'd miss least.`),
     !r.drop.length && !add.parks && `He goes into your open spot.`,
+    r.activate?.length && `${and(r.activate.map(esc))} ${r.activate.length > 1 ? "move" : "moves"} out of the IL slot into the spot, from today.`,
     add.parks && `He's injured, so he goes into a free IL slot, no drop, and plays from his return (this week too, if he's back in time).`,
     r.open && `This leaves ${plural(r.open, "active spot")} open. Filling ${r.open > 1 ? "them is more adds" : "it is another add"}: try that move too.`,
     wk?.claim && `He's on waivers: he counts from ${mdy(wk.claim)}, when the claim clears.`,
     wk?.day && wk.day > (wk.claim || wk.today) && `This week it's ${S.move.day ? "made" : "best made"} on ${esc(dayName(wk.day))}${wk.games?.kept ? `: ${and(gone.map(x => esc(x.name)))} ${gone.length > 1 ? "start" : "starts"} ${plural(wk.games.kept, "more game")} first` : ", his first game"}.`,
     r.capped && `You've used all ${r.adds.max} adds this week, so the move waits until ${esc(dayName(r.adds.resets))}: the season number still counts, this week's doesn't.`,
-    r.adds && !r.capped && (r.adds.left === 1 ? `It's your last add this week.` : `It uses 1 of your ${r.adds.left} adds left this week.`),
-    wk && wk.net >= 0.1 && r.net < 0 && `It helps this week but costs you over the season: a stream. Drop him again once his games are used.`,
+    r.add && r.adds && !r.capped && (r.adds.left === 1 ? `It's your last add this week.` : `It uses 1 of your ${r.adds.left} adds left this week.`),
+    r.add && wk && wk.net >= 0.1 && r.net < 0 && `It helps this week but costs you over the season: a stream. Drop him again once his games are used.`,
     wk && wk.net <= -0.1 && r.net > 0 && `It costs you this week, but pays off over the season.`].filter(Boolean);
   const best = S.state.waivers.moves[0];
-  if (best && !(best.add === add.name && (best.drop || "") === (picked?.name || auto[0]?.name || ""))) notes.push(`Your best move is ${esc(best.add)} ${into(best)} (${delta(best.gain, best.unit)}).`);
-  const players = playerTable([{ ...add, side: "Add" }, ...r.drop.map(x => ({ ...x, side: x.auto ? "Also dropped" : "Drop" }))],
+  if (best && r.add && !(best.add === add.name && (best.drop || "") === (picked?.name || auto[0]?.name || ""))) notes.push(`Your best move is ${esc(best.add)} ${into(best)} (${delta(best.gain, best.unit)}).`);
+  const players = playerTable([...(r.add ? [{ ...add, side: "Add" }] : []), ...r.drop.map(x => ({ ...x, side: x.auto ? "Also dropped" : "Drop" }))],
     { extra: [{ h: "Side", v: p => `<span class="muted">${p.side}</span>` }] });
+  // the move as scored, for Done on Yahoo: the add (into an IL slot if he parks), every drop, who it activates
+  const tried = { add: r.add ? [add.name] : [], drop: r.drop.map(x => x.name), activate: r.activate || [], park: add.parks ? [add.name] : [] };
   if (r.unit !== "win%") return `<div class="panel-b"><div class="verdict"><span class="pill ${r.verdict}" style="text-transform:none">${MV_VERDICT[r.verdict]}</span>
-      <dl class="side-by"><div><dt>Fantasy points per game</dt><dd class="${tone(r.net)}">${sign(r.net)}</dd></div></dl></div>
+      <dl class="side-by"><div><dt>Fantasy points per game</dt><dd class="${tone(r.net)}">${sign(r.net)}</dd></div></dl>
+      <div class="toolbar">${doneBtn(tried).replace("btn ghost", "btn")}</div></div>
       ${notes.length ? `<p class="small muted" style="margin:10px 0 0">${notes.join(" ")}</p>` : ""}</div>${players}`;
   const g = wk?.games;
   const odds = o => o ? `<td class="n">${ba(o, v => Math.round(v) + "%")}</td><td class="n val ${tone(o[1] - o[0])}">${delta(o[1] - o[0], "win%")}</td>` : `<td class="n muted">—</td><td></td>`;
@@ -1505,26 +1717,27 @@ function moveResult(r) {
       <th class="n" title="${wk ? `Chance you win it this week vs ${esc(wk.opponent)}, from the score so far and the games left` : "Pick this week's opponent on This week"}">This week</th><th></th></tr></thead><tbody>
     ${Object.entries(r.cats).map(([c, d]) => `<tr class="${punted(c) ? "punted-col" : ""}"><td class="pname">${lab(c)}</td>${odds(d.season)}${odds(d.week)}</tr>`).join("")}</tbody></table></div>`;
   const week = wk ? `<div><dt title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, vs ${esc(wk.opponent)}">This week</dt><dd><span class="${tone(wk.net)}">${delta(wk.net, "win%")}</span> <span class="muted small">score ${wk.score[0].toFixed(1)} → ${wk.score[1].toFixed(1)}</span></dd></div>`
-    + (g ? `<div><dt title="Games he starts the rest of this week, against the starts your drops lose. Team: your lineup's starts before → after, since a full day can bench someone">Games this week</dt><dd>${g.add} <span class="muted small">for ${g.drop}</span> <span class="small ${tone(g.you[1] - g.you[0])}">team ${g.you[0]} → ${g.you[1]}</span></dd></div>` : "")
+    + (g ? `<div><dt title="Games he starts the rest of this week, against the starts your drops lose. Team: your lineup's starts before → after, since a full day can bench someone">Games this week</dt><dd>${g.add == null ? "" : `${g.add} <span class="muted small">for ${g.drop}</span> `}<span class="small ${tone(g.you[1] - g.you[0])}">team ${g.you[0]} → ${g.you[1]}</span></dd></div>` : "")
     : r.capped ? `<div><dt>This week</dt><dd><span class="muted small">No adds left</span></dd></div>`
     : `<div><dt>This week</dt><dd><span class="muted small">No opponent saved: <button class="btn ghost" data-go="week">pick one</button></span></dd></div>`;
   return `<div class="panel-b" style="border-bottom:1px solid var(--line)"><div class="verdict"><span class="pill ${r.verdict}" style="text-transform:none">${MV_VERDICT[r.verdict]}</span>
       <dl class="side-by"><div><dt title="${cap(WIN().def)}">Your season ${WIN().of}${asLost()}</dt><dd><span class="${tone(r.net)}">${delta(r.net, "win%")}</span> <span class="muted small">${r.win}% → ${r.win_after}%</span></dd></div>
-        ${week}<div><dt>Projected finish</dt><dd>${ord(r.rank)} → ${ord(r.rank_after)}</dd></div></dl></div>
+        ${week}<div><dt>Projected finish</dt><dd>${ord(r.rank)} → ${ord(r.rank_after)}</dd></div></dl>
+      <div class="toolbar">${doneBtn(tried).replace("btn ghost", "btn")}</div></div>
       ${notes.length ? `<p class="small muted" style="margin:10px 0 0">${notes.join(" ")}</p>` : ""}</div>
     ${cats}${players}`;
 }
 async function evalMove() {
-  const M = S.move; if (!M.add) return;
+  const M = S.move; if (!M.add && !M.drop) return;
   const ask = M.ask = {};
   M.busy = true; render();
   let r;
-  try { r = await api("/api/move", { add: M.add, drop: M.drop || null, day: M.day || null }); }
+  try { r = await api("/api/move", { add: M.add || null, drop: M.drop || null, day: M.day || null }); }
   catch (err) { if (S.move === M && M.ask === ask) toast(err.message); }
   if (S.move !== M || late(M, ask)) return;  // B3: a new add, drop, day or punt meanwhile (a team switch replaces S.move)
   if (r) {  // short or misspelt names (a deep link) come back as the players' real names
-    Object.assign(M, { result: r, add: r.add.name, drop: r.drop.find(x => !x.auto)?.name || "" });
-    if (S.view === "waivers") history.replaceState(null, "", "#waivers?add=" + encodeURIComponent(M.add) + (M.drop ? "&drop=" + encodeURIComponent(M.drop) : "") + (M.day ? "&day=" + M.day : ""));
+    Object.assign(M, { result: r, add: r.add?.name || "", drop: r.drop.find(x => !x.auto)?.name || "" });
+    if (S.view === "waivers") history.replaceState(null, "", "#waivers?" + new URLSearchParams(Object.entries({ add: M.add, drop: M.drop, day: M.day }).filter(([, v]) => v)));
   }
   M.busy = false;
   if (S.view === "waivers") render();
@@ -1715,6 +1928,9 @@ function renderShell() {
   const st = S.state;
   document.querySelectorAll(".nav").forEach(b => b.dataset.view === S.view ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
   if (!st) return;
+  const tb = $('.nav[data-view="team"]'), flag = tb?.querySelector(".flag"), on = !!st.check?.problems.length;  // Q29
+  if (tb && on && !flag) tb.insertAdjacentHTML("beforeend", `<span class="flag" role="img" aria-label="Your roster needs a fix" title="Your roster needs a fix"></span>`);
+  if (!on && flag) flag.remove();
   $("#league").innerHTML = `<b>${esc(st.league)}</b><span>${st.mode === "points" ? "Points" : st.cats.length + "-cat"} · ${st.teams.length} teams${st.demo ? " · demo data" : ""} ·
     <select id="me-team" class="me" aria-label="Your team" title="Which team is yours">${st.teams.map(t => opt(t, t, st.me)).join("")}</select></span>`;
   $("#fetched").innerHTML = (st.pulled ? `<span title="${esc(when(st.pulled))}">Snapshot pulled ${esc(ago(st.pulled))}</span>` : esc(st.fetched ? "Rosters as of " + st.fetched : "")) +
@@ -1732,6 +1948,7 @@ function render() {
   const stale = st.waiting ? `<div class="notice">A newer snapshot is in the folder (${esc(st.waiting)}). Press Refresh to load it.</div>`
     : st.rolled || age > 1 ? `<div class="notice">Your snapshot ${st.rolled ? "is from last week's matchup" : `is ${Math.floor(age)} day${age >= 2 ? "s" : ""} old`} (pulled ${when(st.pulled)}), so the score and recent moves aren't in. Save a new snapshot into the project folder: it loads by itself.</div>` : "";
   const what = st.what?.length ? `<div class="notice"><b>What if:</b> ${st.what.map(x => `${nameBtn(x.name)} ${esc(x.text)}`).join("; ")}. Every number in the app is on ${st.what.length > 1 ? "these" : "this"} until you clear ${st.what.length > 1 ? "them" : "it"}. <button class="btn" data-act="what-clear" style="margin-left:6px;padding-block:1px">Clear${st.what.length > 1 ? " all" : ""}</button></div>` : "";
+  const moved = movesBanner(st.moves || []);
   // a cache that failed to refresh or never loaded, on every view like the snapshot's. Not news (it never moves a number)
   // or live scores (only on game nights: This week says when its scores are from, the sidebar flags them)
   const bad = (st.sources || []).filter(x => !["news", "live"].includes(x.key) && ["failed", "missing"].includes(x.status));
@@ -1743,7 +1960,8 @@ function render() {
   // the view is rebuilt on every change, so scrolled lists (Trades' pickers, deals) keep their place on the same view
   const keep = S.view === render.view ? [...v.querySelectorAll(".plist, .deals")].map(e => e.scrollTop) : [];
   render.view = S.view;
-  v.innerHTML = card + demo + stale + offline + what + ({ team: viewTeam, week: viewWeek, schedule: viewSchedule, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, compare: viewCompare, gm: viewGM }[S.view] || viewTeam)();
+  const alert = ["team", "week"].includes(S.view) ? rosterAlert() : "";
+  v.innerHTML = card + demo + stale + offline + what + moved + alert + ({ team: viewTeam, week: viewWeek, schedule: viewSchedule, league: viewLeague, trades: viewTrades, waivers: viewWaivers, movers: viewMovers, compare: viewCompare, gm: viewGM }[S.view] || viewTeam)();
   v.querySelectorAll(".plist, .deals").forEach((e, i) => { if (keep[i]) e.scrollTop = keep[i]; });
   const m = $("#msgs"); if (m) m.scrollTop = m.scrollHeight;
 }
@@ -1774,10 +1992,16 @@ document.addEventListener("click", async e => {
     const F = S.find, c = t.dataset.goalcat;
     F.cats = F.cats.includes(c) ? F.cats.filter(x => x !== c) : [...F.cats, c]; F.list = F.ask = null; S.improve = { kind: null, list: null }; return render();
   }
-  if (t.dataset.sitcat != null) {  // Start / sit's Play for: all categories, or toggle one
+  if (t.dataset.sitcat != null) {  // Start / sit's Play for: all categories, or toggle one; it steers the streams and plan too (Q32)
     const W = S.week, c = t.dataset.sitcat, g = W.goal || [];
     W.goal = !c ? [] : g.includes(c) ? g.filter(x => x !== c) : [...g, c];
+    loadWeek();
     return loadSit(W);
+  }
+  if (t.dataset.wvcat != null) {  // Waivers' Play for (Q32)
+    const V = S.wv, c = t.dataset.wvcat;
+    V.goal = !c ? [] : V.goal.includes(c) ? V.goal.filter(x => x !== c) : [...V.goal, c]; V.for = null;
+    store.set("wvGoal", V.goal); return render();
   }
   if (t.dataset.sort) {
     const b = S[t.dataset.src], k = t.dataset.sort;
@@ -1797,6 +2021,12 @@ document.addEventListener("click", async e => {
   }
   if (act === "what-clear") return setWhat(t.dataset.name ? { player: t.dataset.name } : { clear: true }, "What if cleared");
   if (act === "card") return openCard(t.dataset.name, +t.dataset.t);
+  if (act === "watch") {  // Q32: on or off the watchlist (data/watch.json)
+    const on = !!t.dataset.on, n = t.dataset.name;
+    try { S.state.watch = await api("/api/watch", on ? { remove: n } : { add: n }); toast(on ? `Stopped watching ${n}` : `Watching ${n}: he's at the top of Waivers`); }
+    catch (err) { toast(err.message); }
+    return render();
+  }
   if (act === "show-card") return showCard(t.dataset.name);  // Q21
   if (act === "cmp-add") return addCompare(t.dataset.name, true);
   if (act === "cmp-remove") { setCompare(S.compare.names.filter(x => x !== t.dataset.name)); if (S.compare.names.length < 2) history.replaceState(null, "", "#compare"); return render(); }
@@ -1846,6 +2076,25 @@ document.addEventListener("click", async e => {
   if (act === "sched-open") { S.plan.open = t.dataset.open === "1"; return render(); }
   if (act === "find") return find();
   if (act === "mv-eval") return evalMove();
+  if (act === "moved") { const m = JSON.parse(t.dataset.move); return setMoved(m, m.plan ? "Picked: This week and every tab now count it" : "Marked done: every tab is on your new roster"); }
+  if (act === "moved-undo") return setMoved({ undo: t.dataset.id }, "Move removed");
+  if (act === "moved-done") return setMoved({ done: t.dataset.id }, "Marked done on Yahoo");
+  if (act === "accepted") return accepted(S.trade.result);
+  if (act === "lean") {  // Q34: lean on a category this week (x1 -> x2 -> x3 -> x1), or clear them all; then the week again
+    const c = t.dataset.cat, n = { ...S.lean };
+    if (!c) S.lean = {}; else { if ((n[c] || 1) >= 3) delete n[c]; else n[c] = (n[c] || 1) + 1; S.lean = n; }
+    store.set("lean", S.lean);
+    const { goal, sit, day } = S.week; S.week = { data: S.week.data, goal, sit, day }; render();
+    return loadWeek().then(() => { if (S.week.goal?.length) loadSit(S.week); });
+  }
+  if (act === "keep") {  // This week's streams: never drop him (or allow it again), then the plan again
+    S.keep = S.keep.includes(t.dataset.name) ? S.keep.filter(n => n !== t.dataset.name) : [...S.keep, t.dataset.name];
+    store.set("keep", S.keep);
+    const { goal, sit, day } = S.week; S.week = { data: S.week.data, goal, sit, day }; render();
+    return loadWeek();
+  }
+  if (act === "drops-go") { if (S.view !== "team") setView("team"); return reveal("#drops"); }
+  if (act === "drop-try") { S.move = { add: "", drop: t.dataset.drop, day: "", result: null, busy: false }; setView("waivers"); evalMove(); return reveal("#move"); }
   if (act === "mv-clear") { S.move = { add: "", drop: "", day: "", result: null, busy: false }; history.replaceState(null, "", "#waivers"); return render(); }
   if (act === "mv-try") {
     const M = S.move;
@@ -1896,6 +2145,7 @@ document.addEventListener("change", async e => {
   if (t.id === "cmp-player") return pickCompare(t.value);
   if (t.id === "mv-add") return pickMove(t.value);
   if (t.id === "mv-drop") { Object.assign(S.move, { drop: t.value, result: null, ask: null }); return render(); }
+  if (t.id === "wv-pos" || t.id === "wv-sort") { const k = t.id.slice(3); S.wv[k] = t.value; store.set("wv" + cap(k), t.value); return render(); }
   if (t.id === "mv-day") { Object.assign(S.move, { day: t.value, result: null, ask: null }); return render(); }
   if (t.id === "top-player") return pickGlobal(t.value);
   if (t.id === "week-opp") { S.week = {}; loadWeek(t.value); return render(); }
@@ -1927,7 +2177,11 @@ document.addEventListener("change", async e => {
 document.addEventListener("input", e => {
   if (e.target.id === "find-player") pickPlayer(e.target.value, true);
   if (e.target.id === "cmp-player") pickCompare(e.target.value, true);
-  if (e.target.id === "chat-in") S.gmDraft = e.target.value;  // kept across re-renders (history loading, Ask AI GM)
+  if (e.target.id === "chat-in") S.gmDraft = e.target.value;
+  if (e.target.id === "wv-q") {  // Waivers' name search: draw the table again, keep the cursor in the box
+    S.wv.q = e.target.value; const at = e.target.selectionStart; render();
+    const i = $("#wv-q"); if (i) { i.focus(); i.setSelectionRange(at, at); }
+  }  // kept across re-renders (history loading, Ask AI GM)
   if (e.target.id === "mv-add" && !/^(insertText|insertCompositionText|delete)/.test(e.inputType || "")) pickMove(e.target.value, true);  // a pick or a paste, not typing
   // the top bar opens a card as soon as a name is picked or pasted, not while one is typed ("Player 1" on the way to "Player 15")
   if (e.target.id === "top-player" && !/^(insertText|insertCompositionText|delete)/.test(e.inputType || "")) pickGlobal(e.target.value, true);
@@ -1943,7 +2197,7 @@ document.addEventListener("keydown", e => {
   if (e.target.matches("span[role=button]") && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.target.click(); }  // nameBtn
 });
 // new numbers in S.state (Refresh, or the server's own injury refetch): drop every view's cached answers
-const fresh = st => { S.state = st; S.league.data = null; S.league.ahead = {}; S.trade.roster = null; S.find.list = S.find.ask = null; S.saved.evals = {}; S.players = null; S.week = {}; S.sched = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names); S.move.result = S.move.ask = null; S.loaded = Date.now(); };
+const fresh = st => { S.state = st; S.drops = {}; S.league.data = null; S.league.ahead = {}; S.trade.roster = null; S.find.list = S.find.ask = null; S.saved.evals = {}; S.players = null; S.week = {}; S.sched = {}; S.news = {}; S.strategy = {}; S.card = {}; S.pool = null; setCompare(S.compare.names); S.move.result = S.move.ask = null; S.loaded = Date.now(); };
 $("#refresh").addEventListener("click", async e => {
   const b = e.currentTarget; b.classList.add("busy"); b.disabled = true;
   try {
@@ -1965,9 +2219,10 @@ setInterval(async () => {
   if (document.visibilityState !== "visible" || !S.state || $("#refresh").disabled) return;
   try {
     const now = await api("/api/stamp"), snap = now.fetched !== S.state.fetched;
-    if (!snap && JSON.stringify(now.what || []) === JSON.stringify(S.state.what || [])) return;
+    const mv = JSON.stringify(now.moves || []) !== JSON.stringify((S.state.moves || []).map(m => [m.id, m.state]));
+    if (!snap && !mv && JSON.stringify(now.what || []) === JSON.stringify(S.state.what || [])) return;
     fresh(await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")) + (S.healthyFa ? "&healthy_fa=1" : "")));
-    S.loaded = Date.now(); render(); toast(snap ? "New snapshot loaded" : "What if changed");
+    S.loaded = Date.now(); render(); toast(snap ? "New snapshot loaded" : mv ? "Roster moves changed" : "What if changed");
   } catch (e) { /* offline or restarting: keep what's on screen */ }
 }, 20e3);
 // games under way (M18): the server rebuilds on live scores every 5 minutes, so This week follows them while it's in view
@@ -1975,8 +2230,8 @@ setInterval(async () => {
   if (document.visibilityState !== "visible" || S.view !== "week" || !S.week.data?.tonight?.on) return;
   try {
     const st = await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")) + (S.healthyFa ? "&healthy_fa=1" : ""));
-    const w = await api("/api/week", {});
-    const { goal, sit, day } = S.week;  // B7: Play for and the day picked in Start / sit stay
+    const { goal, sit, day } = S.week;  // B7: Play for and the day picked in Start / sit stay (Q32: it steers the streams too)
+    const w = await api("/api/week", { keep: S.keep, weights: S.lean, cats: goal || [] });
     fresh(st); S.week = { data: w, goal, sit, day }; render();
     if (goal?.length) loadSit(S.week);  // Play for's lineups again, on the new numbers
   } catch (e) { /* offline or restarting: keep what's on screen */ }
@@ -1984,7 +2239,7 @@ setInterval(async () => {
 render();
 if (S.view === "compare" && link.has("players")) setCompare(link.get("players").split(",").filter(Boolean));
 loadState().then(() => {
-  if (S.state && S.view === "waivers" && link.has("add")) { Object.assign(S.move, { add: link.get("add"), drop: link.get("drop") || "", day: link.get("day") || "" }); return evalMove(); }
+  if (S.state && S.view === "waivers" && (link.has("add") || link.has("drop"))) { Object.assign(S.move, { add: link.get("add"), drop: link.get("drop") || "", day: link.get("day") || "" }); return evalMove(); }
   if (!S.state || S.view !== "trades" || !(link.has("give") || link.has("get"))) return;
   const names = k => (link.get(k) || "").split(",").filter(Boolean);
   Object.assign(S.trade, { give: new Set(names("give")), get: new Set(names("get")) });

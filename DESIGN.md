@@ -224,6 +224,12 @@ Rows are numbers, columns are deals (Saved trades) or players (Compare), the row
 ### Schedule calendar
 A row per calendar week, a column per weekday, each cell a button with the number of your players who have a game and a muted note under it (`2 sit`, `3 open`, `full`). The fill follows that count minus the starting spots on the z-cell scale: red for players who'd sit, green for open spots. A day with no NBA games shows a muted dash. The picked day gets a 2px accent ring (selection) and its starters and sitters show under the table.
 
+### Moves since the snapshot
+Roster moves marked Done on Yahoo (or a drop picked with Use this) list under the What if notice on every view, in the same `.notice` (`.notice.moves`): they say which roster the numbers are on, so they are a data-source notice. One line per move with its own default button (Undo; Done on Yahoo on a pick; Clear on a struck-through move the newer snapshot doesn't show). The buttons that record a move are ghost row actions next to Try ("Done on Yahoo", "Use this"), and a default button in a result's toolbar ("Done on Yahoo" under Try a move, "They accepted" on a trade). Recording is one click and undoable from the notice: no confirm step, no modal.
+
+### Roster alert
+A roster problem to fix on Yahoo (Q29: a healthy player stuck in an IL slot, too many players, an open spot) opens My team and This week as `.alert`: a panel-weight strip (panel fill, `line-strong` border, the panel lift) with a 7px `neg` dot and one or two plain sentences, the fix and a ghost button ("Who to drop") inline. Never the `warn-soft` notice, which stays for data sources, and never a coloured side border. The My team nav button carries the same dot (`.nav .flag`) while one is open.
+
 ### Category strip
 Equal columns per category: label, rank `n / 12`, signed total, and a 4px bar. The bar is green in the top 40%, red in the bottom 35%, grey between.
 
