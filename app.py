@@ -300,7 +300,11 @@ def api(path, q, body):
             lg.snap["matchup"] = lg.matchup = {**lg.matchup, "opponent": opp, "week_end": lg.week_end}
             remember(matchup=lg.matchup)
             fl = lg.healthy_fa() if fl is not lg else lg  # the copy was made before the new opponent
-        return fl.this_week(punt=punt, keep=body.get("keep") or (), weights=body.get("weights") or None, cats=body.get("cats") or ())  # Healthy only: no injured free agent as a stream (audit #15); keep: never dropped
+        keep, wts = body.get("keep") or (), body.get("weights") or None
+        w = fl.this_week(punt=punt, keep=keep, weights=wts, cats=body.get("cats") or ())  # Healthy only: no injured free agent as a stream (audit #15); keep: never dropped
+        return {**w, "night": fl.game_night(punt=punt, keep=keep, weights=wts, week=w)} if w.get("opponent") else w  # Q31: the Today panel
+    if path == "/api/today":  # Q31: game day, tonight's games, lineups, live lines and the week day by day
+        return fl.game_night(punt=punt, keep=body.get("keep") or (), weights=body.get("weights") or None)
     if path == "/api/lineup":  # This week's Start / sit, playing for some categories only
         return fl.start_sit(punt=punt, cats=body.get("cats", []), weights=body.get("weights") or None)
     if path == "/api/refresh":
@@ -367,7 +371,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/compare", "/api/move", "/api/schedule", "/api/news",
-       "/api/players", "/api/me", "/api/week", "/api/lineup", "/api/refresh", "/api/stamp", "/api/ahead", "/api/what", "/api/moved", "/api/check", "/api/drops", "/api/waivers", "/api/watch", "/api/chat", "/api/chats", "/api/offers"}
+       "/api/players", "/api/me", "/api/week", "/api/lineup", "/api/refresh", "/api/stamp", "/api/ahead", "/api/what", "/api/moved", "/api/check", "/api/drops", "/api/waivers", "/api/watch", "/api/today", "/api/chat", "/api/chats", "/api/offers"}
 
 def live():
     """Every LIVE_MIN minutes, ESPN's injury feed again (and any other cache past its window: news, box scores...),

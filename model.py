@@ -1443,7 +1443,7 @@ class League:
         # stats banked (_so_far, _held), no longer one to play (game_days). No schedule, no rest of the week to take it
         # from: nothing locks
         games = {i: g for i, g in (live or {}).get("games", {}).items() if i.startswith("002")}
-        now = now or datetime.now(timezone.utc)
+        self.now = now = now or datetime.now(timezone.utc)
         self.live = games
         self.tonight = [(g["teams"], max(g["status"], 2 if datetime.fromisoformat(g["tip"]) <= now else 1))
                         for g in games.values() if g["date"] == self.today] if self.sched else []
@@ -4131,6 +4131,93 @@ class League:
                          if abs(b - a) >= 0.005},
                 **({"goal": goal, "goal_gain": round(100 * (r["now"] - float(r["goal"](p0))), 1)} if goal else {})}
 
+    def game_night(self, opp=None, punt=(), keep=(), weights=None, week=None):
+        """Game day (Q31): tonight in one place, all of it read off This week (no new maths, only cut by day).
+        games: today's NBA games, [{teams [away, home], tip (UTC), at (local time), status 1 to come / 2 on / 3 final}];
+        lock: the first tip (`at`) and the next one still to come; you / them: each side's players with a game today,
+        starters in slot order then the bench (yours: Start / sit's lineup for today; theirs: _counted(), the lineup
+        the score so far counts them on), each with slot, NBA team, vs, tip, status, plays (%), locked, and once his game
+        tips his live box-score line (`line`, RAW + played); empty: your starting slots nobody with a game can fill;
+        change: on the snapshot's own day, who its lineup starts or benches against the plan (set before tip);
+        decide: your players listed probable / questionable / doubtful (M16) or day-to-day with a game today;
+        moves: the plan's moves for today, adds: adds left; night (once a game tips): each side's live totals so far
+        against the night's expected (every starter tonight at his chance to play), by category;
+        days: each day left, games each side starts that day, the expected running totals, score and win chance if the
+        week ended after it, so the last row is This week's headline. week: this_week()'s output for the same opp,
+        punt, keep and weights when the caller has it (the page's /api/week), else computed. None in a points league
+        or without a schedule.
+        ponytail: Play for's categories (this_week(cats=)) aren't passed to the day table's copy, only weights"""
+        if self.mode == "points" or not self.sched:
+            return None
+        w = week or self.this_week(opp, punt, keep=keep, weights=weights)
+        lg, me, d0, opp = self._leaning(weights, {self.find(n) for n in keep}), self.me, self.today, w.get("opponent")
+        clock = lambda iso: datetime.fromisoformat(iso).astimezone().strftime("%I:%M %p").lstrip("0")
+        games = sorted(({"teams": g["teams"], "tip": g["tip"], "at": clock(g["tip"]),
+                         "status": max(g["status"], 2 if datetime.fromisoformat(g["tip"]) <= self.now else 1)}
+                        for g in self.live.values() if g["date"] == d0), key=lambda g: g["tip"])
+        vs = {t: (g, ("@ " if i == 0 else "vs ") + g["teams"][1 - i]) for g in games for i, t in enumerate(g["teams"])}
+        box = self.box[self.box.GAME_DATE == pd.Timestamp(d0)].drop_duplicates("key").set_index("key")
+        name, by = (lambda k: self.p.at[k, "PLAYER_NAME"]), {self.p.at[k, "PLAYER_NAME"]: k for ks in self.rosters.values() for k in ks}
+
+        def row(k, slot):
+            g, v = vs.get(self.nba.get(k), (None, None))
+            locked = self._locked(k)
+            return {"slot": slot, "name": name(k), "nba": self.nba.get(k), "vs": v, "tip": g and g["tip"], "at": g and g["at"],
+                    "status": self.meta.get(k, {}).get("status", ""), **({"locked": True} if locked else {}),
+                    "plays": round(100 * self._plays(k, d0)),
+                    **({"line": {"played": bool(box.at[k, "played"]), **{s: int(box.at[k, s]) for s in RAW}}}
+                       if g and g["status"] > 1 and k in box.index else {})}
+        day = next((x for x in (w.get("lineups") or {}).get("days", ()) if x["date"] == d0), None)
+        you = [row(by[n], sl) for sl, n in day["slots"] or [["Start", n] for n in day["start"]] if n] \
+            + [row(by[n], "BN") for n in day["sit"]] if day else []
+        on = {me: [by[n] for n in day["start"]] if day else []}
+        out = {"date": d0, "games": games,
+               "lock": games and {"at": games[0]["at"], "tip": games[0]["tip"],
+                                  "next": next(({"at": g["at"], "tip": g["tip"]} for g in games if g["status"] == 1), None)},
+               "you": you, "empty": [sl for sl, n in day["slots"] if not n] if day else [],
+               "moves": [m for m in (w.get("plan") or {}).get("moves", ()) if m["day"] == d0], "adds": w.get("adds")}
+        if self.slot_day == d0 and (sl := self.slotted.get(me)) and day:  # is the lineup on Yahoo right (B8)?
+            yahoo = {k for k, s in sl.items() if s not in BENCH and not self._locked(k)}
+            plan = {by[n] for n in day["start"]} - {k for k in by.values() if self._locked(k)}
+            mine = {by[n] for n in day["start"] + day["sit"]}
+            out["change"] = {"start": self.names(sorted(plan - yahoo)), "sit": self.names(sorted((yahoo - plan) & mine)),
+                             "pulled": self.snap.get("pulled")}
+        out["decide"] = [{"name": r["name"], "as": g[2] if (g := self.gameday.get(by[r["name"]])) and g[0] == d0 else "day-to-day",
+                          "plays": r["plays"], "at": r["at"]} for r in you if not r.get("locked") and
+                         ((g := self.gameday.get(by[r["name"]])) and g[0] == d0 or r["status"] in ("GTD", "DTD"))]
+        if not opp:
+            return out
+        plays = lambda k: k in self.played_today or k not in self.sat_today and (self.inj.get(k, {}).get("return") or "") <= d0
+        ks = [k for k in self._playing(self.rosters[opp]) if d0 in self.sched.get(self.nba.get(k), ())]
+        on[opp] = self._counted(opp, [k for k in ks if plays(k)], d0)
+        at = lineup(self.slots, [self._pos(k) for k in on[opp]]) if self.slots else {}
+        slot = {on[opp][j]: self.slots[i] for i, j in sorted(at.items())}
+        out["them"] = [row(k, slot.get(k, "Start")) for k in sorted(on[opp], key=lambda k: list(slot).index(k) if k in slot else 99)] \
+            + [row(k, "BN") for k in sorted(set(ks) - set(on[opp]), key=self._value.get, reverse=True)]
+        if any(g["status"] > 1 for g in games):  # tonight's lines so far against the night the model expected
+            zero = np.zeros(len(RAW))
+            got = {t: sum((box.loc[k, RAW].to_numpy(float) for k in on[t] if k in box.index and self._locked(k)), zero) for t in on}
+            exp = {t: sum((self._plays(k, d0) * self._ramp.get((k, d0), 1.0) * self.p_week.loc[k, RAW].to_numpy(float)
+                           for k in on[t] if k in self.p_week.index), zero) for t in on}
+            out["night"] = {c: {"you": [total(got[me], c), total(exp[me], c)], "them": [total(got[opp], c), total(exp[opp], c)]}
+                            for c in self.cats}
+        so_far, _, _ = lg._their_week(opp, punt)
+        sides = {t: lg._week_side(t, punt) for t in (me, opp)}
+        dates = sorted({d for ks, st, un in sides.values() for d in lg._days(ks, lg.week_end, st, un)})
+        rows, prev = [], {t: -len(lg._held(ks)) for t, (ks, _, _) in sides.items()}  # tonight's games include tipped ones
+        for d in dates:
+            cut = {t: (ks, st, {k: min(un.get(k, d), d) for k in ks}) for t, (ks, st, un) in sides.items()}
+            v = {t: lg.week_vec(*x) for t, x in cut.items()}
+            n = {t: sum(lg.starts(*x).values()) for t, x in cut.items()}
+            p = cat_probs(v[me], v[opp], self.cats, so_far[me], so_far[opp])
+            rows.append({"date": d, "games": [n[me] - prev[me], n[opp] - prev[opp]],
+                         "score": [round(float(p.sum()), 1), round(len(self.cats) - float(p.sum()), 1)],
+                         "win": round(100 * float(match_prob(p, self.cats, WEEK_LOAD)), 1),
+                         "cats": {c: [total(so_far[me] + v[me], c), total(so_far[opp] + v[opp], c), round(100 * float(x), 1)]
+                                  for c, x in zip(self.cats, p)}})
+            prev = n
+        return {**out, "opponent": opp, "days": rows}
+
     def _clears(self, k):
         """{k: the day his waiver claim clears} ("Jan 2" read on Dec 30 is next year), {} when he isn't on waivers:
         a claim only plays from then (starts(), week_vec())."""
@@ -4817,7 +4904,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster", "week",
                                     "strategy", "news", "compare", "schedule", "move", "sources", "wants", "lineup",
-                                    "note", "ahead", "what", "check", "drop", "watch"])
+                                    "note", "ahead", "what", "check", "drop", "watch", "today"])
     ap.add_argument("--activate", default="", help="what: your players moved out of an IL slot on Yahoo")
     ap.add_argument("--park", default="", help="what: your players moved into an IL slot on Yahoo")
     ap.add_argument("--plan", action="store_true", help="what: the move is picked, not made on Yahoo yet")
@@ -4840,8 +4927,8 @@ def main():
     ap.add_argument("--max-overpay", type=float, help="search: most you'd overpay on the market, in %%")
     ap.add_argument("--outside", type=int, default=0, help="search: role players only, nobody in the market's top N")
     ap.add_argument("--players", default="", help='compare: 2 to 4 players, e.g. "A, B"')
-    ap.add_argument("--keep", default="", help='week: your players no stream may drop, e.g. "John Collins, Paul George"')
-    ap.add_argument("--weight", default="", help='week, lineup: lean on categories, e.g. "PTS=2" (double) or "PTS=2,TOV=0.5"; 0 to 5, the rest count 1')
+    ap.add_argument("--keep", default="", help='week, today: your players no stream may drop, e.g. "John Collins, Paul George"')
+    ap.add_argument("--weight", default="", help='week, lineup, today: lean on categories, e.g. "PTS=2" (double) or "PTS=2,TOV=0.5"; 0 to 5, the rest count 1')
     ap.add_argument("--add", default="", help="move: the free agent to add")
     ap.add_argument("--drop", default="", help="move: your player to drop (none: an open spot, else who you'd miss least). trade: who you cut to fit the deal, over the model's pick")
     ap.add_argument("--day", help="move: the day this week to make it, YYYY-MM-DD (default: its best day)")
@@ -4903,7 +4990,8 @@ def main():
            "what": lambda: {"players": lg.whats(), "moves": lg.moves},
            "check": lambda: lg.roster_check(punt),
            "drop": lambda: lg.drops(punt, a.vs),
-           "watch": lambda: {"watch": watching(lg, punt, a.player, a.remove)}}[a.cmd]()
+           "watch": lambda: {"watch": watching(lg, punt, a.player, a.remove)},
+           "today": lambda: lg.game_night(a.vs, punt, split(a.keep), weights(a.weight))}[a.cmd]()
     # no indent, and a trade's player cards last: the AI GM chat (claude -p) shows only a 2 KB preview of output over
     # ~30 KB, and an indented trade ran 33 KB, its playoff and title odds past the cut (Nov 7 note)
     if a.cmd == "trade":

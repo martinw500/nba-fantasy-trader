@@ -298,10 +298,17 @@ tr.cmp-group td, tr.cmp-group:hover td { background: var(--panel-2); color: var(
 .skel { height: 14px; border-radius: 4px; background: var(--line); margin: 12px 16px; animation: pulse 1.2s ease-in-out infinite alternate; }
 @keyframes pulse { from { opacity: .45; } to { opacity: 1; } }
 .err { padding: 14px 16px; color: var(--neg-ink); }
+/* Q31: This week's Today panel: both lineups side by side, a hairline between; the to-do list before tip */
+.tonight { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); }
+.tonight > .tw + .tw { border-left: 1px solid var(--line); }
+.tonight td.line { white-space: normal; min-width: 150px; font-size: 12.5px; }
+.todo { margin: 0; padding: 0 0 0 18px; display: grid; gap: 4px; }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; box-shadow: var(--shadow); z-index: 20; }
 
 @media (max-width: 980px) {
   .grid2 { grid-template-columns: 1fr; }
+  .tonight { grid-template-columns: 1fr; }
+  .tonight > .tw + .tw { border-left: 0; border-top: 1px solid var(--line); }
   .cats { grid-template-columns: repeat(5, 1fr); }
   .cat:nth-child(5) { border-right: 0; }
 }
@@ -912,7 +919,7 @@ function viewWeek() {
     { h: `<span title="Your real chance to win the week with him (now ${Math.round(w.win)}%)">Win</span>`, v: p => p.win == null ? "" : `<span class="${tone(p.win - w.win)}">${Math.round(p.win)}%</span>` },
     { h: `<span title="The categories whose odds he moves most this week, now → with him (his starts against the drop's)">Gives</span>`, cls: "small", v: p => gives(p.cats) + (p.games != null && p.drop ? ` <span class="muted">· ${plural(p.games, "start")} for ${esc(p.drop)}'s ${p.kept}</span>` : "") },
     { h: "Drop", v: p => p.drop ? esc(p.drop) : `<span class="muted" title="${thenBack(p.then) || "No drop: he takes your open roster spot"}">nobody: open spot</span>` }, { h: `<span title="Change in your season-long ${WIN().of} if you keep him">Season</span>`, v: p => `<span class="${tone(p.season)}">${delta(p.season, "win%")}</span>` }, addOn];
-  return head(`Week ends ${end}${w.live ? tonight : " · no live score yet"}${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}`) + `
+  return head(`Week ends ${end}${w.live ? (w.night ? "" : tonight) : " · no live score yet"}${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}`) + todayPanel(w) + `
     <div class="panel"><div class="panel-h"><div class="verdict"><span class="pill ${verdict[0]}" style="text-transform:none">${verdict[1]}</span>
       <dl class="side-by">${oneWin() ? winOdds + score : score + winOdds}${games}</dl></div></div>${assumed(w)}
       <div class="tw"><table><thead><tr><th>Category</th><th class="n" title="${w.live ? "So far → projected final" : "Projected final"}">You</th><th class="n">${esc(w.opponent)}</th>
@@ -928,6 +935,61 @@ function viewWeek() {
       ${keepRow(w)}${streamPlan(w)}${weekPaths(w)}
       ${w.adds && !w.adds.left ? `<div class="empty"><b>No adds left this week</b>You've used all ${w.adds.max}. They reset ${esc(dayName(w.adds.resets))}. Waivers' moves still count for the season.</div>`
         : playerTable(w.streams, { extra: streamCols, empty: "<b>No stream helps this week</b>Nobody on waivers raises your odds by 0.1% or more over your weakest players." })}</div>`;
+}
+// Q31: game day. Tonight's games and the lock, what to do before tip, both lineups with live box-score lines, tonight's
+// totals against what was expected, and (folded) the week day by day. Every number from model.py's game_night()
+function todayPanel(w) {
+  const N = w.night;
+  if (!N) return "";
+  const gs = N.games, on = gs.filter(g => g.status === 2).length, fin = gs.filter(g => g.status === 3).length, left = gs.length - on - fin;
+  const tn = w.tonight, clock = iso => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const status = !gs.length ? "No NBA games today."
+    : !on && !fin ? `${plural(gs.length, "NBA game")} tonight. First tip <b>${esc(N.lock.at)}</b>: set your lineup and make today's moves before then.`
+    : fin === gs.length ? `All ${gs.length} games final.${tn?.fetched ? ` Scores from ${clock(tn.fetched)}.` : ""}`
+    : `${[on && `${on} under way`, fin && `${fin} final`, left && `${left} to come${N.lock.next ? ` (next tip ${esc(N.lock.next.at)})` : ""}`].filter(Boolean).join(", ")}.${tn?.fetched ? ` Scores from ${clock(tn.fetched)}.` : ""}`;
+  const toggle = N.days?.length ? `<button class="btn ghost" data-act="days-toggle" aria-expanded="${!!S.week.days}">The week day by day</button>` : "";
+  const head = sub => `<div class="panel-h"><div><h2>Today</h2><p>${sub}</p></div>${toggle}</div>`;
+  if (!N.you.length) return `<div class="panel">${head(`${gs.length ? `None of your players has a game tonight (${plural(gs.length, "NBA game")}).` : "No NBA games today."}${N.them?.length ? ` ${esc(w.opponent)} has ${N.them.filter(r => r.slot !== "BN").length}.` : ""}`)}${dayTable(w, N)}</div>`;
+  // before tip: today's move, Yahoo's lineup against the plan, slots nobody fills, calls to make
+  const tbd = N.change && (N.change.start.length || N.change.sit.length);
+  const counts = N.empty.reduce((m, sl) => ({ ...m, [sl]: (m[sl] || 0) + 1 }), {});
+  const empty = Object.entries(counts).map(([sl, n]) => n > 1 ? `${n} ${esc(sl)}` : esc(sl));
+  const todo = [
+    ...N.moves.map(m => `Add <b>${nameBtn(m.add)}</b> ${into(m, nameBtn)} (<span class="${tone(m.gain)}">${delta(m.gain, "win%")}</span> this week${m.games != null ? `, ${plural(m.games, "start")}` : ""}): the plan's move for today.${N.adds ? ` ${N.adds.left} of ${N.adds.max} adds left.` : ""} ${doneBtn({ add: [m.add], drop: m.drop ? [m.drop] : [] })}`),
+    tbd && `Your Yahoo lineup (as pulled ${clock(N.change.pulled)}) ${and([N.change.start.length && `benches <b>${and(N.change.start.map(esc))}</b>: start ${N.change.start.length > 1 ? "them" : "him"}`, N.change.sit.length && `starts <b>${and(N.change.sit.map(esc))}</b>: bench ${N.change.sit.length > 1 ? "them" : "him"}`].filter(Boolean))}.`,
+    !N.moves.length && (n => n ? `No add today: the plan's first is ${esc(dayName(n.day))}, ${nameBtn(n.add)} ${into(n, nameBtn)}.` : "")(w.plan?.moves?.[0]),
+    empty.length && `${and(empty)} ${N.empty.length > 1 ? "slots" : "slot"} empty: nobody else of yours with a game tonight fits ${N.empty.length > 1 ? "them" : "it"}.${N.moves.length ? "" : " Streaming adds below lists who could fill one."}`,
+    ...N.decide.map(d => `<b>${esc(d.name)}</b> is ${esc(d.as)} (${d.plays}% to play)${d.at ? `: check before ${esc(d.at)}` : ""}.`)].filter(Boolean);
+  const line = l => !l.played ? `<span class="muted">Didn't play</span>`
+    : [`<b>${l.PTS}</b> pts`, `${l.REB} reb`, `${l.AST} ast`, ...[["STL", "stl"], ["BLK", "blk"], ["FG3M", "3pm"]].filter(([k]) => l[k]).map(([k, n]) => `${l[k]} ${n}`),
+       ].join(" · ") + `<br><span class="muted">${l.FGM}/${l.FGA} FG${l.FTA ? `, ${l.FTM}/${l.FTA} FT` : ""}${l.TOV ? `, ${l.TOV} to` : ""}</span>`;
+  const game = r => !r.vs ? `<span class="muted">—</span>` : `${esc(r.vs)} <span class="muted">${r.line || r.locked ? (gs.find(g => g.tip === r.tip && g.teams.includes(r.nba))?.status === 3 ? "final" : "live") : esc(r.at)}</span>`;
+  const side = (rows, who) => { const pl = rows.some(r => !r.locked);  // Plays only while someone's game is still to come
+    return `<div class="tw"><table><thead><tr><th>${who}</th><th>Player</th><th>Game</th>${pl ? `<th class="n" title="Chance he plays tonight">Plays</th>` : ""}<th>Tonight</th></tr></thead><tbody>
+    ${rows.map(r => `<tr${r.slot === "BN" ? ` class="muted"` : ""}><td class="muted">${esc(r.slot)}</td><td class="pname">${nameBtn(r.name)}${r.status ? `<span class="tag ${["O", "INJ", "SUSP"].includes(r.status) ? "out" : ""}">${esc(r.status)}</span>` : ""}</td>
+      <td>${game(r)}</td>${pl ? `<td class="n ${r.locked ? "muted" : r.plays < 70 ? "neg" : ""}">${r.locked ? "—" : r.plays + "%"}</td>` : ""}<td class="line">${r.line ? line(r.line) : `<span class="muted">${r.locked ? "—" : "to come"}</span>`}</td></tr>`).join("")}
+    ${who === "You" && empty.length ? `<tr><td class="muted">Empty</td><td colspan="${pl ? 4 : 3}" class="muted" style="white-space:normal">${and(empty)}: nobody else of yours with a game fits</td></tr>` : ""}</tbody></table></div>`; };
+  const night = N.night && `<div class="tw" style="border-bottom:1px solid var(--line)"><table><thead><tr><th title="Your starters' and theirs in games that have tipped off, live from nba.com, against every starter tonight at his chance to play">Tonight so far / expected</th>
+    ${Object.keys(N.night).map(c => `<th class="n ${punted(c) ? "punted-col" : ""}">${lab(c)}</th>`).join("")}</tr></thead><tbody>
+    ${[["you", "You"], ["them", w.opponent]].map(([k, n]) => `<tr><td class="pname">${esc(n)}</td>${Object.entries(N.night).map(([c, d]) => { const [a, b] = d[k], f = v => v == null ? "—" : c.endsWith("%") ? v.toFixed(1) : Math.round(v);
+      return `<td class="n ${punted(c) ? "punted-col" : ""}">${f(a)} <span class="muted small">/ ${f(b)}</span></td>`; }).join("")}</tr>`).join("")}</tbody></table></div>`;
+  return `<div class="panel" id="today">${head(status)}
+    ${todo.length ? `<div class="panel-b small" style="border-bottom:1px solid var(--line)"><ul class="todo">${todo.map(x => `<li>${x}</li>`).join("")}</ul></div>` : ""}
+    <div class="tonight">${side(N.you, "You")}${N.them ? side(N.them, esc(w.opponent)) : ""}</div>${night || ""}${dayTable(w, N)}</div>`;
+}
+// the week day by day (Q31, folded): after each day left, the games each side starts that day, and the score and chance
+// to win if the week ended there, so the last row is the headline above; the change in Win shows the days it turns on
+function dayTable(w, N) {
+  if (!S.week.days || !N.days?.length) return "";
+  const cats = Object.keys(N.days[0].cats);
+  return `<div class="panel-b small muted" style="border-bottom:1px solid var(--line)">After each day: the games each side starts that day, then the score and your chance to win if the week ended there (the last row is the week). A big drop in Win marks a day to stream for.</div>
+    <div class="tw"><table><thead><tr><th>After</th><th class="n" title="Games each side starts that day">Games</th><th class="n">Score</th><th class="n">Win</th>
+    ${cats.map(c => `<th class="n ${punted(c) ? "punted-col" : ""}">${lab(c)}</th>`).join("")}</tr></thead><tbody>
+    ${N.days.map((d, i) => { const dw = i ? d.win - N.days[i - 1].win : 0;
+      return `<tr><td>${d.date === w.today ? "Today" : esc(dayName(d.date))}</td><td class="n">${d.games[0]}<span class="muted">–${d.games[1]}</span></td><td class="n">${d.score[0].toFixed(1)}–${d.score[1].toFixed(1)}</td>
+      <td class="n val">${Math.round(d.win)}%${Math.abs(dw) >= 3 ? ` <span class="small ${tone(dw)}">${sign1(dw)}</span>` : ""}</td>
+      ${cats.map(c => { const [a, b, o] = d.cats[c], f = v => v == null ? "—" : c.endsWith("%") ? v.toFixed(1) : Math.round(v);
+        return `<td class="n ${punted(c) ? "punted-col" : ""}" title="You ${f(a)}, ${esc(w.opponent)} ${f(b)}"><span class="dot" style="background:${oddsColor(o / 100)}"></span>${chance(o / 100)}</td>`; }).join("")}</tr>`; }).join("")}</tbody></table></div>`;
 }
 // Q29: a player stuck in an IL slot is counted in for whoever This week cuts, a move not made yet: say so
 function assumed(w) {
@@ -961,7 +1023,8 @@ function lineupPanel(w) {
     return cap([x.in.length && `start <b>${and(x.in.map(esc))}</b>${swap.length ? ` over ${and(swap.map(esc))}` : ""}`,
       x.bench.length && `sit <b>${and(x.bench.map(esc))}</b> with a spot open`].filter(Boolean).join("; ") || `<span class="muted">—</span>`); };
   const why = x => moves(x.why).slice(0, 4).map(([c, v]) => `${lab(c)} <span class="${tone(v)}">${sign1(v)}%</span>`).join(", ") || `<span class="muted">—</span>`;
-  if (!X.days.some(x => x.date === W.day)) W.day = (X.days.find(x => x.in.length || x.out.length) || X.days[0]).date;
+  const other = x => !(x.date === w.today && w.night?.you?.length);  // Q31: today's lineup is in the Today panel
+  if (!X.days.some(x => x.date === W.day)) W.day = (X.days.find(x => (x.in.length || x.out.length) && other(x)) || X.days.find(other) || X.days[0]).date;
   const day = d => d === w.today ? "Today" : esc(dayName(d));
   const rows = X.days.map(x => `<tr${x.date === W.day ? ` class="sel"` : ""}><td><button class="rowbtn" data-act="sit-day" data-date="${x.date}" aria-pressed="${x.date === W.day}" title="Show this day's lineup and every option">${day(x.date)}</button></td>
     <td class="names">${x.sit.length ? (x.benched || x.sit.map(n => ({ name: n }))).map(b => `${esc(b.name)}${b.why ? ` <span class="muted">(${esc(b.why)})</span>` : ""}`).join("<br>") : `<span class="muted">Everyone starts</span>`}</td><td class="names">${change(x)}</td><td class="names">${why(x)}</td></tr>`).join("");
@@ -2071,6 +2134,7 @@ document.addEventListener("click", async e => {
   }
   if (act === "week-retry") { S.week = {}; return render(); }
   if (act === "sit-day") { S.week.day = t.dataset.date; return render(); }
+  if (act === "days-toggle") { S.week.days = !S.week.days; return render(); }
   if (act === "sched-retry") { S.sched = {}; return render(); }
   if (act === "sched-day") { S.plan.day = t.dataset.date; return render(); }
   if (act === "sched-open") { S.plan.open = t.dataset.open === "1"; return render(); }
@@ -2084,13 +2148,13 @@ document.addEventListener("click", async e => {
     const c = t.dataset.cat, n = { ...S.lean };
     if (!c) S.lean = {}; else { if ((n[c] || 1) >= 3) delete n[c]; else n[c] = (n[c] || 1) + 1; S.lean = n; }
     store.set("lean", S.lean);
-    const { goal, sit, day } = S.week; S.week = { data: S.week.data, goal, sit, day }; render();
+    const { goal, sit, day, days } = S.week; S.week = { data: S.week.data, goal, sit, day, days }; render();
     return loadWeek().then(() => { if (S.week.goal?.length) loadSit(S.week); });
   }
   if (act === "keep") {  // This week's streams: never drop him (or allow it again), then the plan again
     S.keep = S.keep.includes(t.dataset.name) ? S.keep.filter(n => n !== t.dataset.name) : [...S.keep, t.dataset.name];
     store.set("keep", S.keep);
-    const { goal, sit, day } = S.week; S.week = { data: S.week.data, goal, sit, day }; render();
+    const { goal, sit, day, days } = S.week; S.week = { data: S.week.data, goal, sit, day, days }; render();
     return loadWeek();
   }
   if (act === "drops-go") { if (S.view !== "team") setView("team"); return reveal("#drops"); }
@@ -2227,12 +2291,13 @@ setInterval(async () => {
 }, 20e3);
 // games under way (M18): the server rebuilds on live scores every 5 minutes, so This week follows them while it's in view
 setInterval(async () => {
-  if (document.visibilityState !== "visible" || S.view !== "week" || !S.week.data?.tonight?.on) return;
+  const nx = S.week.data?.night?.lock?.next;  // Q31: also once the next game is past its tip, so its players lock
+  if (document.visibilityState !== "visible" || S.view !== "week" || !(S.week.data?.tonight?.on || nx && Date.now() > Date.parse(nx.tip))) return;
   try {
     const st = await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")) + (S.healthyFa ? "&healthy_fa=1" : ""));
-    const { goal, sit, day } = S.week;  // B7: Play for and the day picked in Start / sit stay (Q32: it steers the streams too)
+    const { goal, sit, day, days } = S.week;  // B7: Play for and the day picked in Start / sit stay (Q32: it steers the streams too)
     const w = await api("/api/week", { keep: S.keep, weights: S.lean, cats: goal || [] });
-    fresh(st); S.week = { data: w, goal, sit, day }; render();
+    fresh(st); S.week = { data: w, goal, sit, day, days }; render();
     if (goal?.length) loadSit(S.week);  // Play for's lineups again, on the new numbers
   } catch (e) { /* offline or restarting: keep what's on screen */ }
 }, 5 * 60e3);

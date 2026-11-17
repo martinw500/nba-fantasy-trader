@@ -1619,6 +1619,20 @@ def test_all():
     a = next(o for o in mon["options"] if o["name"] == "Twin A")
     assert a["locked"] and a["start"] and "flip" not in a and "Twin B" not in mon["start"] + mon["sit"]
     assert not any(o.get("locked") for d in w["lineups"]["days"] for o in d["options"] if o["name"] != "Twin A" or d is not mon)
+    # game day (Q31): the lineup is Start / sit's for today, Twin A locked with his live line (in tonight's totals),
+    # never a move today's plan drops or a call to decide; the day table's last row is This week's headline
+    n = on.game_night(week=w)
+    ta = next(r for r in n["you"] if r["name"] == "Twin A")
+    assert ta["locked"] and ta["line"]["PTS"] == 30 and n["night"]["PTS"]["you"][0] == 30 and ta["vs"] == "vs BBB"
+    assert [r["name"] for r in n["you"] if r["slot"] != "BN"] == mon["start"] and not any(m["drop"] == "Twin A" for m in n["moves"])
+    assert n["lock"]["at"] and n["lock"]["next"]["tip"] == "2026-10-27T02:00:00Z" and [g["status"] for g in n["games"]] == [2, 1]
+    assert "Twin A" not in [x["name"] for x in n["decide"]] and n["days"][-1]["win"] == w["win"] and n["days"][-1]["score"] == w["score"]
+    assert on.game_night() == n  # computing This week itself gives the same
+    e = at(lv(2))  # an empty starting slot is named: nobody of yours plays PG
+    e.slots, e.lineup = ["PG", "Util"], 2
+    for k in e.rosters["Me"]:
+        e.meta[k]["pos"] = "SG"
+    assert e.game_night()["empty"] == ["PG"]
     assert on._move_day(["twin a"]) == "2026-10-27" and on._move_day(["player 150"]) == "2026-10-26"
     assert on.add_drop("Twin E", "Twin A", opp="Them", day="2026-10-26")["week"]["day"] == "2026-10-27"
     assert on.add_drop("Twin E", "Twin A", opp="Them")["week"]["day"] >= "2026-10-27"

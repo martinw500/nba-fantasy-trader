@@ -28,7 +28,7 @@ The open work, in the order to do it. **The pathway** is the one list; each item
 4. [x] **B18. An open spot is never offered a pickup** `xhigh` (Martin, Nov 17; done Nov 17: the plan's first move +1.5 → +2.8, Try a move 55.8% → 52.0%)
 5. [x] **B19. Never drop also rules the cut for a player back; the AI GM closes its own notes** `high` (the AI GM's notes, Nov 17; done Nov 17)
 6. [x] **Q34. Lean on a category this week** `high` (Martin, Nov 17; done Nov 17)
-7. [ ] **Q31. Game day** `high`
+7. [x] **Q31. Game day** `high` (done Nov 17)
 8. [x] **Q32. Waivers you can steer, and a watchlist** `high` (done Nov 17)
 9. [ ] **Q33. Last week, and the season so far** `high`
 10. [ ] **S4. Small fixes, one batch** `medium` (one part has a date: before Nov 30)
@@ -205,6 +205,9 @@ The open work, in the order to do it. **The pathway** is the one list; each item
 
 **Done when:** on a real game night the panel's lineup equals Start / sit's, the lock time matches nba.com's first tip, live lines match the box score, and the day-by-day table's last row equals This week's headline score and win chance. Browser-checked during live games and on an off day.
 
+**Done Nov 17.** `League.game_night()` (not `today()`: `self.today` is the date), `model.py today` (~2 s, 4 KB), `/api/today`, `/api/week`'s `night` (+~0.2 s on the week it just built), gm skill line, `test_model.py` (Twin A locked with his live line in tonight's totals, never in today's moves or the calls to decide; an empty PG slot named; the day table's last row = `this_week()`'s win and score). Page: **Today** first on This week: header (games, first tip; under way / final / next tip once on), a to-do list (today's plan move with Done on Yahoo, or the day of the first one; empty slots; the snapshot's lineup against the plan; probable / questionable / doubtful / day-to-day with tip times), both lineups side by side with game, tip, Plays and the live line, tonight's totals so far / expected by category, and **The week day by day** folded behind a header button (Martin's pick). Start / sit opens on the next day when Today has your lineup; the head's "Tonight: …" moved into the panel; the 5-minute reload also fires once the next game passes its tip.
+**Measured:** Nov 17 snapshot, no punt: the day table's last row 55.2%, 4.7–4.3 and all nine odds equal This week's; its games sum to 38 vs 38 = Games left. First tip 5:30 PM MST (NYK @ TOR, 00:30 UTC). The panel's lineup is Start / sit's today (5 of yours play: Lillard, Huerter, Ball, Collins, Williams III; SF, F, C and 2 Util empty). Live lines: Nov 16's snapshot replayed at 6:30 PM with Nov 16's live box scores: 20 lines, 19 equal the NBA's final box scores; Anthony Black REB 1 / AST 6 against 2 / 7, the box live.json keeps from the buzzer, before nba.com's corrections (a stat correction shows the next morning, from `gamelogs()`). Tonight's PTS then: you 165 against 166 expected, John Ball 175 against 144. **Not checked yet:** a real night with games in progress (tonight's first tip was 3 hours off at the check; the live view was replayed on Nov 16's finals); lock time against nba.com's own page. Browser: before tip with BLK punted (dimmed in the day table and tonight's totals), the Nov 16 replay with every game final, 390 px iframe (tables scroll inside the panel, no page-wide scroll).
+
 ---
 
 ## Q32. Waivers you can steer, and a watchlist `high`
@@ -249,7 +252,7 @@ The open work, in the order to do it. **The pathway** is the one list; each item
 
 One session, all of them. Each is small; together they're the loose ends left open in HISTORY's "Small" list plus what the Nov 16 look found.
 
-1. **Before Nov 30: week 7 is a 14-day matchup (Nov 30–Dec 13).** Ask Martin whether the 4 adds are per matchup or per calendar week there, then check `adds()` (its `resets` date), the add plan, Start / sit and League's Period label all treat those 14 days the way Yahoo does. Week 17 is the other one.
+1. **Before Nov 30: week 7 is a 14-day matchup (Nov 30–Dec 13).** Martin, Nov 17: **4 adds per matchup**, so 4 for the whole 14 days, not 4 a calendar week. Check `adds()` (its `resets` date), the add plan, Start / sit and League's Period label all treat those 14 days the way Yahoo does. Week 17 is the other one.
 2. `model.py move --week 0 --drop X` and `ahead --week 0 --drop X` print a Python traceback. Every CLI error should be one line of JSON the AI GM can read (`{"error": ...}`), as the app's routes already return.
 3. The API-key chat (`ai.py`) has no strategy, wants, ahead, what-if, check or drop tools. Either bring its tool list level with the gm skill or delete the API-key path (the chat has run on the Claude Code login since Oct 27): Martin's call, default delete.
 4. README: the workflows should cover whatever of Q29–Q33 has shipped by then ("Who do I drop?", "What do I do today?").

@@ -25,7 +25,7 @@ Python lives in `.venv` (Homebrew Python blocks global pip): use `.venv/bin/pyth
 - `python test_model.py`: run it after touching `model.py` or `app.py`'s model calls. Prints `ok`.
 - `python backtest.py`: calibration check (~1 min). Run it after changing projections or odds maths. Its other modes (`replay`, `teammates`, `ahead`, `returns`, `gameday`, `league`, `lineups`, `playoffs`, `season`, ...): `docs/COMMANDS.md`.
 - `python app.py --no-browser`: run the app without opening a tab. `#view` and `?punt=FT%25,TOV` deep-link a view and build.
-- `python model.py {team|trade|ideas|search|waivers|movers|roster|week|strategy|news|compare|schedule|move|sources|wants|lineup|ahead|what|note|check|drop} [--punt ...]`: prints JSON; flags in `docs/COMMANDS.md`. `strategy` takes ~40s.
+- `python model.py {team|trade|ideas|search|waivers|movers|roster|week|strategy|news|compare|schedule|move|sources|wants|lineup|ahead|what|note|check|drop|today} [--punt ...]`: prints JSON; flags in `docs/COMMANDS.md`. `strategy` takes ~40s.
 
 ## Rules that hold everywhere
 The short list. Each has its full rule, numbers and history in `docs/MODEL.md`.

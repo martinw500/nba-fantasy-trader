@@ -230,6 +230,9 @@ Roster moves marked Done on Yahoo (or a drop picked with Use this) list under th
 ### Roster alert
 A roster problem to fix on Yahoo (Q29: a healthy player stuck in an IL slot, too many players, an open spot) opens My team and This week as `.alert`: a panel-weight strip (panel fill, `line-strong` border, the panel lift) with a 7px `neg` dot and one or two plain sentences, the fix and a ghost button ("Who to drop") inline. Never the `warn-soft` notice, which stays for data sources, and never a coloured side border. The My team nav button carries the same dot (`.nav .flag`) while one is open.
 
+### Today panel
+This week's first panel (Q31): a header line with tonight's games and the first tip, an unordered to-do list (`.todo`) of what to do before tip, then both lineups as two tables side by side (`.tonight`, a hairline between, one column under 980px). A player's live line is two lines in 12.5px: counting stats with points bold, then shooting in muted. Plays drops out once every game on that side has tipped. Tonight's totals are a category-column table (`so far / expected`), and **The week day by day** is a ghost button in the header that unfolds a day table under it, each category a dot and percentage on the odds scale. Punt dimming on every category column. On a day with no games the panel is just its header.
+
 ### Category strip
 Equal columns per category: label, rank `n / 12`, signed total, and a 4px bar. The bar is green in the top 40%, red in the bottom 35%, grey between.
 
