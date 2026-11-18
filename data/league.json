@@ -3344,10 +3344,10 @@
    "nba": "CHA"
   },
   {
-   "name": "Mario Hezonja",
+   "name": "Luke Kornet",
    "pos": "",
    "status": "",
-   "nba": "CLE"
+   "nba": "SAS"
   },
   {
    "name": "Charles Bassey",
@@ -3356,16 +3356,16 @@
    "nba": "GSW"
   },
   {
+   "name": "Mario Hezonja",
+   "pos": "",
+   "status": "",
+   "nba": "CLE"
+  },
+  {
    "name": "Jalen Slawson",
    "pos": "",
    "status": "",
    "nba": "IND"
-  },
-  {
-   "name": "Luke Kornet",
-   "pos": "",
-   "status": "",
-   "nba": "SAS"
   },
   {
    "name": "Spencer Jones",
@@ -3380,6 +3380,12 @@
    "nba": "GSW"
   },
   {
+   "name": "Sidy Cissoko",
+   "pos": "",
+   "status": "",
+   "nba": "POR"
+  },
+  {
    "name": "Trey Lyles",
    "pos": "",
    "status": "",
@@ -3392,16 +3398,16 @@
    "nba": "OKC"
   },
   {
+   "name": "Jayson Kent",
+   "pos": "",
+   "status": "",
+   "nba": "POR"
+  },
+  {
    "name": "Max Christie",
    "pos": "",
    "status": "",
    "nba": "DAL"
-  },
-  {
-   "name": "Sidy Cissoko",
-   "pos": "",
-   "status": "",
-   "nba": "POR"
   },
   {
    "name": "Ben Sheppard",
@@ -3470,18 +3476,6 @@
    "nba": "ATL"
   },
   {
-   "name": "Jamison Battle",
-   "pos": "",
-   "status": "",
-   "nba": "TOR"
-  },
-  {
-   "name": "Jayson Kent",
-   "pos": "",
-   "status": "",
-   "nba": "POR"
-  },
-  {
    "name": "Jevon Carter",
    "pos": "",
    "status": "",
@@ -3494,6 +3488,12 @@
    "nba": "DET"
   },
   {
+   "name": "Jamison Battle",
+   "pos": "",
+   "status": "",
+   "nba": "TOR"
+  },
+  {
    "name": "Taylor Hendricks",
    "pos": "",
    "status": "",
@@ -3504,12 +3504,6 @@
    "pos": "",
    "status": "",
    "nba": "BOS"
-  },
-  {
-   "name": "Scoot Henderson",
-   "pos": "",
-   "status": "",
-   "nba": "POR"
   },
   {
    "name": "Larry Nance Jr.",
@@ -3534,6 +3528,12 @@
    "pos": "",
    "status": "",
    "nba": "WAS"
+  },
+  {
+   "name": "Scoot Henderson",
+   "pos": "",
+   "status": "",
+   "nba": "POR"
   },
   {
    "name": "Adem Bona",
@@ -3566,18 +3566,6 @@
    "nba": "SAC"
   },
   {
-   "name": "AJ Green",
-   "pos": "",
-   "status": "",
-   "nba": "MIL"
-  },
-  {
-   "name": "Ryan Conwell",
-   "pos": "",
-   "status": "",
-   "nba": "MIA"
-  },
-  {
    "name": "Jonathan Mogbo",
    "pos": "",
    "status": "",
@@ -3588,6 +3576,18 @@
    "pos": "",
    "status": "",
    "nba": "LAL"
+  },
+  {
+   "name": "Ryan Conwell",
+   "pos": "",
+   "status": "",
+   "nba": "MIA"
+  },
+  {
+   "name": "AJ Green",
+   "pos": "",
+   "status": "",
+   "nba": "MIL"
   },
   {
    "name": "Emanuel Sharp",
@@ -3602,22 +3602,16 @@
    "nba": "DAL"
   },
   {
-   "name": "Harrison Barnes",
+   "name": "Noa Essengue",
    "pos": "",
    "status": "",
-   "nba": "SAS"
+   "nba": "CHI"
   },
   {
    "name": "Pete Nance",
    "pos": "",
    "status": "",
    "nba": "MIL"
-  },
-  {
-   "name": "Noa Essengue",
-   "pos": "",
-   "status": "",
-   "nba": "CHI"
   },
   {
    "name": "Josh Green",
@@ -3650,10 +3644,10 @@
    "nba": "WAS"
   },
   {
-   "name": "Tyler Kolek",
+   "name": "RayJ Dennis",
    "pos": "",
    "status": "",
-   "nba": "NYK"
+   "nba": "ATL"
   },
   {
    "name": "Jabari Walker",
@@ -3662,16 +3656,16 @@
    "nba": "PHI"
   },
   {
-   "name": "RayJ Dennis",
-   "pos": "",
-   "status": "",
-   "nba": "ATL"
-  },
-  {
    "name": "Alex Morales",
    "pos": "",
    "status": "",
    "nba": "ORL"
+  },
+  {
+   "name": "Quinten Post",
+   "pos": "",
+   "status": "",
+   "nba": "MEM"
   },
   {
    "name": "Tim Hardaway Jr.",
@@ -3680,10 +3674,16 @@
    "nba": "MIA"
   },
   {
-   "name": "Quinten Post",
+   "name": "Tyler Kolek",
    "pos": "",
    "status": "",
-   "nba": "MEM"
+   "nba": "NYK"
+  },
+  {
+   "name": "Harrison Barnes",
+   "pos": "",
+   "status": "",
+   "nba": "SAS"
   },
   {
    "name": "Ben Saraf",
@@ -3698,6 +3698,12 @@
    "nba": "BOS"
   },
   {
+   "name": "Jaylen Clark",
+   "pos": "",
+   "status": "",
+   "nba": "MIN"
+  },
+  {
    "name": "Vít Krejčí",
    "pos": "",
    "status": "",
@@ -3710,28 +3716,16 @@
    "nba": "CHI"
   },
   {
-   "name": "Jaylen Clark",
-   "pos": "",
-   "status": "",
-   "nba": "MIN"
-  },
-  {
-   "name": "Svi Mykhailiuk",
-   "pos": "",
-   "status": "",
-   "nba": "UTA"
-  },
-  {
    "name": "Dru Smith",
    "pos": "",
    "status": "",
    "nba": "MIA"
   },
   {
-   "name": "Jose Alvarado",
+   "name": "Svi Mykhailiuk",
    "pos": "",
    "status": "",
-   "nba": "NYK"
+   "nba": "UTA"
   },
   {
    "name": "Tidjane Salaün",
@@ -3744,12 +3738,6 @@
    "pos": "",
    "status": "",
    "nba": "UTA"
-  },
-  {
-   "name": "Alijah Martin",
-   "pos": "",
-   "status": "",
-   "nba": "TOR"
   },
   {
    "name": "Bogdan Bogdanović",
@@ -3768,12 +3756,6 @@
    "pos": "",
    "status": "",
    "nba": "ATL"
-  },
-  {
-   "name": "Elijah Harkless",
-   "pos": "",
-   "status": "",
-   "nba": "DET"
   },
   {
    "name": "Chris Youngblood",
@@ -3812,6 +3794,18 @@
    "nba": "SAC"
   },
   {
+   "name": "Jose Alvarado",
+   "pos": "",
+   "status": "",
+   "nba": "NYK"
+  },
+  {
+   "name": "Alijah Martin",
+   "pos": "",
+   "status": "",
+   "nba": "TOR"
+  },
+  {
    "name": "Nikola Jović",
    "pos": "",
    "status": "",
@@ -3824,16 +3818,16 @@
    "nba": "GSW"
   },
   {
-   "name": "Bryce McGowens",
-   "pos": "",
-   "status": "",
-   "nba": "NOP"
-  },
-  {
    "name": "Braden Smith",
    "pos": "",
    "status": "",
    "nba": "IND"
+  },
+  {
+   "name": "Bryce McGowens",
+   "pos": "",
+   "status": "",
+   "nba": "NOP"
   },
   {
    "name": "Zuby Ejiofor",
@@ -3854,16 +3848,16 @@
    "nba": "NOP"
   },
   {
-   "name": "Micah Potter",
-   "pos": "",
-   "status": "",
-   "nba": "POR"
-  },
-  {
    "name": "Myron Gardner",
    "pos": "",
    "status": "",
    "nba": "MIA"
+  },
+  {
+   "name": "Branden Carlson",
+   "pos": "",
+   "status": "",
+   "nba": "POR"
   },
   {
    "name": "Dalton Knecht",
@@ -3878,12 +3872,6 @@
    "nba": "LAC"
   },
   {
-   "name": "Branden Carlson",
-   "pos": "",
-   "status": "",
-   "nba": "POR"
-  },
-  {
    "name": "Josh Minott",
    "pos": "",
    "status": "",
@@ -3896,10 +3884,22 @@
    "nba": "GSW"
   },
   {
+   "name": "Kyle Anderson",
+   "pos": "",
+   "status": "",
+   "nba": "TOR"
+  },
+  {
    "name": "Kyle Filipowski",
    "pos": "",
    "status": "",
    "nba": "UTA"
+  },
+  {
+   "name": "Elijah Harkless",
+   "pos": "",
+   "status": "",
+   "nba": "DET"
   }
  ],
  "settings": {
@@ -8690,5 +8690,5 @@
   },
   "from": "2026-11-17"
  },
- "fetched": "2026-11-17 14:45"
+ "fetched": "2026-11-17 22:16"
 }
