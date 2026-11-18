@@ -305,8 +305,6 @@ def api(path, q, body):
         return {**w, "night": fl.game_night(punt=punt, keep=keep, weights=wts, week=w)} if w.get("opponent") else w  # Q31: the Today panel
     if path == "/api/today":  # Q31: game day, tonight's games, lineups, live lines and the week day by day
         return fl.game_night(punt=punt, keep=body.get("keep") or (), weights=body.get("weights") or None)
-    if path == "/api/lineup":  # This week's Start / sit, playing for some categories only
-        return fl.start_sit(punt=punt, cats=body.get("cats", []), weights=body.get("weights") or None)
     if path == "/api/refresh":
         refresh()
         return state(lg, punt)
@@ -371,7 +369,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 API = {"/api/state", "/api/team", "/api/trade", "/api/ideas", "/api/search", "/api/strategy", "/api/player", "/api/compare", "/api/move", "/api/schedule", "/api/news",
-       "/api/players", "/api/me", "/api/week", "/api/lineup", "/api/refresh", "/api/stamp", "/api/ahead", "/api/what", "/api/moved", "/api/check", "/api/drops", "/api/waivers", "/api/watch", "/api/today", "/api/chat", "/api/chats", "/api/offers"}
+       "/api/players", "/api/me", "/api/week", "/api/refresh", "/api/stamp", "/api/ahead", "/api/what", "/api/moved", "/api/check", "/api/drops", "/api/waivers", "/api/watch", "/api/today", "/api/chat", "/api/chats", "/api/offers"}
 
 def live():
     """Every LIVE_MIN minutes, ESPN's injury feed again (and any other cache past its window: news, box scores...),

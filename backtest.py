@@ -1317,18 +1317,26 @@ def league():
         g0, g1 = ({t: g["played"] for pr in s["matchups"] for t, g in pr.get("games", {}).items()} for s in (s0, s1))
         for t in ok:
             var = np.array([model.DISPERSION.get(c, np.nan) for c in model.RAW]) * left[t] + (model.SCHED_CV * left[t]) ** 2
-            rows.append({"day": d, "pred": left[t], "act": vec(tot1[same[t]]) - vec(sf[t]), "sd": np.sqrt(var),
+            rows.append({"day": d, "team": t, "pred": left[t], "act": vec(tot1[same[t]]) - vec(sf[t]), "sd": np.sqrt(var),
                          "games": (sum(lg.starts(*lg._week_side(t), plays=True).values()), g1.get(same[t], np.nan) - g0.get(t, np.nan))})
         for a, b in (pr["teams"] for pr in s0["matchups"] if all(t in ok for t in pr["teams"])):
             p = model.cat_probs(left[a], left[b], model.CATS, vec(sf[a]), vec(sf[b]))
             cats += zip(p, outcome(vec(tot1[same[a]]), vec(tot1[same[b]])))
     P, A, SD, G = (np.array([r[k] for r in rows]) for k in ("pred", "act", "sd", "games"))
-    Z = (A - P) / SD
+    with np.errstate(invalid="ignore", divide="ignore"):
+        Z = np.where(SD > 0, (A - P) / np.where(SD > 0, SD, 1), np.nan)  # a team-day with nothing left to play has no sd
     print(f"\n== the real league: {len(rows)} team-days from {len({r['day'] for r in rows})} pre-tip snapshots ==")
     print(f"rest of week, actual / predicted: games {np.nansum(G[:, 1]) / G[:, 0].sum():.3f}  "
           + "  ".join(f"{c} {a / p:.3f}" for c, a, p in zip(model.RAW, A.sum(0), P.sum(0))))
     print("misses over the model's sd, mean / sd: " + "  ".join(
-        f"{c} {Z[:, i].mean():+.2f} / {Z[:, i].std():.2f}" for c in model.COUNTING for i in [model.RAW.index(c)]))
+        f"{c} {np.nanmean(Z[:, i]):+.2f} / {np.nanstd(Z[:, i]):.2f}" for c in model.COUNTING for i in [model.RAW.index(c)]))
+    # by team (Nov 17, Martin: "most managers in my league only do adds for long term"): the model streams another team
+    # only into an open spot, so a team that streams by swapping should bank more than predicted
+    print("by team, actual / predicted (team-days): games, PTS, REB")
+    for t in sorted({r["team"] for r in rows}):
+        i = [j for j, r in enumerate(rows) if r["team"] == t]
+        print(f"  {t:24} ({len(i):2})  {np.nansum(G[i, 1]) / G[i, 0].sum():.3f}  " + "  ".join(
+            f"{A[i, model.RAW.index(c)].sum() / P[i, model.RAW.index(c)].sum():.3f}" for c in ("PTS", "REB")))
     p, y = np.clip(np.array([c[0] for c in cats]), 1e-6, 1 - 1e-6), np.array([c[1] for c in cats])
     print(f"category odds ({len(p)}):", {k: round(v, 4) for k, v in score(p, y).items()},
           f"calibrated odds would score {float(-(p * np.log(p) + (1 - p) * np.log(1 - p)).mean()):.4f};", calibration(p, y, 5))

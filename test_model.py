@@ -1277,7 +1277,8 @@ def test_all():
     assert float(sl._wscore(q)) == q.mean() and model.weights("PTS=2, to=0.5") == {"PTS": "2", "to": "0.5"} and model.weights("") is None
     lw = sl.this_week("Them", weights={"PTS": 2})
     assert lw["weights"] == {"PTS": 2.0} and "weights" not in wk and (lw["win"], lw["score"], lw["cats"]) == (wk["win"], wk["score"], wk["cats"])
-    assert sl.start_sit("Them", weights={"PTS": 2}) == lw["lineups"] and sl.this_week("Them") == wk
+    lp = sl._leaning({"PTS": 2})
+    assert sl.start_sit("Them", weights={"PTS": 2}, side=lp._plan_side(lw["plan"])) == lw["lineups"] and sl.this_week("Them") == wk
     for bad in ({"XYZ": 2}, {"PTS": 6}, {"PTS": -1}, {"PTS": "a"}):
         try:
             sl._leaning(bad)
@@ -1404,7 +1405,8 @@ def test_all():
     assert all(d["in"] == ["Player 150"] and len(d["out"]) == 1 for d in ss["days"]) and ss["gain"] > 0
     assert ss["cats"]["BLK"][1] > ss["cats"]["BLK"][0] and all(d["why"]["BLK"] > 0 for d in ss["days"])
     assert [d["in"] for d in sl.start_sit("Them", punt=["BLK"])["days"]] == [d["in"] for d in ss["days"]]
-    assert sl.this_week("Them")["lineups"] == ss and sl.start_sit() is None  # no opponent saved
+    tw = sl.this_week("Them")  # This week's lineups are Start / sit's on the plan's roster
+    assert tw["lineups"] == sl.start_sit("Them", side=sl._plan_side(tw["plan"])) and sl.start_sit() is None  # no opponent saved
     # every starting slot comes back in Yahoo's order, None where nobody with a game fits (Nov 2: no SF while George
     # and Black rested)
     old = {k: dict(m) for k, m in sl.meta.items()}
@@ -1630,7 +1632,7 @@ def test_all():
     assert on.game_night() == n  # computing This week itself gives the same
     e = at(lv(2))  # an empty starting slot is named: nobody of yours plays PG
     e.slots, e.lineup = ["PG", "Util"], 2
-    for k in e.rosters["Me"]:
+    for k in e.rosters["Me"] + e.fa:  # free agents too: today's plan would add one for the slot (its lineups follow the plan)
         e.meta[k]["pos"] = "SG"
     assert e.game_night()["empty"] == ["PG"]
     assert on._move_day(["twin a"]) == "2026-10-27" and on._move_day(["player 150"]) == "2026-10-26"
@@ -1725,6 +1727,15 @@ def test_all():
     row = next(p for p in ch["paths"] if p.get("pick"))
     assert ch["chosen"] and row["key"] == alt["key"] and row["win"] == alt["win"] and abs(ch["plan"]["gain"] - alt["gain"]) <= 0.05 * alt["adds"] + 0.01
     assert [(m["day"], m["add"], m["drop"]) for m in ch["plan"]["moves"]] == [(m["day"], m["add"], m["drop"]) for m in alt["moves"]]
+    # Start / sit runs on the plan's roster (Nov 17: Saturday's lineup had Huerter, not the plan's Gafford): each add
+    # from his day, each drop until the day before, and that roster reads the picked path's odds exactly
+    side = sl._plan_side(ch["plan"])
+    _, _, odd = sl._matchup("Them")
+    assert [round(100 * float(x), 1) for x in odd(sl.week_vec(*side))] == row["odds"]
+    for m in ch["plan"]["moves"]:
+        for d in ch["lineups"]["days"]:
+            there = d["start"] + d["sit"]
+            assert (m["add"] in there) <= (d["date"] >= m["day"]) and not (m["drop"] in there and d["date"] >= m["day"])
     none = sl.this_week("Them", choose="none")
     assert none["chosen"] and none["plan"] is None and none["paths"][0].get("pick")
     assert "chosen" not in sl.this_week("Them", choose="junk") and sl.this_week("Them", choose="junk")["plan"] == wk["plan"]
