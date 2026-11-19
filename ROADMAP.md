@@ -2,7 +2,7 @@
 
 The open work, in the order to do it. **The pathway** is the one list; each item under it is a full brief (why, what's already there, what to build, how to check it), written so a session can pick it up cold and run the whole item without reading anything else first.
 
-**Everything already built is in `docs/HISTORY.md`** (the roadmap as it stood on Nov 16, word for word, 410 KB). Don't load it whole: grep an item's ID (M21, B13, Q24, ...) when a brief here points at one. Checks of the numbers: `AUDIT.md`. AI GM notes (`data/notes.md`) are open bugs and asks from the chat: read the open ones before picking from the pathway (none open on Nov 16).
+**Everything already built is in `docs/HISTORY.md`** (the roadmap as it stood on Nov 16, word for word, 410 KB). Don't load it whole: grep an item's ID (M21, B13, Q24, ...) when a brief here points at one. Checks of the numbers: `AUDIT.md`. AI GM notes (`data/notes.md`) are open bugs and asks from the chat: read the open ones before picking from the pathway (none open on Nov 19).
 
 **How to run it:** top to bottom. *"Read ROADMAP.md and do Q29"*, or *"run the pathway"* to have Claude run the items back to back, each as its own agent at the item's effort, checking each before starting the next. When an item is done: tick it in the pathway, put a dated "Done" note with the numbers measured under its brief, update README / `docs/MODEL.md` / `docs/FILES.md` / `docs/COMMANDS.md` / the gm skill where they describe it, run `python test_model.py`, and restart the app in Martin's Terminal. When a brief's whole section is done and a few weeks old, move it to the end of `docs/HISTORY.md` so this file stays short.
 
@@ -31,7 +31,7 @@ The open work, in the order to do it. **The pathway** is the one list; each item
 7. [x] **Q31. Game day** `high` (done Nov 17)
 8. [x] **Q32. Waivers you can steer, and a watchlist** `high` (done Nov 17)
 9. [ ] **Q33. Last week, and the season so far** `high`
-10. [ ] **S4. Small fixes, one batch** `medium` (one part has a date: before Nov 30)
+10. [x] **S4. Small fixes, one batch** `medium` (done Nov 19)
 11. [ ] **M32. Each player's own volatility in This week's odds** `xhigh` (Martin, Nov 17; measure first, build only if it holds out of sample)
 12. [ ] **M31. Each team's own habits: cover rate for missed games, and streaming** `xhigh` (Martin's call when: measured Nov 16 and 17, not built; better with ~6 weeks of snapshots)
 13. [ ] **M30. Playoff planning** `xhigh` (any time before the Mar 4 trade deadline; sooner helps title trades)
@@ -280,6 +280,16 @@ One session, all of them. Each is small; together they're the loose ends left op
 
 **Done when:** each is ticked here with one line on what changed; `python test_model.py` passes.
 
+**Done Nov 19** (with the two open AI GM notes, both real bugs, fixed first: Try a move's own drop never the player already cut for one back, PJ for Huerter +1.6 where it read 0.0; a what-if's out-until date taken as certain, so Ingram's Saturday game is weighed, parked 15.4% vs 14.2%. `docs/MODEL.md` §5 and §9):
+1. [x] 14-day weeks: already right. `adds()` counts from the matchup's `week_start` to `week_end`, a rolled-over snapshot takes the schedule's 14 days, `weeks()` / the planner / season maths read the schedule. Checked by building the real league on Nov 30 and Dec 8, rolled and with a week-7 snapshot: 4 adds for Nov 30–Dec 13, resets Dec 14, This week, the add plan and Start / sit run to Dec 13, the planner's next week is Dec 14–20. Added: `yahoo.from_text()` takes the matchup's dates from the season schedule by week number, so a header showing only half of week 7 can't reset the adds count mid-matchup. **Heads-up:** the NBA schedule has ~8 games Dec 4–11 (the NBA Cup gap; the league adds the rest after group play), so week 7 reads light on games until `schedule()`'s daily refresh picks them up.
+2. [x] CLI errors: `model.py`'s `KeyError` (bad name, date, week, move) prints `{"error": ...}` and exits 1 (`note` and `what --undo` too); `move --week 0` is just this week's move. gm skill and `docs/COMMANDS.md` say so.
+3. [x] API-key chat deleted (Martin, Nov 19: "remove anthropic api key like im not gonna use that"): `ai.py`, `app.py`'s `gm`, `anthropic` in requirements; README, PRODUCT, CLAUDE.md, `docs/FILES.md`. `.env` stays for the Yahoo keys.
+4. [x] README already covered Q29–Q34 as shipped; added the 14-day weeks' adds and certain what-if dates.
+5. [x] My team with nothing to suggest: one line, "Worth doing now: nothing today ...".
+6. [x] `docs/MODEL.md` §3: the early-season sit lean (94.6% vs 92.1%) as a known lean, refit next October.
+7. [x] "trade chip" only on a pick or a row within `MOVE` × `s` (0.2) of the best season row; on the Nov 16 and 18 snapshots that's none of the 10 it was on. test_model checks it.
+8. [x] The "403 blocked" lines weren't the network: the cache tests fail refreshes on purpose (checked: every socket connect patched to raise, none tried). `test_freshness` / `test_live` now capture their warnings; the self-check prints only `ok`.
+
 ---
 
 ## M30. Playoff planning `xhigh`
@@ -315,7 +325,7 @@ One session, all of them. Each is small; together they're the loose ends left op
 - **Today:** activate Suggs and drop P.J. Washington or Daniel Gafford (near-tied; the other goes Thursday for Ingram). Then save a new snapshot.
 - Pull a snapshot before the first tip-off on days you'll make moves and save it into the project folder.
 - Mark offers you send as Accepted / Declined under Trades → Offers sent (M6 needs ~20).
-- Answers the pathway needs: which injury tags keep a player in an IL slot in mchc (Q29), adds in the 14-day weeks (S4), keep or delete the API-key chat (S4), Strategy's verdict by title odds (M30).
+- Answers the pathway needs: which injury tags keep a player in an IL slot in mchc (Q29), Strategy's verdict by title odds (M30).
 - Apply for Yahoo API access (sports.yahoo.com/developer/access); with it the snapshots go away.
 
 ## Looked at on Nov 16, not building

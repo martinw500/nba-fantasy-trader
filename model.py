@@ -1743,9 +1743,11 @@ class League:
     def _late(self, k):
         """ESPN lists him out until a date from today on that's a guess (B11): RETURN_LATE for his status (B15: a
         day-to-day player is back sooner than one listed out), else None: not a one-game rest (his note says so, also
-        on the day he's due back, when the REST tag is gone), nor listed for a game (M16 has that one's chance)."""
+        on the day he's due back, when the REST tag is gone), nor listed for a game (M16 has that one's chance), nor a
+        what-if's date: that one is yours, so he's back for his first game from it (AI GM note, Nov 19)."""
         i = self.inj.get(k, {})
-        if (i.get("return") or "") < self.today or REST.search(i.get("note", "")) or k in self.gameday:
+        if (i.get("return") or "") < self.today or REST.search(i.get("note", "")) or k in self.gameday or (
+                i.get("note", "").startswith("What if")):
             return None
         return RETURN_LATE.get(i.get("status"), RETURN_LATE["O"])
 
@@ -3504,6 +3506,17 @@ class League:
         lg.fa = [k for k in self.fa if self.meta.get(k, {}).get("status", "") not in OUT]
         return lg
 
+    def without(self, names=()):
+        """This league with these free agents off waivers (Martin, Nov 19: "what if the guy i want gets picked up"):
+        This week's skip list, so the streams and the plan go to the next best. A name that isn't a player is an error
+        (the AI GM's input); one no longer a free agent (a new snapshot has him on a team) changes nothing."""
+        if not names:
+            return self
+        gone = {self.find(n) for n in names}
+        lg = copy.copy(self)
+        lg.fa = [k for k in self.fa if k not in gone]
+        return lg
+
     def _copy(self, rosters, fa, il=None):
         """A copy of the league with these rosters, free agents and IL slots (after_free, after_trade)."""
         lg = copy.copy(self)
@@ -4292,6 +4305,10 @@ class League:
         n = len(keys) - len(il) - max(self.roster_n, len(self._playing(me)))  # active players over the limit
         cands = [x for x in self._drops([x for x in keys if x not in il], keep=[k]) if x]
         cands = cands or [x for x in keys if x not in il and x != k]
+        # not one This week already has leaving (cut for a player back, Who to drop's pick): dropping him changes
+        # nothing, and _handoff gave the add his last day (AI GM note, Nov 18: P.J. Washington for Williams III, 0 games)
+        cut = self._week_roster(self.me, punt)[1]
+        cands = [x for x in cands if x not in cut] or cands
         if n > 0 and self.mode == "points":
             auto = self.value(cands, punt).nsmallest(n).index.tolist()
         elif n > 0:
@@ -4801,6 +4818,11 @@ class League:
             top = max(range(len(rows)), key=lambda i: raw[i][0])
             picks = {"week": rows[max(range(len(rows)), key=by_week)]["name"] if opp else None, "season": rows[top]["name"],
                      "overall": rows[max((i for i in range(len(rows)) if raw[i][0] >= raw[top][0] - 0.1), key=by_week)]["name"]}
+            # S4 (Nov 16: the tag was on 10 of 14 rows, anyone the market ranks in the top 96): "trade chip" only where
+            # it changes a call, a pick or a row within MOVE of the best season row; nobody cuts the rest anyway
+            for i, r in enumerate(rows):
+                if r.get("chip") and r["name"] not in picks.values() and raw[i][0] < raw[top][0] - MOVE * self.s:
+                    del r["chip"]
         hurt = lambda x: x["status"] in OUT
         self._dropc[key] = {
             "need": max(len(act) + len(stuck) - self.roster_n, 0), "activate": self.names(stuck),
@@ -4963,6 +4985,7 @@ def main():
     ap.add_argument("--outside", type=int, default=0, help="search: role players only, nobody in the market's top N")
     ap.add_argument("--players", default="", help='compare: 2 to 4 players, e.g. "A, B"')
     ap.add_argument("--keep", default="", help='week, today: your players no stream may drop, e.g. "John Collins, Paul George"')
+    ap.add_argument("--skip", default="", help='week, lineup, today: free agents to leave out (taken, or you don\'t want them), e.g. "P.J. Washington"')
     ap.add_argument("--weight", default="", help='week, lineup, today: lean on categories, e.g. "PTS=2" (double) or "PTS=2,TOV=0.5"; 0 to 5, the rest count 1')
     ap.add_argument("--choose", help='week: a path\'s key from Every path ("none" = no move): the plan follows it')
     ap.add_argument("--add", default="", help="move: the free agent to add")
@@ -4987,7 +5010,7 @@ def main():
         try:
             return print(json.dumps(note(a.text, a.close), indent=1, ensure_ascii=False))
         except KeyError as e:
-            raise SystemExit(e.args[0])
+            raise KeyError(e.args[0])
     split = lambda s: [x.strip() for x in s.split(",") if x.strip()]
     if a.cmd == "what" and (a.player or a.clear):  # set or clear one, then show what's on (the app picks it up: watch())
         name = a.player and (lg0 := load()).p.at[lg0.find(a.player), "PLAYER_NAME"]
@@ -4997,7 +5020,7 @@ def main():
                                                          split(a.give), split(a.get), plan=a.plan))
     if a.cmd == "what" and (a.undo or a.done):
         if (a.undo or a.done) not in ("all", *(m["id"] for m in moves())):
-            raise SystemExit(f"No saved move {a.undo or a.done}: " + (", ".join(f"{m['id']} ({move_text(m)})" for m in moves()) or "none saved"))
+            raise KeyError(f"No saved move {a.undo or a.done}: " + (", ".join(f"{m['id']} ({move_text(m)})" for m in moves()) or "none saved"))
         moves(undo=a.undo, done=a.done)
     lg, punt = load(what=whatif(), made=moves()), punts(a.punt)
     lg = lg.healthy_fa() if a.healthy_fa else lg
@@ -5011,13 +5034,13 @@ def main():
                                        their_free=a.their_free, max_overpay=a.max_overpay, outside=a.outside),
            "waivers": lambda: lg.waivers(punt, cats=split(a.cats)),
            "movers": lambda: lg.movers(punt),
-           "week": lambda: lg.this_week(a.vs, punt, keep=[x.strip() for x in a.keep.split(",") if x.strip()], weights=weights(a.weight),
+           "week": lambda: lg.without(split(a.skip)).this_week(a.vs, punt, keep=[x.strip() for x in a.keep.split(",") if x.strip()], weights=weights(a.weight),
                                         cats=split(a.cats), choose=a.choose),
            "strategy": lambda: lg.strategy(a.size),
            "news": lg.roster_news,
            "compare": lambda: lg.compare(split(a.players), punt),
            "schedule": lambda: lg.planner(punt),
-           "lineup": lambda: lg.this_week(a.vs, punt, keep=split(a.keep), weights=weights(a.weight), cats=split(a.cats), choose=a.choose)["lineups"],
+           "lineup": lambda: lg.without(split(a.skip)).this_week(a.vs, punt, keep=split(a.keep), weights=weights(a.weight), cats=split(a.cats), choose=a.choose)["lineups"],
            "move": lambda: lg.add_drop(a.add, a.drop or None, punt, a.vs, a.day),
            "sources": lg.sources,
            "roster": lambda: lg.team_roster(a.team or lg.me, punt),
@@ -5027,7 +5050,7 @@ def main():
            "check": lambda: lg.roster_check(punt),
            "drop": lambda: lg.drops(punt, a.vs),
            "watch": lambda: {"watch": watching(lg, punt, a.player, a.remove)},
-           "today": lambda: lg.game_night(a.vs, punt, split(a.keep), weights(a.weight))}[a.cmd]()
+           "today": lambda: lg.without(split(a.skip)).game_night(a.vs, punt, split(a.keep), weights(a.weight))}[a.cmd]()
     # no indent, and a trade's player cards last: the AI GM chat (claude -p) shows only a 2 KB preview of output over
     # ~30 KB, and an indented trade ran 33 KB, its playoff and title odds past the cut (Nov 7 note)
     if a.cmd == "trade":
@@ -5063,4 +5086,8 @@ def brief(cmd, out):
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyError as e:  # bad input (a name, a date, a week): one line of JSON the AI GM can read, as the app's routes return
+        print(json.dumps({"error": str(e.args[0] if e.args else e)}, ensure_ascii=False))
+        sys.exit(1)

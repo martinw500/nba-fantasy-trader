@@ -31,7 +31,7 @@ Used alongside the Yahoo Fantasy site/app: the user analyzes here, then executes
 - Modes: H2H 9-cat (FG%, FT%, 3PM, PTS, REB, AST, STL, BLK, TO) and points.
 - Values are per game, rest of season; early-season samples are noisy and the UI should say so.
 - Read-only toward Yahoo: no trade proposals or roster moves are sent from the app.
-- AI chat needs an Anthropic API key; everything else works without one.
+- AI chat needs Claude Code installed and logged in; everything else works without it.
 - Ignores positions/roster slots and games-per-week schedules (known gap).
 
 ## Evidence on Hand

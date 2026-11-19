@@ -26,7 +26,6 @@ load_dotenv(ROOT / ".env")
 # every league here is on the saved what-ifs (Q27) and roster moves (Q30)
 load = lambda refetch=(): model.load(refetch=refetch, what=model.whatif(), made=model.moves())
 lg = load()
-gm = None  # created on first chat so the app works without an API key
 gen = 0  # bumped whenever data/league.json changes under the app (remember(), Refresh): live() drops a rebuild it
          # started before (Nov 4 audit #23: a team switch made while it loaded was overwritten with the old team)
 
@@ -73,7 +72,7 @@ took = None  # (name, file time) of the snapshot file refresh() last read
 def refresh():
     """Refresh: the league again from its source (Yahoo's API, the newest snapshot file, or the demo), with injuries,
     this season's stats and live scores refetched."""
-    global lg, gm, gen, took
+    global lg, gen, took
     with refreshing:
         refetch = ()
         if os.environ.get("YAHOO_LEAGUE_ID"):
@@ -90,14 +89,14 @@ def refresh():
         else:
             yahoo.demo()
         gen += 1  # the new snapshot is written: drop a rebuild live() started on the old one
-        lg, gm = load(refetch), None
+        lg = load(refetch)
 
 
 def watch():
     """A snapshot saved into the folder loads by itself (Martin, Nov 12), checked every 15 seconds: once the file is 5
     seconds old (not still being written), and each save tried once, so one that can't be read isn't retried forever.
     The page asks /api/stamp every 20 seconds and pulls the new numbers."""
-    global lg, gm, gen
+    global lg, gen
     tried, what = None, model.mtime(model.WHATIF)
     while True:
         time.sleep(15)
@@ -109,7 +108,7 @@ def watch():
                         or any(m.get("plan") != (x["state"] == "plan") for m, x in zip(model.moves(), lg.moves) if x["state"] != "stale")):
                     with refreshing:
                         gen += 1
-                        lg, gm = load(), None
+                        lg = load()
             if (f := waiting(lg)) and time.time() - (at := f.stat().st_mtime) > 5 and (f.name, at) != tried:
                 tried = (f.name, at)
                 refresh()
@@ -220,7 +219,7 @@ def offers(body, punt):
 
 
 def api(path, q, body):
-    global lg, gm, gen
+    global lg, gen
     punt = model.punts(body.get("punt", q.get("punt", [""])[0]))
     # Waivers' "Healthy only": injured free agents off waivers for its suggestions and every trade's free moves
     lg_in = lg
@@ -266,7 +265,7 @@ def api(path, q, body):
             name = body.get("player") and lg.p.at[lg.find(body["player"]), "PLAYER_NAME"]
             model.whatif(name, bool(body.get("clear")), **{k: body.get(k) for k in ("line", "pct", "min", "health", "until")})
             gen += 1
-            lg, gm = load(), None
+            lg = load()
         return state(lg.healthy_fa() if fl is not lg_in else lg, punt)
     if path == "/api/moved":  # Q30: POST a roster move made on Yahoo ({add, drop, activate, park, give, get, their_drop};
         with refreshing:      # plan: picked, not made yet), {undo: id | "all"} or {done: a plan's id}; every number rebuilt
@@ -279,7 +278,7 @@ def api(path, q, body):
                 model.moves(new=lg.made(**{k: body.get(k) or () for k in ("add", "drop", "activate", "park", "give", "get", "their_drop")},
                                         plan=bool(body.get("plan"))))
             gen += 1
-            lg, gm = load(), None
+            lg = load()
         return state(lg.healthy_fa() if fl is not lg_in else lg, punt)
     if path == "/api/schedule":  # schedule planner: your games per day, NBA teams' games ahead
         return lg.planner(punt)
@@ -291,7 +290,7 @@ def api(path, q, body):
         if body.get("team") not in lg.rosters:
             raise KeyError(f"Unknown team: {body.get('team')}")
         remember(me=body["team"], matchup=model.switched(lg.snap, body["team"]))  # the week stays, not the opponent (B1)
-        lg, gm = load(), None
+        lg = load()
         return state(lg, punt)
     if path == "/api/week":  # POST {opponent} sets this week's opponent until the week ends
         if opp := body.get("opponent"):
@@ -300,11 +299,11 @@ def api(path, q, body):
             lg.snap["matchup"] = lg.matchup = {**lg.matchup, "opponent": opp, "week_end": lg.week_end}
             remember(matchup=lg.matchup)
             fl = lg.healthy_fa() if fl is not lg else lg  # the copy was made before the new opponent
-        keep, wts = body.get("keep") or (), body.get("weights") or None
+        keep, wts, fl = body.get("keep") or (), body.get("weights") or None, fl.without(body.get("skip") or ())  # skip: taken off waivers
         w = fl.this_week(punt=punt, keep=keep, weights=wts, cats=body.get("cats") or (), choose=body.get("choose") or None)  # Healthy only: no injured free agent as a stream (audit #15); keep: never dropped
         return {**w, "night": fl.game_night(punt=punt, keep=keep, weights=wts, week=w)} if w.get("opponent") else w  # Q31: the Today panel
     if path == "/api/today":  # Q31: game day, tonight's games, lineups, live lines and the week day by day
-        return fl.game_night(punt=punt, keep=body.get("keep") or (), weights=body.get("weights") or None)
+        return fl.without(body.get("skip") or ()).game_night(punt=punt, keep=body.get("keep") or (), weights=body.get("weights") or None)
     if path == "/api/refresh":
         refresh()
         return state(lg, punt)
@@ -316,22 +315,14 @@ def api(path, q, body):
     if path == "/api/offers":  # Trades' Offers sent: what you copied for Yahoo and the answers
         return offers(body, punt)
     if path == "/api/chat":
-        if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
-            if not shutil.which("claude"):
-                return {"reply": "Install Claude Code and log in (or add ANTHROPIC_API_KEY=... to .env) to chat with the AI GM."}
-            return {"reply": ""} if body.get("reset") else claude_chat(body["message"], punt, body.get("session"),
-                                                                       body.get("model"), body.get("effort"),
-                                                                       body.get("web", True) is not False,
-                                                                       [f for f, on in (("--healthy-fa", body.get("healthy_fa")),
-                                                                                        ("--no-free", body.get("free") is False),
-                                                                                        ("--their-free", body.get("their_free"))) if on])
-        if gm is None:
-            import ai
-            gm = ai.GM(lg)
-        if body.get("reset"):
-            gm.reset()
-            return {"reply": ""}
-        return {"reply": gm.ask(body["message"], punt)}
+        if not shutil.which("claude"):
+            return {"reply": "Install Claude Code and log in to chat with the AI GM."}
+        return {"reply": ""} if body.get("reset") else claude_chat(body["message"], punt, body.get("session"),
+                                                                   body.get("model"), body.get("effort"),
+                                                                   body.get("web", True) is not False,
+                                                                   [f for f, on in (("--healthy-fa", body.get("healthy_fa")),
+                                                                                    ("--no-free", body.get("free") is False),
+                                                                                    ("--their-free", body.get("their_free"))) if on])
     raise KeyError(path)
 
 
@@ -379,7 +370,7 @@ def live():
     scores once a game goes final; the injury feed stays on its LIVE_MIN clock. Requests already running finish on the
     old copy; offline, the old copies stay and the sidebar says so. Rosters and the snapshot's totals still come from
     the snapshot (Yahoo's API is closed)."""
-    global lg, gm
+    global lg
     feed = time.time()  # the injury feed's last forced refetch
     while True:
         time.sleep(model.next_poll(lg.live, LIVE_MIN * 60))
@@ -394,8 +385,6 @@ def live():
         if gen != g0:  # your team, the opponent or the snapshot changed while it loaded: that request's league stands
             continue
         lg = new
-        if gm is not None:  # the API-key chat keeps its conversation on the new numbers
-            gm.lg, gm.tools = new, gm._tools()
 
 
 if __name__ == "__main__":

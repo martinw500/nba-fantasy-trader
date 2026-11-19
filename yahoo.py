@@ -276,8 +276,11 @@ def from_text(path, me=None, write=True):
         print(f"The season schedule in {path} has a team twice in a week (or a team not in the league), so "
               + ("the last import's is kept." if snap["schedule"] else "it's left out (no playoff odds)."))
     if mine and got.get("week"):
-        snap["matchup"] = {"opponent": next(t for t in mine["teams"] if t != me), "week_start": got["week"]["start"],
-                           "week_end": got["week"]["end"], "totals": mine["totals"],
+        # the season schedule's dates for that week number win: weeks 7 and 17 run 14 days as one matchup (4 adds in all),
+        # so a header showing only its second 7 days would reset the adds count mid-matchup
+        wk = next((w for w in snap.get("schedule", ()) if w["week"] == got["week"]["week"]), got["week"])
+        snap["matchup"] = {"opponent": next(t for t in mine["teams"] if t != me), "week_start": wk["start"],
+                           "week_end": wk["end"], "totals": mine["totals"],
                            **({"games": mine["games"]} if mine.get("games") else {}),
                            **({"from": got["from"]} if got.get("from") else {})}
     elif old.get("matchup") and old.get("me") == me:  # the opponent picked in the app survives a re-import

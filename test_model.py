@@ -1,4 +1,8 @@
 """python test_model.py  (synthetic data, no network)"""
+import contextlib
+import functools
+import io
+
 import numpy as np
 import pandas as pd
 
@@ -620,6 +624,8 @@ def test_all():
     close = [r for r in d["rows"] if r["season"] >= top["season"] - 0.1]
     assert d["picks"]["overall"] == max(close, key=lambda r: (r["week"], r["season"]))["name"]
     assert d["picks"]["season"] == top["name"] and d["picks"]["week"] == max(d["rows"], key=lambda r: (r["week"], r["season"]))["name"]
+    # S4: "trade chip" only where it changes the call (a pick, or within MOVE of the best season row)
+    assert all(r["name"] in d["picks"].values() or r["season"] >= top["season"] - model.MOVE * stuck.s - 0.006 for r in d["rows"] if r.get("chip"))
     # Q30: until you pick, This week counts Who to drop's overall pick as gone, so the panel and This week agree
     row, pick = {r["name"]: r for r in d["rows"]}, d["picks"]["overall"]
     tw = stuck.this_week()
@@ -1504,6 +1510,14 @@ def test_all():
     assert bm.this_week()["back"]["you"]["in"] == [{"name": "Twin C", "day": "2026-11-01"}]
     assert bm._week_roster("Them") == ml._week_roster("Them") and np.allclose(bm.week_vec(*bm._week_side("Them")), ml.week_vec(*ml._week_side("Them")))
     assert ml._week_mine()["held"] == [] and ml.roster_check()["notes"] == [] and "activate him Sunday" in bm.roster_check()["notes"][0]["text"]
+    # AI GM note, Nov 18: Try a move's own drop is never the player already cut for him (dropping that one changes
+    # nothing this week, and the add got the cut's last day: P.J. Washington read 0 games, net 0.0)
+    assert all(x["name"] != bm.names(c)[0] for x in bm.add_drop("Twin E", opp="Them")["drop"])
+    # AI GM note, Nov 19: a what-if date is yours, not ESPN's guess: he's back for his first game from it (B11's slip is
+    # ESPN's), so his game is weighed (Ingram "out until Nov 21", his one game Saturday, read parked with nothing weighed)
+    wi = model.League(bsn, pd.concat([base, tw]), pd.concat([cur, tw]), today=model.date(2026, 10, 26), sched=sl.sched,
+                      inj=iinj, what={"Twin C": {"health": "out", "until": "2026-10-30"}})
+    assert wi._late("twin c") is None and wi._back_day("twin c") == "2026-10-30" and wi._week_mine()["held"]
     # ... and he stays parked when the cut's games are worth more (his line this week zeroed): nobody's cut, This week
     # is the active roster alone and says so, the alert's note says to leave him, and the plan's adds stop the day
     # before his tag is expected to drop (_back_day): Yahoo blocks adds while a healthy player sits in an IL slot
@@ -1565,6 +1579,12 @@ def test_all():
     moved_out = lambda x: {m["drop"] for p in [*x["paths"], x["plan"] or {"moves": []}] for m in p["moves"]} | {s["drop"] for s in x["streams"]}
     assert kw0["keep"] == [] and kw1["keep"] == kw0["drops"][:1] and len(kw1["drops"]) == 3 and kw0["drops"][0] not in kw1["drops"]
     assert kw0["drops"][0] not in moved_out(kw1) and set(kw0["drops"][1:]) < set(kw1["drops"]) and kw1["win"] == kw0["win"]
+    # taken (Martin, Nov 19: "what if the guy i want gets picked up"): a skipped free agent is in no stream or plan
+    if kw0["streams"]:
+        top = kw0["streams"][0]["name"]
+        ks = bm.without([top]).this_week()
+        added = lambda x: {m["add"] for p in [*x["paths"], x["plan"] or {"moves": []}] for m in p["moves"]} | {s["name"] for s in x["streams"]}
+        assert top not in added(ks) and ks["win"] == kw0["win"] and bm.without([]) is bm
     try:
         bm.this_week(keep=["Nobody McFake"])
         raise AssertionError("an unknown kept player should be an error")
@@ -2246,6 +2266,18 @@ Sharks has an open SF slot.""")
     test_freshness(lg)
 
 
+def quiet(f):
+    """S4: the cache tests fail refreshes on purpose (OSError "403 blocked", an empty reply) and the model warns on
+    stderr as it should; that goes to a buffer so the self-check prints only "ok". Nothing here touches the network
+    (Nov 19: every socket connect patched to raise, none was tried). A failed assert still prints its traceback."""
+    @functools.wraps(f)
+    def run(*a, **k):
+        with contextlib.redirect_stderr(io.StringIO()):
+            return f(*a, **k)
+    return run
+
+
+@quiet
 def test_freshness(lg):
     """Q9: freshness() reads each cache's file time against its window; a failed refresh keeps the old copy and says
     so, a good one clears it; a League built directly (no caches) has no sources."""
@@ -2337,6 +2369,7 @@ BOX = {"gameId": "0022600160", "gameStatus": 3, "gameStatusText": "Final", "game
        "awayTeam": {"teamTricode": "ATL", "players": [bp("Dyson Daniels", "1", None, 3, 10, 0, 0, 0, 6, 9, 4, 3, 1, 2)]}}
 
 
+@quiet
 def test_live():
     """M18: the live box score parsed (_box), scores()' cache (a final box fetched once, under way every LIVE_POLL
     minutes, last two days kept, fails soft) and live()'s poll interval (next_poll), on fake nba_api endpoints."""

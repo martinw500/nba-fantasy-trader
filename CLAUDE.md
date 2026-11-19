@@ -3,19 +3,19 @@
 Local Yahoo NBA fantasy GM app. Python 3.13 + pandas backend, one-file vanilla HTML/JS UI. User-facing docs and every workflow: README.md. **What's untested and what to build next: ROADMAP.md**, whose **pathway** at the top is the one ordered list of open work. Read it before starting new work and tick items off (in the pathway and under the item's brief) as they're done. Everything built before Nov 16 is in `docs/HISTORY.md` (410 KB: grep an item's ID, never load it whole).
 
 ## AI GM notes
-The AI GM chat can't change code; it writes what Martin flags (wrong numbers, missed rules, feature asks) to `data/notes.md` with `model.py note --text` (`model.note()`, ai.py's `note` tool), and can close one it wrote by mistake (`note --close N --text why`: ticked with its reason, never deleted). **Before new work, read the open ones (`- [ ]`)** and tell Martin what's there. When one is handled, tick it (`- [x]`) and add the date and what changed; if it's not a bug, say why on the line.
+The AI GM chat can't change code; it writes what Martin flags (wrong numbers, missed rules, feature asks) to `data/notes.md` with `model.py note --text` (`model.note()`), and can close one it wrote by mistake (`note --close N --text why`: ticked with its reason, never deleted). **Before new work, read the open ones (`- [ ]`)** and tell Martin what's there. When one is handled, tick it (`- [x]`) and add the date and what changed; if it's not a bug, say why on the line.
 
 ## Read before you change code
 The detail lives in `docs/`, moved out of this file on Nov 15 so it isn't loaded into every session. Nothing was dropped. **Read the one that covers what you're about to touch before editing**, and add what you learn there, not here:
 - **`docs/MODEL.md`**: before any change to `model.py` or `backtest.py`, and before explaining how a number is computed. Every model rule, the constants and what they were fitted on, and the bug each rule came from, in nine topics (contents at its top): the matchup model, projections and values, who plays this week, teammates' injuries, IL slots and open spots, trades and the market, this week's moves and the weeks ahead, playoff odds, what-ifs.
-- **`docs/FILES.md`**: before changing `app.py`, `yahoo.py`, `ai.py`, a cache or the page's data flow. Each file in full: caches and their refresh windows, the app's threads and endpoints, the snapshot import, the AI GM's two paths.
+- **`docs/FILES.md`**: before changing `app.py`, `yahoo.py`, a cache or the page's data flow. Each file in full: caches and their refresh windows, the app's threads and endpoints, the snapshot import, the AI GM's two paths.
 - **`docs/COMMANDS.md`**: every `backtest.py` mode (what it replays, which constants it fits, how long it takes) and every `model.py` command with its flags.
 
 ## Files
 - `model.py`: the engine (`League` class) plus a JSON CLI. All numbers come from here: UI, AI chat and the `/gm` skill. It also fetches and caches the NBA schedule, ESPN's injuries, projections and news, box scores and live scores (`load()`).
 - `yahoo.py`: league snapshot → `data/league.json` (`python yahoo.py import <snapshot>.txt`, or `demo`). Snapshots live in `snapshots/`; one saved into the project folder is loaded and filed there by the app.
 - `app.py`: stdlib server on 127.0.0.1:8765, routes in `api()`; `live()` refetches injuries and live scores, `watch()` loads new snapshots and what-ifs.
-- `ai.py`: the AI GM with an API key; without one `/api/chat` runs `claude -p` with the gm SKILL.md and only `model.py` allowed.
+- The AI GM chat: `/api/chat` runs `claude -p` on Martin's Claude Code login with the gm SKILL.md and only `model.py` allowed (no API-key path since Nov 19).
 - `backtest.py`: replays real NBA seasons and the real league's snapshots; the evidence behind every fitted constant.
 - `web/index.html`: the whole UI. State in `S`, views are `view*()` functions returning HTML strings, event delegation via `data-act` / `data-view` / `data-punt`.
 - `test_model.py`: the self-check (synthetic data, no network).
