@@ -28,6 +28,10 @@ python backtest.py lineups: whose games count on a night the snapshot was pulled
 snapshot's lineup, against the next snapshot's totals (B8), and This week's expected starts for that night.
 python backtest.py league: the real league's weeks end to end: each pre-tip snapshot's rest-of-week totals and category
 odds against what the teams banked by the week's last snapshot (Nov 9; rerun as snapshots pile up).
+python backtest.py stream: streaming policies (most games, generic value, this week's categories, waiting till
+later in the week, timed) on the same simulated team-weeks with real box scores, 2022-23 to 2025-26 (Nov 22; checked
+Nov 23). Add pos (the real slots), opp (the opponent streams), held (mid-week news, the last add kept for it), beam
+(the whole week's plan searched), adds (adds a week): STREAM_RUNS.
 python backtest.py fill: the real league's missed games, and how many were covered by an IL move or a full lineup
 (checks FILL, league-wide and by team; rerun as snapshots pile up).
 python backtest.py recency: replay's error by minutes shrink and recent games' weight, 2022-23 to 2025-26 (fits
@@ -54,7 +58,8 @@ import pandas as pd
 import model
 
 ARGS = [a for a in sys.argv[1:]
-        if a not in ("replay", "teammates", "onoff", "minor", "backups", "usage", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season", "league", "fill")]
+        if a not in ("replay", "teammates", "onoff", "minor", "backups", "usage", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season", "league", "fill", "stream",
+                     "base", "pos", "opp", "held", "beam", "adds")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
 LEAGUES, TEAMS, ROSTER = 20, 12, 13
@@ -1348,6 +1353,422 @@ SPANS = [[w] for w in range(6)] + [[6, 7]] + [[w] for w in range(8, 16)] + [[16,
 REGULAR_WEEKS, SEATS = 20, 8
 
 
+STREAMS = ("none", "games", "value", "target", "blind", "hold-wed", "hold-thu", "hold-fri", "mix", "weak", "planner")
+# how each policy streams (stream_season()): metric (games, value, cats, weak; mix = games Mon-Wed then cats), from (no
+# adds before that day), timed (each swap on its best day from today, its drop and add held for it), blind (Monday's
+# projection of the days gone instead of the real totals), adds (its own cap), keep (the last add kept until that day
+# unless a player of yours is newly out: M17, stream held), spent (drops only players with no games left), search
+# ((openings, width): the whole week's plan of up to the adds left, replanned each morning: stream beam), pool (its free
+# agents: the best League.TIMED by a single timed move, None: all)
+POLICY = {"none": {"adds": 0}, "games": {"metric": "games"}, "value": {"metric": "value"}, "target": {},
+          "blind": {"blind": True}, "hold-wed": {"from": 2}, "hold-thu": {"from": 3}, "hold-fri": {"from": 4},
+          "mix": {"metric": "mix"}, "weak": {"metric": "weak"}, "planner": {"timed": True},
+          "planner-1": {"timed": True, "adds": 1}, "planner-2": {"timed": True, "adds": 2},
+          "planner-3": {"timed": True, "adds": 3}, "planner-6": {"timed": True, "adds": 6},
+          "spent": {"timed": True, "spent": True}, "keep-fri": {"timed": True, "keep": 4},
+          "keep-sun": {"timed": True, "keep": 6}, "keep": {"timed": True, "keep": 7},
+          "seq": {"search": (1, 1)}, "seq-all": {"search": (1, 1), "pool": None}, "seq8": {"search": (8, 1)},
+          "beam": {"search": (8, 8)}}
+SLOTS = ["PG", "SG", "G", "SF", "PF", "F", "C", "C", "Util", "Util"]  # the real league's starters (league.json)
+SLOT_MASK = [sum(1 << model.POS.index(x) for x in model.SLOT_POS.get(s, {s})) for s in SLOTS]  # positions as bits
+POS_OF = [{x for i, x in enumerate(model.POS) if m >> i & 1} for m in range(32)]
+
+
+def positions(keys, g):
+    """Each player's positions (bits of model.POS) for SLOTS (stream pos): his Yahoo ones from the snapshots (this
+    season's rosters and free agents) where listed, else the commonest set among his 5 nearest listed players that
+    season by per-36 AST, REB, BLK and 3PM (box scores carry none). Left out and guessed this way, listed players' G / F / C
+    eligibility comes out exactly right 53-64% of the time, shares one of them 90-95%, the exact set 39-51% (Nov 23,
+    2022-23 to 2025-26). ponytail: 2026-27's Yahoo positions stand in for each past season's."""
+    import yahoo
+    known = {}
+    for f in model.snapshots():
+        s = yahoo.parse_text(open(f, encoding="utf-8").read())
+        for p in [q for ps in s.get("teams", {}).values() for q in ps] + s.get("free_agents", []):
+            if p.get("pos"):
+                known[model.norm(p["name"])] = sum(1 << model.POS.index(x) for x in p["pos"].split(",") if x in model.POS)
+    t = g.groupby("key")[["MIN", "AST", "REB", "BLK", "FG3M"]].sum()
+    z = t[["AST", "REB", "BLK", "FG3M"]].div(t.MIN.clip(lower=1), axis=0)
+    z = ((z - z.mean()) / z.std()).to_numpy()
+    lab = np.array([i for i, k in enumerate(t.index) if k in known and t.MIN.iloc[i] >= 100])
+    out = {}
+    for i, k in enumerate(t.index):
+        near = [known[t.index[j]] for j in lab[np.argsort(((z[lab] - z[i]) ** 2).sum(1))[:5]]]
+        out[k] = known.get(k, max(near, key=lambda m: (near.count(m), -near.index(m))))
+    return np.array([out.get(k, 0) for k in keys])  # 0: no games, fits anywhere (lineup()'s empty set)
+
+
+def lineup_of(G, pos, memo=None):
+    """{slot: player} for the day's starters from G (players with a game, best first): the 10 best, or lineup() on
+    SLOTS with positions."""
+    if pos is None:
+        return dict(enumerate(G[:10]))
+    k = tuple(G)
+    if memo is None or k not in memo:
+        held = model.lineup(SLOTS, [POS_OF[pos[x]] for x in G])
+        v = {i: G[j] for i, j in held.items()}
+        if memo is None:
+            return v
+        memo[k] = v
+    return memo[k]
+
+
+def reach(m, who, pos, zv):
+    """One more player with positions m beside the starters who ({slot: player}): (an open slot he can reach along an
+    alternating path, the worst starter such a path reaches or None)."""
+    seen, todo, low = set(), [i for i, s in enumerate(SLOT_MASK) if not m or m & s], None
+    while todo:
+        i = todo.pop()
+        if i in seen:
+            continue
+        seen.add(i)
+        if i not in who:
+            return True, None
+        c = who[i]
+        low = c if low is None or zv[c] < zv[low] else low
+        todo += [j for j, s in enumerate(SLOT_MASK) if j not in seen and (not pos[c] or pos[c] & s)]
+    return False, low
+
+
+def stream_delta(G, y, X, has, zv, E, p, pos=None, memo=None):
+    """One day's change from swapping y for each free agent in X (G: the day's players with a game, best first; has:
+    which of X play that day) -> (the starters' expected line (len(X), RAW), their expected starts (len(X))). No
+    positions: the 10 best start, so x starts if he beats the 10th once y is gone. Positions: the starters are lineup()'s,
+    a matroid's greedy basis, so x starts if an open slot is reachable from his slots along an alternating path (nobody
+    sits), else if he beats the worst starter such a path reaches (who sits). stream_check() tests both."""
+    S0 = list(lineup_of(G, pos, memo).values())
+    Gy = [k for k in G if k != y]
+    who = lineup_of(Gy, pos, memo)
+    S = list(who.values())
+    if pos is None:
+        room = np.full(len(X), len(S) < 10)
+        low = np.full(len(X), -1 if len(S) < 10 else S[-1])
+    else:
+        u, inv = np.unique(pos[X], return_inverse=True)
+        r = [reach(m, who, pos, zv) for m in u]
+        room, low = np.array([a for a, _ in r])[inv], np.array([-1 if b is None else b for _, b in r])[inv]
+    on = has & (room | (low >= 0) & (zv[X] > zv[np.maximum(low, 0)]))
+    out = (on & ~room)[:, None]
+    dE = E[S].sum(0) - E[S0].sum(0) + on[:, None] * E[X] - out * E[np.maximum(low, 0)]
+    dg = p[S].sum() - p[S0].sum() + on * p[X] - out[:, 0] * p[np.maximum(low, 0)]
+    return dE, dg
+
+
+def stream_check(trials=400):
+    """stream_delta() against the starters recomputed with the swap made, without and with positions, on random days
+    (y with or without a game that day, fewer or more than 10 playing)."""
+    rng, R = np.random.default_rng(1), len(model.RAW)
+    masks = [1, 3, 6, 12, 24, 16, 2, 4, 8, 7, 28]  # PG, PG/SG, SG/SF, SF/PF, PF/C, C, SG, SF, PF, PG/SG/SF, SF/PF/C
+    for _ in range(trials):
+        zv, E, p = rng.normal(size=40), rng.random((40, R)), rng.random(40)
+        pos = np.array([masks[i] for i in rng.integers(len(masks), size=40)])
+        G = sorted(rng.choice(25, int(rng.integers(0, 16)), replace=False).tolist(), key=lambda k: -zv[k])
+        y = G[int(rng.integers(len(G)))] if G and rng.random() < 0.8 else int(rng.integers(25))
+        X, has = np.arange(25, 40), rng.random(15) < 0.7
+        for ps in (None, pos):
+            dE, dg = stream_delta(G, y, X, has, zv, E, p, ps)
+            S0 = list(lineup_of(G, ps).values())
+            for i, x in enumerate(X):
+                S = list(lineup_of(sorted([k for k in G if k != y] + [x] * int(has[i]), key=lambda k: -zv[k]), ps).values())
+                assert np.allclose(dE[i], E[S].sum(0) - E[S0].sum(0)) and np.isclose(dg[i], p[S].sum() - p[S0].sum()), (G, y, x)
+
+
+def stream_season(season, leagues=range(3), policies=STREAMS, adds=4, pos=False, opp="none", news=False):
+    """One season of streaming (Nov 22, Martin: "for streamers i wanna target my weakness ... wouldnt it be better to
+    get the most possible games but also target later on in the week?"; checked Nov 23). Each week from 2, each matchup
+    of the drafted `leagues` (round_robin()), each side in turn streams with up to `adds` adds while the other plays
+    policy `opp` (default: never streams), from what that Monday knew (projections(): line x availability, fresh_plays() and
+    B2B for a player who played his team's last game, sat() / guess() returns), day by day: before the day's games the opponent, then you, swap free agents for one of your 3 cheapest
+    (per-game z) or a streamer added on an earlier day, then the day's best healthy players with a game start (the 10
+    best, or SLOTS with each player's positions: pos) and bank their real box scores. Free agents: outside the 156 best
+    on that Monday's line, 10+ minutes, on none of the league's rosters, each added once (either side). news: a player
+    who sat a game his team played is out from the next day until a guess() at his real return, and one who played is
+    in (everyone's lineups and plans see it); without it, only Monday's news. Policies (POLICY), every swap the best on
+    its metric over the rest of the week, made while it gains:
+      games: most expected starts (generic value breaks ties); value: generic value (each stat over its per-game sd,
+      as zscores()) of the expected starts; target: expected categories won (cat_probs(): real totals so far plus
+      the projected rest, both sides: what This week does each morning); blind: target on Monday's projection of the
+      days gone instead of the real totals (no mid-week information); hold-X: target, no adds before Wed / Thu / Fri;
+      planner: target with timing (each swap's best start day from today, like _timed(): one best later waits, its
+      drop and add held for it, other drops can still go today); mix: games Monday to Wednesday, then target; weak:
+      target on the categories you're behind in only (odds under 50%), leads left alone; planner-N: planner with N
+      adds; spent: planner dropping only players with no games left; keep-X: planner keeping the last add until day X
+      unless one of your players is newly out (news; M17's late-news add); seq / seq8 / beam: each morning the week's
+      best plan of moves (add, drop, day) on Monday's projections and the real totals so far, each move on top of the
+      ones before (_plan(): seq), from the 8 best first moves (this_week()'s paths: seq8) or a beam of 8 at every
+      depth (beam), free agents the 20 best by a single timed move (League.TIMED); that day's moves are made.
+    -> rows (season, week, league, team, policy, Monday's expected categories with no streams, cats won (ties half),
+    matchup won, adds used, streamers' starts played, adds by weekday (7), each category's result, the plan's expected
+    gain on Monday (search policies), the opponent's adds, the week as played on Monday's model: cats expected from
+    both sides' starters' expected lines)."""
+    use(season)
+    g, base, pre, keys, weeks, actual, team_games, first_team = season_setup()
+    idx, n, RAW, CATS = {k: i for i, k in enumerate(keys)}, len(keys), model.RAW, model.CATS
+    line0, _ = projections(g, base, pre, keys, 0)
+    drafts = {l: [[idx[k] for k in t] for t in draft(line0, l)] for l in leagues}
+    ps = positions(keys, g) if pos else None
+    week1, T = monday(g, 0), "TEAM_ABBREVIATION"
+    days = g.groupby(T).GAME_DATE.unique().map(lambda d: set(pd.DatetimeIndex(d)))
+    g = g.assign(i=g.key.map(idx), d=(g.GAME_DATE - week1).dt.days)
+    gdays = g.groupby("i").GAME_DATE.apply(lambda d: np.sort(d.to_numpy()))
+    rng, rows = np.random.default_rng(0), []
+    for w in range(2, int(g.week.max())):
+        line, avail = projections(g, base, pre, keys, w)
+        mon = week1 + pd.Timedelta(weeks=w)
+        last = g[g.week < w].sort_values("GAME_DATE").groupby("key")[T].last()
+        team = pd.Series(keys, index=keys).map(last).fillna(pd.Series(keys, index=keys).map(first_team))
+        back = guess(sat(g, line, team, w), mon, rng)
+        dates = [mon + pd.Timedelta(days=d) for d in range(7)]
+        out = np.array([[k in back and dt < back[k] for k in keys] for dt in dates])
+        plays = np.array([[dt in days.get(t, ()) for t in team] for dt in dates])  # (7, n): his team plays
+        P = plays & ~out  # plays, as far as Monday knows
+        L = line[RAW].to_numpy()
+        # his chance to play each day, as This week (M27, M28; team_weeks' schedule mode): a player who played his team's
+        # last game plays its j-th game this week at fresh_plays(), less on a back-to-back's second night; others at avail
+        past = g[g.week < w]
+        lastg, was = past.groupby(T).GAME_DATE.max(), set(zip(past.key, past.GAME_DATE))
+        fresh = np.array([(k, lastg.get(team[k])) in was for k in keys])
+        b2b = plays & np.array([[dt - pd.Timedelta(days=1) in days.get(t, ()) for t in team] for dt in dates])
+        p = plays * np.where(fresh, model.fresh_plays(avail, np.cumsum(plays, 0), b2b), avail)  # (7, n)
+        E = p[..., None] * L  # (7, n, RAW): expected line each day
+        Y, played = np.zeros((7, n, len(RAW))), np.zeros((7, n), bool)
+        wk = g[g.week == w]
+        Y[wk.d.to_numpy() - 7 * w, wk.i.to_numpy()] = wk[RAW].to_numpy()
+        played[wk.d.to_numpy() - 7 * w, wk.i.to_numpy()] = True
+        # K[d][e]: on morning d, does he play day e as far as known; newly[d]: players newly out by then (news)
+        K, newly = np.repeat(P[None], 7, 0), [set() for _ in range(7)]
+        if news:
+            nrng = np.random.default_rng(w)
+            for d in range(1, 7):
+                K[d], newly[d] = K[d - 1], set(newly[d - 1])
+                t = plays[d - 1]
+                K[d][d:, t & played[d - 1]] = plays[d:, t & played[d - 1]]
+                for k in np.where(t & ~played[d - 1] & K[d - 1][d - 1])[0]:
+                    later = gdays.get(k, np.array([], "datetime64[ns]"))
+                    later = later[later > np.datetime64(dates[d - 1])]
+                    r = guess({k: pd.Timestamp(later[0]) if len(later) else pd.Timestamp.max}, dates[d], nrng)[k]
+                    K[d][d:, k] = plays[d:, k] & np.array([dt >= r for dt in dates[d:]])
+                    newly[d].add(k)
+        pool = line.dropna(subset=["MIN"]).nlargest(TEAMS * ROSTER, "MIN")
+        W = np.zeros(len(RAW))  # generic value per unit of each stat (zscores() without its means)
+        for m, a in (("FGM", "FGA"), ("FTM", "FTA")):
+            rate = pool[m].sum() / pool[a].sum()
+            s = (pool[m] - rate * pool[a]).std()
+            W[RAW.index(m)], W[RAW.index(a)] = 1 / s, -rate / s
+        for c in model.COUNTING:
+            W[RAW.index(c)] = (-1 if c == "TOV" else 1) / pool[c].std()
+        zv = L @ W
+        taken = set(np.argsort(-zv)[:TEAMS * ROSTER])
+        fa = [k for k in range(n) if k not in taken and line.MIN.iloc[k] >= 10 and P[:, k].any()]
+        memo = {}
+        day = lambda R, e, Kd: sorted((k for k in R if Kd[e, k]), key=lambda k: -zv[k])
+        starts = lambda G: list(lineup_of(G, ps, memo).values())
+        delta = lambda G, y, X, Kd, e: stream_delta(G, y, X, Kd[e, X], zv, E[e], p[e], ps, memo)
+
+        def side(R, pol):
+            spec = POLICY[pol]
+            return {"R": list(R), "spec": spec, "cheap": set(sorted(R, key=lambda k: zv[k])[:3]), "added": {},
+                    "left": spec.get("adds", adds), "A": np.zeros(len(RAW)), "Ae": np.zeros(len(RAW)), "mine": set(),
+                    "played": 0, "on": np.zeros(7), "plan": np.nan}
+
+        def add(me, x, y, d, X):
+            me["R"].remove(y), me["R"].append(x), me["cheap"].discard(y), me["cheap"].add(x), X.remove(x), me["mine"].add(x)
+            me["added"][x], me["left"], me["on"][d] = d, me["left"] - 1, me["on"][d] + 1
+
+        def search(me, d, X, restB, A0, B0, Kd, opens, width, pool):
+            """The week's best plan from today (seq / seq8 / beam), its moves dated today made."""
+            score = lambda rest: model.cat_probs(rest, restB, CATS, A0, B0).sum(-1)
+
+            def state(G, alive, added, moves):
+                rest = sum(E[e][starts(G[e])].sum(0) for e in range(d, 7))
+                return {"G": G, "alive": alive, "added": added, "moves": moves, "rest": rest, "score": float(score(rest))}
+
+            def expand(st, Xa):  # [(scores (start days, len(Xa)), drop, first start day)]
+                out = []
+                for y in sorted(st["alive"] & (me["cheap"] | set(st["added"]))):
+                    s0 = max(d, st["added"].get(y, -1) + 1)  # a streamer goes from the day after his add
+                    if s0 < 7:
+                        cE = np.cumsum([delta(st["G"][e], y, Xa, Kd, e)[0] for e in range(6, s0 - 1, -1)], 0)[::-1]
+                        out.append((score(st["rest"] + cE), y, s0))
+                return out
+
+            def child(st, x, y, s):
+                G = {e: (st["G"][e] if e < s else sorted([k for k in st["G"][e] if k != y] + [x] * bool(Kd[e, x]),
+                                                         key=lambda k: -zv[k])) for e in st["G"]}
+                return state(G, st["alive"] - {y} | {x}, {**st["added"], x: s}, st["moves"] + ((x, y, s),))
+
+            root = state({e: day(me["R"], e, Kd) for e in range(d, 7)}, set(me["R"]), dict(me["added"]), ())
+            Xa = np.array(X, int)
+            if not len(Xa):
+                return
+            top = np.full(len(Xa), -np.inf)
+            for sc, _, _ in expand(root, Xa) if pool is not None else ():
+                top = np.maximum(top, sc.max(0))
+            pool_ = Xa if pool is None else Xa[np.argsort(-top)[:pool]]
+            best, level = root, [root]
+            for depth in range(me["left"]):
+                cand = []  # (score, parent, x, drop, day)
+                for pi, st in enumerate(level):
+                    used = {m[0] for m in st["moves"]}
+                    Xs = np.array([k for k in pool_ if k not in used], int)
+                    for sc, y, s0 in expand(st, Xs) if len(Xs) else ():
+                        for j, i in zip(*np.unravel_index(np.argsort(-sc, axis=None, kind="stable")[:max(opens, width)], sc.shape)):
+                            if sc[j, i] > st["score"] + 1e-9:
+                                cand.append((float(sc[j, i]), pi, int(Xs[i]), y, s0 + int(j)))
+                cand.sort(key=lambda c: -c[0])
+                branch = depth and width == 1  # greedy per opening: each keeps its own best
+                cap, nxt, seen, took = opens if not depth else len(level) if branch else width, [], set(), set()
+                for sc, pi, x, y, s in cand:
+                    k = frozenset(level[pi]["moves"] + ((x, y, s),))
+                    if k in seen or branch and pi in took:
+                        continue
+                    seen.add(k), took.add(pi)
+                    nxt.append(child(level[pi], x, y, s))
+                    if len(nxt) == cap:
+                        break
+                if not nxt:
+                    break
+                level = nxt
+                best = max([best, *level], key=lambda s: s["score"])
+            if not d:
+                me["plan"] = best["score"] - root["score"]
+            for x, y, s in sorted(best["moves"], key=lambda m: m[2]):
+                if s == d:
+                    add(me, x, y, d, X)
+
+        def stream(me, op, d, X):
+            spec, Kd = me["spec"], K[d]
+            metric = spec.get("metric", "cats")
+            metric = "games" if metric == "mix" and d < 3 else "cats" if metric == "mix" else metric
+            restB = sum(E[e][starts(day(op["R"], e, Kd))].sum(0) for e in range(d, 7))
+            A0, B0 = (me["Ae"], op["Ae"]) if spec.get("blind") else (me["A"], op["A"])
+            if "search" in spec:
+                return search(me, d, X, restB, A0, B0, Kd, *spec["search"], spec.get("pool", model.League.TIMED))
+            held_y, held_x = set(), set()
+            while True:
+                kept = d < spec.get("keep", 0) and not newly[d] & set(me["R"])  # the last add waits for news
+                Xa = np.array([k for k in X if k not in held_x], int)
+                if me["left"] - kept - len(held_y) <= 0 or not len(Xa):
+                    break
+                G = {e: day(me["R"], e, Kd) for e in range(d, 7)}
+                restA = sum(E[e][starts(G[e])].sum(0) for e in range(d, 7))
+                if metric in ("cats", "weak"):
+                    p0 = model.cat_probs(restA, restB, CATS, A0, B0)
+                    base_, behind = p0.sum(), p0 < 0.5
+                best = (0.0, None)
+                for y in sorted(me["cheap"] - held_y):
+                    s0 = max(d, me["added"].get(y, -1) + 1)  # a streamer goes from the day after his add
+                    if s0 > (6 if spec.get("timed") else d):
+                        continue
+                    parts = [delta(G[e], y, Xa, Kd, e) for e in range(s0, 7)]
+                    cE, cg = np.cumsum([q[0] for q in parts[::-1]], 0)[::-1], np.cumsum([q[1] for q in parts[::-1]], 0)[::-1]
+                    for j in range(len(parts) if spec.get("timed") else 1):  # j: start day s0 + j
+                        if spec.get("spent") and Kd[s0 + j:, y].any():
+                            continue
+                        if metric == "games":
+                            gain = cg[j] + 1e-3 * (cE[j] @ W)
+                        elif metric == "value":
+                            gain = cE[j] @ W
+                        else:
+                            p1 = model.cat_probs(restA + cE[j], restB, CATS, A0, B0)
+                            gain = ((p1 - p0) * behind).sum(-1) if metric == "weak" else p1.sum(-1) - base_
+                        i = int(np.argmax(gain))
+                        if gain[i] > best[0] + 1e-9:
+                            best = (float(gain[i]), (int(Xa[i]), y, s0 + j))
+                if best[1] is None:
+                    break
+                x, y, s = best[1]
+                if s > d:  # timed: the best swap starts later; keep its drop and add for it
+                    held_y.add(y), held_x.add(x)
+                    continue
+                add(me, x, y, d, X)
+
+        def run(R, O, pol, X):
+            sides = [side(R, pol), side(O, opp)]
+            for d in range(7):
+                for i in (1, 0):  # the opponent's moves first, then yours
+                    if sides[i]["left"] and d >= sides[i]["spec"].get("from", 0):
+                        stream(sides[i], sides[1 - i], d, X)
+                for s in sides:
+                    S = starts(day(s["R"], d, K[d]))
+                    s["A"], s["Ae"] = s["A"] + Y[d, S].sum(0), s["Ae"] + E[d][S].sum(0)
+                    s["played"] += sum(1 for k in S if k in s["mine"] and played[d, k])
+            me, o = sides[0], outcome(sides[0]["A"], sides[1]["A"])
+            return (o.sum(), float(o.sum() > 4.5) + 0.5 * (o.sum() == 4.5), me["spec"].get("adds", adds) - me["left"],
+                    me["played"], *me["on"], *o, me["plan"], len(sides[1]["mine"]),
+                    float(model.cat_probs(me["Ae"], sides[1]["Ae"], CATS).sum()))
+
+        for l in leagues:
+            rostered = {k for t in drafts[l] for k in t}
+            fa0 = [k for k in fa if k not in rostered]
+            for a, b in round_robin()[w % (TEAMS - 1)]:
+                for me, them in ((a, b), (b, a)):
+                    S = [[starts(day(drafts[l][t], e, K[0])) for e in range(7)] for t in (me, them)]
+                    proj = float(model.cat_probs(*(sum(E[e][x].sum(0) for e, x in enumerate(s)) for s in S), CATS).sum())
+                    for pol in policies:
+                        rows.append((season, w, l, me, pol, proj, *run(drafts[l][me], drafts[l][them], pol, list(fa0))))
+    return rows
+
+
+DOW = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+STREAM_RUNS = {  # python backtest.py stream [base] [pos] [opp] [held] [beam] [adds]: each flag's runs (stream()'s kw)
+    "base": [{}],
+    "pos": [{"policies": ("none", "games", "value", "target", "hold-wed", "hold-thu", "weak", "planner"), "pos": True,
+             "ref": "planner", "title": "positions (SLOTS, positions())"}],
+    "opp": [{"policies": ("none", "games", "target", "hold-thu", "weak", "planner"), "opp": o, "ref": "planner",
+             "title": f"the opponent streams ({o})"} for o in ("games", "planner")],
+    "held": [{"policies": ("none", "target", "hold-thu", "planner", "keep-fri", "keep-sun", "keep"), "news": True,
+              "ref": "planner", "title": "news: a player who sat a game is out from the next day"}],
+    "beam": [{"policies": ("none", "target", "planner", "seq", "seq-all", "seq8", "beam"), "ref": "planner",
+              "title": "the whole week planned each morning"}],
+    "adds": [{"policies": ("none", "planner-1", "planner-2", "planner-3", "planner", "planner-6", "spent"),
+              "ref": "planner", "title": "adds a week, and drops only once their games are done"}]}
+COLS = ["season", "week", "league", "team", "policy", "proj", "cats", "won", "adds", "played", *DOW, *model.CATS, "plan",
+        "opp adds", "exp"]
+
+
+def stream(seasons=("2022-23", "2023-24", "2024-25", "2025-26"), leagues=5, ref="target", title="the opponent never streams", **kw):
+    """Streaming policies compared on the same team-weeks (stream_season(); kw: its policies, pos, opp, news, adds),
+    seasons and leagues in parallel: categories and matchups won per week, each policy against none and against
+    `ref`, paired (same team, opponent, week)."""
+    import functools
+    import os
+    from concurrent.futures import ProcessPoolExecutor
+    parts = max(1, min(leagues, (os.cpu_count() or 4) // len(seasons)))
+    tasks = [(s, range(leagues)[i::parts]) for s in seasons for i in range(parts)]
+    with ProcessPoolExecutor(min(len(tasks), os.cpu_count() or 4)) as ex:
+        rows = [r for rs in ex.map(functools.partial(stream_season, **kw), *zip(*tasks)) for r in rs]
+    return report_stream(pd.DataFrame(rows, columns=COLS), ref, title)
+
+
+def report_stream(d, ref="target", title="the opponent never streams"):
+    k = ["season", "week", "league", "team"]
+    wide = lambda c: d.pivot_table(index=k, columns="policy", values=c)
+    C, M = wide("cats"), wide("won")
+    # the leagues share each week's real box scores, so a policy's gaps are clustered by week: se from the 88 week means
+    se = lambda x: x.groupby(level=["season", "week"]).mean().std() / np.sqrt(x.groupby(level=["season", "week"]).ngroups)
+    print(f"\n== streaming: {len(C)} team-weeks, {d.season.nunique()} seasons; {title} ==")
+    tab = pd.DataFrame({p: {"cats": C[p].mean(), "vs none": (C[p] - C["none"]).mean(), "± (1 se)": se(C[p] - C["none"]),
+                            f"vs {ref}": (C[p] - C[ref]).mean(), "± ": se(C[p] - C[ref]),
+                            "won %": 100 * M[p].mean(), f"won vs {ref}": 100 * (M[p] - M[ref]).mean(),
+                            "±": 100 * se(M[p] - M[ref]), "adds": d[d.policy == p].adds.mean(),
+                            "streamer games": d[d.policy == p].played.mean(), "plan (Mon)": d[d.policy == p].plan.mean(),
+                            "expected": d[d.policy == p].exp.mean(),
+                            "opp adds": d[d.policy == p]["opp adds"].mean()} for p in C.columns}).T
+    print(tab.dropna(axis=1, how="all").round(3).to_string())
+    print("\nadds by weekday, per team-week:")
+    print(d.groupby("policy")[list(DOW)].mean().round(2).to_string())
+    print("\ncategory won % by policy:")
+    print((100 * d.groupby("policy")[model.CATS].mean()).round(1).to_string())
+    pr = d[d.policy == "none"].set_index(k).proj.reindex(C.index)
+    bands = pd.cut(pr, [0, 2.5, 3.5, 4.5, 5.5, 6.5, 9])
+    print("\nvs none (cats) by Monday's expected categories with no streams (close: 3.5 to 5.5):")
+    print(pd.DataFrame({p: (C[p] - C["none"]).groupby(bands).mean() for p in C.columns}).assign(n=pr.groupby(bands).size()).round(3).to_string())
+    print(f"\nvs {ref} by season (cats):")
+    print(pd.DataFrame({p: (C[p] - C[ref]).groupby(level="season").mean() for p in C.columns}).round(3).to_string())
+    return d
+
+
 def round_robin(n=TEAMS):
     """Every team plays every other once in n - 1 weeks (the circle method), as Yahoo's schedule does."""
     t, out = list(range(n)), []
@@ -1453,6 +1874,10 @@ if __name__ == "__main__":
         league()
     elif "fill" in sys.argv:
         fill()
+    elif "stream" in sys.argv:
+        stream_check()
+        for run in [r for f in [a for a in sys.argv if a in STREAM_RUNS] or ["base"] for r in STREAM_RUNS[f]]:
+            stream(**run)
     elif "returns" in sys.argv:
         returns()
     elif "corr" in sys.argv:

@@ -1079,6 +1079,20 @@ def lineup(slots, pos):
     return held
 
 
+def span(a, b):
+    """The ISO days from a through b (none when b is before a)."""
+    d, out = date.fromisoformat(a), []
+    while (x := d.isoformat()) <= b:
+        out.append(x)
+        d += timedelta(1)
+    return out
+
+
+def shift(d, n=1):
+    """The ISO day n days after d (before, n < 0)."""
+    return (date.fromisoformat(d) + timedelta(n)).isoformat()
+
+
 def total(v, c):
     """A weekly total as shown: FG%/FT% in percent (None before any attempts), counting stats to one decimal."""
     if c in ("FG%", "FT%"):
@@ -1273,7 +1287,8 @@ def moved(snap, ms):
     stale (state "stale"): the snapshot was pulled after the move was made and doesn't show it, so the snapshot
       wins: not applied, kept for the banner's "not in your new snapshot". A plan isn't on Yahoo yet, so it stays on
       a newer snapshot while every part of it can still be made (the drop is still yours, the add still free);
-    else applied (state "made" / "plan"): drops go to the free agents, activate / park change the slot, a trade swaps
+    else applied (state "made" / "plan"): drops go to the free agents, activate / park change the slot (a made park
+      gets the O tag Yahoo needed for it when the snapshot shows none), a trade swaps
       the players (in on the bench), adds come off the free agents onto the bench, and each add is a transaction
       dated the move's day, which adds() counts against the week's cap (and on the snapshot's own count while the
       move is in the snapshot's week). A part that can't be made on this snapshot is skipped, never an error: the app
@@ -1329,8 +1344,13 @@ def moved(snap, ms):
         tx += [{"when": when, "team": me, "type": "drop", "player": n} for n in gone[len(L("add")):]]
         snap["transactions"][:0] = tx  # newest first, as the snapshot lists them
         for n in L("park"):
-            if on(n):
-                at(mine, n)["slot"] = "IL"
+            if p := at(mine, n):
+                p["slot"] = "IL"
+                # Yahoo only took him in an IL slot with an O tag (mchc), so the snapshot after it shows one. AI GM
+                # note, Nov 20: Boozer parked on Yahoo with no tag on the 11 AM pull read as healthy there (_stuck:
+                # "you can't add anyone") until a what-if said he was out
+                if not m.get("plan") and not p.get("status"):
+                    p["status"] = "O"
         out.append({**m, "text": move_text(m), "state": "plan" if m.get("plan") else "made"})
     return snap, out, shown
 
@@ -1685,7 +1705,11 @@ class League:
         key = (tuple(ks), tuple(p), self.lineup)
         if (w := self._lineups.get(key)) is None:
             on, w, pos = set(self._lineup(ks)), list(p), [",".join(sorted(self._pos(k))) for k in ks]
-            fits = lambda xs, b: self._fit_n(tuple(sorted((*xs, b)))) > self._fit_n(tuple(sorted(xs)))
+
+            def fits(xs, b):  # one more fits with xs (positions): cached with _fit_n's, B20's deep search asks millions of times
+                if (f := self._lineups.get(("fits", self.lineup, xs, b))) is None:
+                    f = self._lineups["fits", self.lineup, xs, b] = self._fit_n(tuple(sorted((*xs, b)))) > self._fit_n(tuple(sorted(xs)))
+                return f
 
             @functools.cache
             def room(j, i, up):  # P(player j gets a slot | the ones above him before i: up (positions) play)
@@ -2224,7 +2248,8 @@ class League:
     def _week_mine(self, punt=()):
         """Your players this week (cached by punt): {keys, start: {player back: the day he comes in}, until: {cut: last
         day}, pairs: {player back: who he's counted in for}, held: [what was weighed for each one back, see below],
-        by: {day, player} the last day an add goes through, or None}.
+        by: {day, player} the last day an add goes through (one left parked), or None; blocks: [{player, from, to,
+        parked}] the days no add goes through, block: those days as a set (B20)}.
         Q30 (Martin, Nov 16: "am i not supposed to be picking the simulation be based on that?"): a healthy player
         stuck in an IL slot means a drop today, and This week counts Who to drop's overall pick as gone (the same
         league drops() scores that row on), so the panel and This week agree. Use this / Done on Yahoo (a saved move)
@@ -2240,7 +2265,9 @@ class League:
         opponent or schedule there's nothing to score: M21's rule. Another team keeps M21's too (_week_roster).
         Left parked, his Yahoo tag is gone by the morning after he first plays (TAGS, docs/MODEL.md 5: every return
         in the Oct 26-Nov 16 snapshots, some by that game's own morning), and from then no add goes through until he's moved
-        (_stuck()'s rule), so the plan's adds stop the day before _back_day() (`by`; _timed, _reserve).
+        (_stuck()'s rule), so the plan's adds stop the day before _back_day() (`by`; _timed, _reserve). B20: the same
+        holds while he waits to be activated on a later day: no add from _back_day() until the day he comes in
+        (`block`: Nov 23, Boozer likelier back than not Friday and counted in Sunday blocks Friday and Saturday's adds).
         ponytail: the choice is made before any add (a late add given up by leaving him parked isn't weighed); a day is
         picked ahead, though you'd only activate him once he's really back, so activating reads a little low; two back
         the same week are decided in turn, the earlier first"""
@@ -2258,7 +2285,7 @@ class League:
             return out
         act, room = self._playing(self.rosters[me]), self._room(me)
         back = {k: g for k in self.il[me] if self.back.get(k, 0) > 0 and (g := self.game_days(k, self.week_end))}
-        keys, start, until, pairs, held, by = list(act), {}, {}, {}, [], None
+        keys, start, until, pairs, held, by, blocks = list(act), {}, {}, {}, [], None, []
         # the cut plays until the day before; one locked today can't go before tomorrow (M18: _move_day)
         day = lambda c, d: max(prev(d), prev(self._move_day([c])))
         cut, ev = (self._il_cut(punt) or ((), ()))[1], self.effective(punt)
@@ -2296,7 +2323,11 @@ class League:
                     keys.append(q)
                     cuts.remove(c)
                     start[q], until[c], pairs[q] = d, day(c, d), c
-        self._dropc[key] = out = {"keys": keys, "start": start, "until": until, "pairs": pairs, "held": held, "by": by}
+                # B20: healthy in his IL slot from `on` (tag gone) until he's activated, he blocks every add then too
+                if (to := self.week_end if stay else prev(d)) >= on:
+                    blocks.append({"player": q, "from": on, "to": to, "parked": stay})
+        self._dropc[key] = out = {"keys": keys, "start": start, "until": until, "pairs": pairs, "held": held, "by": by,
+                                  "blocks": blocks, "block": frozenset(x for b in blocks for x in span(b["from"], b["to"]))}
         return out
 
     def _drop_pick(self, punt=()):
@@ -2394,7 +2425,8 @@ class League:
             return match_prob(p, self.cats, WEEK_LOAD)
         return p.mean(-1) if self.lean is None else (p * self.lean).sum(-1) / self.lean.sum()
 
-    TIMED = 10  # This week: the plan's pool, the best free agents by their timed gains (every healthy one is timed)
+    TIMED = 20  # This week: the plan's pool, the best free agents by their timed gains (every healthy one is timed).
+                # Nov 23: 10 → 20 (27 snapshots: never lower, up on 3, Nov 23's plan 69.6 → 70.7; 40 the same as 20)
     lean = None  # Q34: This week's category weights, by self.cats (_leaning() makes the copy carrying them)
 
     def _leaning(self, weights=None, keep=None):
@@ -2404,7 +2436,9 @@ class League:
         cuts `keep` (B19). Everything This week picks follows the copy: Start / sit, the day a player back from an IL
         slot comes in, open-spot fills, streams and the plan. The odds, score and chance to win it reports stay real
         (every category is still one win on Yahoo), so a lean shows what it costs. weights None: as they are.
-        KeyError for a category the league doesn't score or a weight outside 0 to 5; all zero is no lean."""
+        KeyError for a category the league doesn't score or a weight outside 0 to 5; all zero is no lean.
+        Nov 20: the copy also has your players who are out in active spots moved to free IL slots (_parkable(),
+        `parks`), so the spot each frees takes an add with no drop (B18's _fills) and he's B17's choice when he's back."""
         lean = self.lean
         if weights is not None:
             try:
@@ -2417,11 +2451,14 @@ class League:
             lean = np.array([w.get(c, 1.0) for c in self.cats])
             lean = None if (lean == 1).all() or not lean.any() else lean
         kept = self.kept if keep is None else frozenset(keep)
-        if kept == self.kept and (lean is None) == (self.lean is None) and (lean is None or np.array_equal(lean, self.lean)):
+        park = self._parkable() if self.mode != "points" else []  # Nov 20: out in an active spot, an IL slot free
+        if not park and kept == self.kept and (lean is None) == (self.lean is None) and (lean is None or np.array_equal(lean, self.lean)):
             return self
-        lg = self._copy({}, self.fa)
-        lg.kept, lg.lean = kept, lean
+        lg = self._copy({}, self.fa, park and {self.me: self.il[self.me] | set(park)})
+        lg.kept, lg.lean, lg.parks = kept, lean, (*self.parks, *park)
         return lg
+
+    parks = ()  # Nov 20: your players out in active spots that _leaning() counts moved to free IL slots
 
     def _concede(self, p, punt):
         """Punted categories count as losses for you: that's what committing to a punt means."""
@@ -2523,7 +2560,7 @@ class League:
         if self.mode == "points":
             raise KeyError("Weeks ahead need a category league")
         sch = self.snap.get("schedule") or []
-        i0 = next((i for i, w in enumerate(sch) if w["end"] >= self.today), None)
+        i0 = next((i for i, w in enumerate(sch) if w["end"] >= self.week_end), None)
         if i0 is None or week < 0 or not (pick := sch[i0 + week:i0 + week + max(n, 1)]):
             raise KeyError("No week that far ahead in the league's schedule" if sch else "The snapshot has no season schedule")
         teams, me = list(self.rosters), self.me
@@ -3561,36 +3598,58 @@ class League:
         return {"used": used, "max": cap, "left": max(cap - used, 0), "counted": counted, "listed": listed,
                 "week_start": start, "resets": (date.fromisoformat(self.week_end) + timedelta(1)).isoformat()}
 
-    def _timed(self, keys, a, drops, odds, s0, start=None, until=None, ends=None, last=None):
+    @staticmethod
+    def _can_add(days, first, block):
+        """B20: the days among `days` (sorted) an add can be made on: one in `block` (Yahoo takes no add then: one of
+        yours healthy in an IL slot, _week_mine) gives way to the last open day from `first` before it, so his game that
+        day still counts."""
+        if not block:
+            return days
+        out = set()
+        for d in days:
+            while d in block and d >= first:
+                d = shift(d, -1)
+            if d >= first:
+                out.add(d)
+        return sorted(out)
+
+    def _timed(self, keys, a, drops, odds, s0, start=None, until=None, ends=None, block=()):
         """The best day this week to add a for drops (Q11): each of a's games left (from the day his claim clears, after
         any of drops was added himself, and from tomorrow when a drop's game today has tipped off: M18), or the day after a drop's last game this week (a move that only costs
         this week is cheapest once the drop has played), the drops playing until the day before. keys: the lineup
         before the move (drops in it); start / until: earlier moves' (starts()); ends: drops cut anyway for players back
         from IL slots (_week_roster), whose last day a takes (_handoff). -> (gain in this week's win %, day,
-        start, until), the earliest day on a tie: waiting longer only risks losing him. last (B17): the last day an add
-        goes through this week (_week_mine()'s `by`); none left by then: a gain of -inf."""
+        start, until), the earliest day on a tie: waiting longer only risks losing him. block (B17, B20): days no add goes
+        through (_week_mine()'s: one of yours healthy in an IL slot), each giving way to the open day before it
+        (_can_add); none left: a gain of -inf."""
         first = max([self.today, self.matchup.get("from", ""), self._clears(a).get(a, ""), self._move_day(drops)]
                     + [(date.fromisoformat(start[d]) + timedelta(1)).isoformat() for d in drops if d in (start or {})])
         after = {(date.fromisoformat(g[-1]) + timedelta(1)).isoformat() for d in drops
                  if (g := self.game_days(d, min(self.week_end, (until or {}).get(d, "9999")), (start or {}).get(d)))}
-        end = min(self.week_end, last or self.week_end)
-        if first > end:
+        end = self.week_end
+        days = self._can_add(sorted(set(self.game_days(a, end, first)) | {x for x in after if first <= x <= end}) or [first], first, block)
+        if first > end or not days:
             return float("-inf"), first, start or {}, until or {}
-        best, days = None, sorted(set(self.game_days(a, end, first)) | {x for x in after if first <= x <= end})
-        for s in days or [first]:
+        best = None
+        for s in days:
             st, un = {**(start or {}), a: s}, self._handoff(until or {}, ends or {}, drops, a, s)
             g = 100 * (float(self._wscore(odds(self.week_vec(list(keys) + [a], st, un)))) - s0)
             if best is None or g > best[0] + 1e-9:
                 best = (g, s, st, un)
         return best
 
-    def _reserve(self, keys, cands, drops, odds, start, until, ends, last=None):
+    def _reserve(self, keys, cands, drops, odds, start, until, ends, block=()):
         """What an add kept for late news is worth this week (M17), in this week's win %: any player in `keys` can be
         ruled out from any of his games left (HAZARD x (1 - rate) a game; ONE_GAME of those last only that game, the
         rest run to the week's end, as his last game always does), and the add then streams the best of `cands` for
         one of `drops` (or for nobody, with him in a free IL slot) from that day (from his claim, _clears()), scored
         with him out the rest of the week. Played day by day from the last: a day's news, the biggest first, takes the
-        add when it beats keeping it for later. keys / start / until / ends: the plan so far (_plan).
+        add when it beats keeping it for later. keys / start / until / ends: the plan so far (_plan). block (B20): days
+        no add goes through (_week_mine): news then is acted on the next open day, if there is one. Parked with no drop,
+        the add holds his spot only as long as he would have: one leaving later in the plan hands it on that day (B20:
+        Ingram out Monday, Wolf for him "to Sunday" while da Silva took Ingram's spot Saturday); and he sits from the
+        news day even when the add comes later (a claim clearing Wednesday had him play Monday and Tuesday). Nov 23's
+        old plan: 2.79 before, 2.60 / 2.17 / 1.97 with each fix and the block.
         ponytail: one-game absences take no stream (a game's worth); the stream starts on the news day (its best day
         from then, as _timed() picks, moved Nov 3's +0.76 to +0.80 at twice the time); news before a later planned
         move could take that move's add instead, which this counts as a spare one; an add unused at the week's end
@@ -3603,9 +3662,17 @@ class League:
             for i, d in enumerate(games):
                 un = {**until, k: day(d, -1)}
                 s = float(self._wscore(odds(self.week_vec(keys, start, un))))
-                V = [self.week_vec(keys + [a], {**start, a: f}, self._handoff(un, ends, [x], a, f))
-                     for a in cands if a not in keys for x in [*drops, *([k] if park and k not in drops else [])]
-                     for f in [max(d, self._clears(a).get(a, d), self._move_day([x]))] if not last or f <= last]
+                V = []
+                for a in (a for a in cands if a not in keys):
+                    for x in [*drops, *([k] if park and k not in drops else [])]:
+                        f = max(d, self._clears(a).get(a, d), self._move_day([x]))
+                        while f in block:
+                            f = shift(f)
+                        if f > self.week_end:
+                            continue
+                        u2 = self._handoff(un, {**ends, k: until[k]} if x == k and k in until and k not in ends else ends, [x], a, f)
+                        u2[k] = un[k]  # out from the news day, whenever the add comes
+                        V.append(self.week_vec(keys + [a], {**start, a: f}, u2))
                 if V:
                     p = h * (1 if i == len(games) - 1 else 1 - ONE_GAME)
                     ev.append((d, p, 100 * (float(self._wscore(odds(np.array(V))).max()) - s)))
@@ -3617,7 +3684,7 @@ class League:
             v += add
         return v
 
-    def _plan(self, keys, cands, drops, odds, s0, n, ends=None, hold=True, first=None, start=None, last=None):
+    def _plan(self, keys, cands, drops, odds, s0, n, ends=None, hold=True, first=None, start=None, block=()):
         """Streams for the adds left (Q11): up to n moves, each the best (add, drop, day) on top of the ones before
         (_timed): a drop is one of `drops` or a streamer added earlier in the plan, so a later stream can replace an
         earlier one once his games are used. Stops when the next one adds under 0.1, and the last add only goes on a
@@ -3627,7 +3694,7 @@ class League:
         the last add's best move, kept}, None when the plan stops before its last add or hold is off (no weekly cap).
         ends: players cut for ones back from IL slots (_week_roster): each can still be a stream's drop, the stream then
         cut in his place (end: that day). first: (add, drop) the plan must open with (this_week()'s other paths).
-        start: your players back from IL slots' first days (B17, _week_side); last: the last day an add goes through."""
+        start: your players back from IL slots' first days (B17, _week_side); block: days no add goes through (B20)."""
         ends0 = ends = dict(ends or {})
         st0 = dict(start or {})
         start, until, moves, keys, base, prev, news = dict(st0), dict(ends), [], list(keys), list(keys), s0, None
@@ -3635,13 +3702,13 @@ class League:
             best, dr = None, [x for x in [*drops, *(k for k in start if k not in st0)] if x not in until or x in ends]
             for a in ([first[0]] if first and not i else [x for x in cands if x not in keys]):
                 for d in ([first[1]] if first and not i else dr):
-                    g, s, st, un = self._timed(keys, a, [d], odds, s0, start, until, ends, last)
+                    g, s, st, un = self._timed(keys, a, [d], odds, s0, start, until, ends, block)
                     if best is None or g > best[0] + 1e-9:
                         best = (g, s, st, un, a, d)
             if best is None or best[0] < 0.1:
                 break
             if hold and i == n - 1:  # the last add: spend it only on a move worth more than keeping it for late news
-                r = self._reserve(keys, cands, dr, odds, start, until, ends, last)
+                r = self._reserve(keys, cands, dr, odds, start, until, ends, block)
                 news = {"worth": r, "move": {"day": best[1], "add": best[4], "drop": best[5], "gain": best[0]}, "kept": best[0] < r}
                 if news["kept"]:
                     break
@@ -3665,12 +3732,12 @@ class League:
         Each is scored on the league after it (lc, _copy): the open spot was your parked player's on his return
         (_week_mine: nobody cut), and with it filled he's B17's choice there (in on a day for a cut, or left parked),
         so the add and the player back never share the spot. side: lc's (keys, start, until) with the add in from his
-        best day (the earliest on a tie; from his claim; by lc's last day for adds when one is left parked); then:
+        best day (the earliest on a tie; from his claim; not on a day lc blocks adds, B20); then:
         who's cut for each player back on lc, [{back, day, cut} or {back, parked}]. on: earlier fills' days (a second
         open spot). odds: _matchup()'s. The n best by the add alone on today's league are tried.
         ponytail: the cut for the player back is today's il_plan() on lc, decided before any later stream"""
-        me = self.me
-        fas = [k for k in self.fa if self.meta.get(k, {}).get("status", "") not in OUT]
+        me, gone = self.me, self._dropped()
+        fas = [k for k in self.fa if self.meta.get(k, {}).get("status", "") not in OUT and k not in gone]
         if not self._room(me) or not fas:
             return []
         mine, st0, ends = self._week_side(me, punt)
@@ -3682,9 +3749,8 @@ class League:
             lc = self._copy({me: self.rosters[me] + [a]}, [k for k in self.fa if k != a])
             (ks, st, un), mw = lc._week_side(me, punt), lc._week_mine(punt)
             first = max(self.today, self.matchup.get("from", ""), self._clears(a).get(a, ""))
-            end = min(self.week_end, (mw["by"] or {}).get("day") or self.week_end)
-            best = None
-            for d in [x for x in (self.game_days(a, end, first) or [first]) if x <= end]:
+            best = None  # B20: not on a day lc's player back from an IL slot blocks adds (_week_mine)
+            for d in [x for x in self._can_add(self.game_days(a, self.week_end, first) or [first], first, mw["block"]) if x <= self.week_end]:
                 side = (ks, {**st, **(on or {}), a: d}, un)
                 p = odds(lc.week_vec(*side))
                 if best is None or float(lc._wscore(p)) > best[0] + 1e-9:
@@ -3696,6 +3762,215 @@ class League:
                             "then": [{"back": name(h["player"]), "parked": True} if h["parked"] else
                                      {"back": name(h["player"]), "day": h["day"], "cut": name(h["cut"])} for h in mw["held"]]})
         return sorted(out, key=lambda x: -x["gain"])
+
+    def _bases(self, punt=()):
+        """B20: the rosters This week's deep search starts from, [(keys, start, until, block, activate)]: first the week
+        as _week_mine() counts it (activate None), then, with one of yours back from an IL slot weighed (B17's `held`),
+        every other way to have him: left parked (no add from _back_day() on), or in on any day from _back_day(), not
+        only his game days, since activating him sooner ends the add block sooner (no add between), for that day's cut
+        (B17's rule: the fewest games left from then, then the weakest). activate: {player, parked} or {player, day,
+        cut}. Two weighed, or one stuck in an IL slot (Who to drop's pick, Q30): the first base only.
+        ponytail: two players back the same week aren't varied together"""
+        if (key := ("bases", tuple(punt))) in self._dropc:
+            return self._dropc[key]
+        mw, (k0, s0, u0) = self._week_mine(punt), self._week_side(self.me, punt)
+        out = [(k0, s0, u0, mw["block"], None)]
+        if len(mw["held"]) == 1 and not self._drop_pick(punt):
+            h = mw["held"][0]
+            q, on = h["player"], self._back_day(h["player"])
+            kb, sb, ub = [k for k in k0 if k != q], {k: v for k, v in s0.items() if k != q}, dict(u0)
+            if not h["parked"]:
+                ub.pop(h["cut"], None)
+            cut, ev = (self._il_cut(punt) or ((), ()))[1], self.effective(punt)
+            cuts = [k for k in self._playing(self.rosters[self.me]) if k in cut]
+            if not h["parked"]:
+                out.append((kb, sb, ub, frozenset(span(on, self.week_end)), {"player": q, "parked": True}))
+            for d in span(on, self.week_end):
+                if d != h["day"] or h["parked"]:
+                    c = min(cuts, key=lambda k: (len(self.game_days(k, self.week_end, d)), ev[k]))
+                    out.append(([*kb, q], {**sb, q: d}, {**ub, c: max(shift(d, -1), shift(self._move_day([c]), -1))},
+                                frozenset(span(on, shift(d, -1))), {"player": q, "day": d, "cut": c}))
+        self._dropc[key] = out
+        return out
+
+    DEEP = 1000  # B20: the deep search's beam, plans kept at each number of adds (the oracle's best per count was the
+                 # same at 1000 and 2000 on Nov 23)
+
+    def _deep(self, bases, drops, fas, odds, n, width=None, seeds=()):
+        """B20 (Martin, Nov 23: "I don't mind if it takes longer to calculate as long as it finds the best options"):
+        the week's plan by a beam search over whole plans, every free agent on every day, against _plan()'s greedy
+        runs from 8 openings (which missed the best 3- and 4-add weeks by ~0.01 categories: they start with a one-game
+        "bridge" streamer, Coulibaly for Missi the day after Missi's game, that ranks low as an opening).
+        bases: [(keys, start, until, block, activate)] the rosters a plan can start from (_bases: each way to activate
+        one of yours back from an IL slot); drops: who a stream may drop, besides the plan's own streamers; fas: who
+        may be added; n: adds left; seeds: [(base, [(day, add, drop)])] plans every level keeps (the fast plan's), so
+        the deep one never ends below it.
+        Level k holds plans of k moves. A child adds (s, a, d) to a plan one level up: d one of drops or a streamer the
+        plan added, not dropped yet; a anyone in fas not on the roster; s from the first day the move can be made
+        (today or the matchup's first day, a's claim clearing, the day after d was added, tomorrow when d's game today
+        has tipped: _timed's rule) through d's last day (`until`: the cut for a player back, or the stream before him
+        in that spot, whose last day a takes, as _handoff does), not a day the base blocks adds (_week_mine), and a has
+        a game from s to then. Days that split the games the same way (a's games, d's games before s) are one week:
+        the earliest is kept. Each plan is scored as week_vec() does, day by day (one expected line per day's players
+        with a game, cached: equal to week_vec to 1e-12), and the `width` best on _wscore go on.
+        -> {k: [(share, base index, moves, start, until)] best first}: moves sorted (day, add, drop), the roster
+        the base's keys plus the adds."""
+        width, END, today = width or self.DEEP, self.week_end, self.today
+        D0, tom = max(today, self.matchup.get("from", "")), shift(today)
+        days, zero, cache = span(D0, END), np.zeros(len(RAW)), {}
+        val, ix, ramp, plays, subs, locked = self._value.to_dict(), self._ix, self._ramp, self._plays, self._subs, self._locked
+        every = {k for b in bases for k in b[0]} | set(fas) | set(drops)
+        G = {k: tuple(self.game_days(k, END)) if k in ix else () for k in every}
+        row = {k: self._pw[ix[k]] for k in every if k in ix}
+        clr = {a: self._clears(a).get(a, "") for a in fas}
+        hp = tuple(self._held(bases[0][0], {})) if D0 == today else ()  # today's starters in games under way (M18)
+
+        pos = {k: ",".join(sorted(self._pos(k))) for k in every}
+
+        def dv(x, ks):  # one day's expected line with ks (best first) having a game: starts(plays, ramp) @ _pw
+            if (v := cache.get((x, ks))) is None:
+                t = x == today
+                p = [1.0 if t and locked(k) else plays(k, x) for k in ks]
+                # all of them fit the slots: each starts whenever he plays (what _subs() gives then, without its search)
+                w = p if len(ks) <= self.lineup and self._fit_n(tuple(sorted(pos[k] for k in ks))) == len(ks) else subs(list(ks), p)
+                v = zero
+                for k, y in zip(ks, w):
+                    if y and not (t and locked(k)):
+                        v = v + y * ramp.get((k, x), 1.0) * row[k]
+                cache[x, ks] = v
+            return v
+
+        def state(b):
+            keys, start, until = bases[b][:3]
+            L = {}
+            for k in sorted((k for k in keys if k in ix), key=val.get, reverse=True):
+                s, u = start.get(k), min(END, until.get(k, END))
+                for g in G[k]:
+                    if (s is None or g >= s) and g <= u:
+                        L.setdefault(g, []).append(k)
+            if hp:
+                L[today] = [*hp, *L.get(today, ())]
+            L = {x: tuple(v) for x, v in L.items()}
+            return [b, (), frozenset(keys), dict(start), dict(until), {}, L, sum((dv(x, t) for x, t in L.items()), zero)]
+
+        def change(st, s, a, d):  # the days the move changes: {day: players with a game then}, and the vector after
+            _, _, _, start, until, _, L, vec = st
+            to, sd = min(until.get(d, END), END), start.get(d)
+            gd = {g for g in G[d] if (sd is None or g >= sd) and s <= g <= to}
+            new = {}
+            for x in sorted(gd | {g for g in G[a] if s <= g <= to}):
+                old = L.get(x, ())
+                t = tuple(k for k in old if k != d) if x in gd else old
+                if a in row and s <= x <= to and x in G[a]:
+                    i, va = len(hp) if x == today else 0, val[a]
+                    while i < len(t) and val[t[i]] >= va:
+                        i += 1
+                    t = t[:i] + (a,) + t[i:]
+                new[x] = t
+                vec = vec + dv(x, t) - dv(x, old)
+            return new, vec, to
+
+        def apply(st, s, a, d):
+            new, vec, to = change(st, s, a, d)
+            b, P, keys, start, until, frm, L, _ = st
+            until = {**until, d: shift(s, -1), **({a: to} if to < END else {})}
+            return [b, tuple(sorted((*P, (s, a, d)))), keys | {a}, {**start, a: s}, until, {**frm, a: s}, {**L, **new}, vec]
+
+        # every free agent's games and line by day (his starts when everyone with a game fits the slots), for children
+        # scored many at a time: a day where the roster with him fits the slots adds his line; a crowded one goes
+        # through dv() (the bench maths)
+        fas = [a for a in fas if a in row and G[a]]
+        nd, fi = len(days), {a: i for i, a in enumerate(fas)}
+        di, gm, C = {x: j for j, x in enumerate(days)}, np.zeros((len(fas), nd), bool), np.zeros((len(fas), nd, len(RAW)))
+        for i, a in enumerate(fas):
+            for g in G[a]:
+                gm[i, di[g]], C[i, di[g]] = True, plays(a, g) * ramp.get((a, g), 1.0) * row[a]
+        fst = np.array([di.get(f := max(D0, clr[a]), nd if f > END else 0) for a in fas])
+        kinds = sorted({pos[a] for a in fas})
+        pa, bits = np.array([kinds.index(pos[a]) for a in fas], int), 1 << np.arange(nd)
+
+        def ins(t, a, x):  # a into a day's players, best first (after today's held starters)
+            i, va = len(hp) if x == today else 0, val[a]
+            while i < len(t) and val[t[i]] >= va:
+                i += 1
+            return t[:i] + (a,) + t[i:]
+
+        def kids(st):  # every child of a plan (one day per split of games) -> (their vectors, their moves)
+            b, P, keys, start, until, frm, L, vec = st
+            gone, free, V, M = {m[2] for m in P}, np.ones(len(fas), bool), [], []
+            free[[fi[m[1]] for m in P if m[1] in fi]] = False
+            for d in [*(x for x in drops if x not in gone), *(m[1] for m in P if m[1] not in gone)]:
+                to, sd = min(until.get(d, END), END), start.get(d)
+                lo = max(D0, tom if locked(d) else today, shift(frm[d]) if d in frm else D0)
+                if lo > to:
+                    continue
+                j0, tx = di[lo], di[to]
+                dg = {x for x in G[d] if (sd is None or x >= sd) and x <= to} if d in row else set()
+                Rm, Dx, fit = {}, np.zeros((nd + 1, len(RAW))), np.zeros((nd, len(kinds)), bool)
+                for j in range(j0, tx + 1):  # each day: his players without d, what losing d costs, who'd still fit
+                    x = days[j]
+                    old = L.get(x, ())
+                    Rm[j] = t = tuple(k for k in old if k != d) if x in dg else old
+                    if x in dg:
+                        Dx[j] = dv(x, t) - dv(x, old)
+                    if len(t) < self.lineup:
+                        ps = [pos[k] for k in t]
+                        fit[j] = [self._fit_n(tuple(sorted([*ps, q]))) == len(t) + 1 for q in kinds]
+                Dx = np.cumsum(Dx[::-1], 0)[::-1]  # from day j through to
+                was, wnb, crowd = np.full(len(fas), -1), np.full(len(fas), -1), {}
+                for j in range(j0, tx + 1):
+                    if days[j] in bases[b][3]:
+                        continue
+                    ga = gm[:, j:tx + 1]
+                    packed, nb = ga @ bits[j:tx + 1], sum(x < days[j] for x in dg)  # his games from j by date, not by offset
+                    ok = free & (fst <= j) & (packed > 0)
+                    idx = np.flatnonzero(ok & ((packed != was) | (nb != wnb)))
+                    was, wnb = np.where(ok, packed, was), np.where(ok, nb, wnb)
+                    if not len(idx):
+                        continue
+                    on, S = ga[idx], fit[j:tx + 1][:, pa[idx]].T
+                    delta = Dx[j] + np.einsum("fm,fmr->fr", on & S, C[idx, j:tx + 1])
+                    for r, c in zip(*np.nonzero(on & ~S)):  # a crowded day: the bench maths (once a day and add)
+                        if (q := (j + c, idx[r])) not in crowd:
+                            x, a = days[j + c], fas[idx[r]]
+                            crowd[q] = dv(x, ins(Rm[j + c], a, x)) - dv(x, Rm[j + c])
+                        delta[r] += crowd[q]
+                    V.append(vec + delta)
+                    M += [(days[j], fas[i], d) for i in idx]
+            return (np.concatenate(V) if V else np.zeros((0, len(RAW)))), M
+
+        score = lambda V: self._wscore(odds(np.asarray(V)))
+        ranked = lambda L: [(float(x), st) for x, st in sorted(zip(score([st[-1] for st in L]), L), key=lambda r: -r[0])]
+        level = [state(b) for b in range(len(bases))]
+        out = {0: ranked(level)}
+        seed = {}  # each seed's state after k of its moves (in day order)
+        for b, ms in seeds:
+            st = state(b)
+            for k, m in enumerate(sorted(ms), 1):
+                st = apply(st, *m)
+                seed.setdefault(k, []).append(st)
+        for k in range(1, n + 1):
+            got, thr = {}, -np.inf  # {(base, moves): (share, parent, move)}: a plan reached from two parents is one
+            for i, st in enumerate(level):
+                V, M = kids(st)
+                if not M:
+                    continue
+                sc = score(V)
+                for j in np.flatnonzero(sc > thr):
+                    key = (st[0], tuple(sorted((*st[1], M[j]))))
+                    if key not in got:
+                        got[key] = (float(sc[j]), i, M[j])
+                if len(got) > 3 * width:
+                    thr = np.partition(np.array([g[0] for g in got.values()]), -width)[-width]
+                    got = {q: g for q, g in got.items() if g[0] >= thr}
+            top = sorted(got.items(), key=lambda kv: -kv[1][0])[:width]
+            have = {q for q, _ in top}
+            level = [apply(level[i], *m) for _, (_, i, m) in top] + [st for st in seed.get(k, ()) if (st[0], st[1]) not in have]
+            if not level:
+                break
+            out[k] = ranked(level)
+            level = [st for _, st in out[k]]
+        return {k: [(x, st[0], st[1], st[3], st[4]) for x, st in v] for k, v in out.items()}
 
     def _fill_fix(self, punt=()):
         """roster_check()'s fix for an open spot: the best add into it this week by name, with This week's chance to
@@ -3712,7 +3987,7 @@ class League:
         return (f"Add {self.names([f[0]['a']])[0]} {day}, no drop: {now}% to win this week goes to {f[0]['win']}%. "
                 "This week lists the others.")
 
-    def this_week(self, opp=None, punt=(), limit=5, keep=(), _on=None, weights=None, cats=(), choose=None):
+    def this_week(self, opp=None, punt=(), limit=5, keep=(), _on=None, weights=None, cats=(), choose=None, deep=False, adds=None):
         """This week's matchup: totals so far + the rest of the week (week_vec; players in IL slots sit until they're
         back, then start in place of who's cut: _week_roster, M21) -> odds per
         category, the expected score, the chance to win more categories (win), a safe / chase / lost call per
@@ -3731,12 +4006,17 @@ class League:
         `win` and each row's and the plan's `cats` ({category: [odds now, after]}) stay real, so the cost shows.
         Every healthy free agent is timed; the plan picks from the best TIMED of them (2x with a lean or a goal).
         choose (Martin, Nov 17: pick how many adds to use): a path's `key` ("none" = no move): that path is the plan
-        (`chosen` true, no late-news check: you picked it), else the model's pick; an open-spot week's paths have no key."""
+        (`chosen` true, no late-news check: you picked it), else the model's pick; an open-spot week's paths have no key.
+        adds (B20, Martin, Nov 23: "selecting how many adds I can use"): the best path with that many adds is the plan
+        (the most there are, if fewer; 0 = no move), as choosing its key. deep (B20): the deep search (_deep(), ~15-20 s
+        on the real league) builds the paths and the plan, from each way to activate your player back from an IL slot
+        (_bases(): a path or plan on another way carries `activate`); `deep` in the output = its seconds."""
         if self.mode == "points":
             raise KeyError("This week needs a category league")
         if goal := self.goal(cats, punt) if cats else []:  # Play for: a lean with the rest at 0
             w0 = {punts([c])[0]: x for c, x in (weights or {}).items()}
-            out = self.this_week(opp, punt, limit, keep, _on, {c: w0.get(c, 1) if c in goal else 0 for c in self.cats}, choose=choose)
+            out = self.this_week(opp, punt, limit, keep, _on, {c: w0.get(c, 1) if c in goal else 0 for c in self.cats}, choose=choose,
+                                 deep=deep, adds=adds)
             if out.get("lineups") is not None and set(goal) != set(self.cats):  # Start / sit's Play for: the lineups for those categories, on the plan's roster
                 lg = self._leaning(weights, {self.find(n) for n in keep})
                 out["lineups"] = lg.start_sit(out["opponent"], punt, goal, side=lg._plan_side(out["plan"], punt))
@@ -3745,8 +4025,8 @@ class League:
         # B19: the list rules who's cut for a player back too (_il_cut), and Q34: category weights steer every pick,
         # so the whole week is built on a copy carrying both; its own copies (_fills) inherit them
         if (lg := self._leaning(weights, never)) is not self:
-            return lg.this_week(opp, punt, limit, keep, _on, choose=choose)
-        me, m = self.me, self.matchup
+            return lg.this_week(opp, punt, limit, keep, _on, choose=choose, deep=deep, adds=adds)
+        me, m, t0 = self.me, self.matchup, time.time()
         others = [t for t in self.rosters if t != me]
         opp = self._opponent(opp)
         if not opp:
@@ -3755,8 +4035,8 @@ class League:
         play = lambda t: self._playing(self.rosters[t])
         wk = {t: self._week_side(t, punt) for t in (me, opp)}
         mine, st0, ends = wk[me]  # with players back from IL slots (from the day each comes in), and who's cut for them then
-        mw = self._week_mine(punt)  # B17: who's left parked this week, and the last day an add goes through then
-        last = (mw["by"] or {}).get("day")
+        mw = self._week_mine(punt)  # B17: who's left parked this week, and the days no add goes through then (B20)
+        block = mw["block"]
         p = odds(left[me])
         if _on:  # B18: the league after an open-spot add, who plays from the day he's added
             st0 = {**st0, **_on[0]}
@@ -3769,7 +4049,8 @@ class League:
         # so with none left this week there are none; plan = the best way to spend the adds left (_plan)
         healthy = lambda ks: [k for k in ks if self.meta.get(k, {}).get("status", "") not in OUT]
         cost = self._contrib(me, [k for k in healthy(play(me)) if k not in never], punt)
-        drops, fas, cap = sorted(cost, key=cost.get)[:3], healthy(self.fa), self.adds()
+        gone = self._dropped()  # B20: yours on waivers, never offered back
+        drops, fas, cap = sorted(cost, key=cost.get)[:3], [k for k in healthy(self.fa) if k not in gone], self.adds()
         if _on and cap:
             cap = {**cap, "left": max(cap["left"] - _on[1], 0)}
         streams, plan, paths, name = [], None, [], lambda k: self.p.at[k, "PLAYER_NAME"]
@@ -3782,7 +4063,7 @@ class League:
             # specifically what i need"): ranked on being added today, the 10 kept missed Gafford for Huerter on Saturday,
             # 58.4% against the plan's 56.1%, his worth being a late add that keeps the drop's games. The plan's pool
             # (cands) is then the best on their timed gains
-            timed = sorted(((*self._timed(mine, a, [d], odds, s0, st0, ends, ends, last), a, d) for a in fas for d in drops),
+            timed = sorted(((*self._timed(mine, a, [d], odds, s0, st0, ends, ends, block), a, d) for a in fas for d in drops),
                            key=lambda x: -x[0])
             cands = list(dict.fromkeys(x[4] for x in timed))[:max(limit, self.TIMED if self.lean is None else 2 * self.TIMED)]
             fills = self._fills(odds, punt, _on and _on[0])  # B18: an open spot takes an add with no drop
@@ -3811,37 +4092,129 @@ class League:
             # each with its games, expected score and chance to win the matchup
             fill = fills[0] if fills and fills[0]["gain"] >= 0.1 else None
             n_left = 0 if fill else limit if cap is None else cap["left"]  # B18: with a fill the plan is built below
-            def path(mv, un2, **kw):  # a plan's first moves, in the order it chose them
-                ks, st2 = mine + [x["add"] for x in mv], {**st0, **{x["add"]: x["day"] for x in mv}}
-                un3 = {**ends, **{x["add"]: x["end"] for x in mv if x["end"]}, **{x["drop"]: un2[x["drop"]] for x in mv}}
+            # every plan weighed, by key (base, {(add, drop, day)}): (base, its moves in day order, start, until).
+            # Base 0 is the week as counted; the deep search's others activate a player back from an IL slot another
+            # way (B20, _bases)
+            bases, cand = [(mine, st0, ends, block, None)], {}
+            act_name = lambda x: x and ({"name": name(x["player"]), "parked": True} if x.get("parked") else
+                                        {"name": name(x["player"]), "day": x["day"], "for": name(x["cut"])})
+
+            def path(key, **kw):  # a plan as Every path shows it
+                b, mv, st2, un3 = cand[key]
+                ks = bases[b][0] + [x["add"] for x in mv]
                 q = odds(self.week_vec(ks, st2, un3))
                 return {"adds": len(mv), "gain": round(100 * (float(self._wscore(q)) - s0), 1), "share": float(self._wscore(q)),
                         "odds": [round(100 * float(x), 1) for x in q],
-                        "moves": [{"day": x["day"], "add": name(x["add"]), "drop": name(x["drop"])} for x in sorted(mv, key=lambda x: x["day"])],
+                        "moves": [{"day": x["day"], "add": name(x["add"]), "drop": name(x["drop"])} for x in mv],
                         "win": round(100 * float(match_prob(q, self.cats, WEEK_LOAD)), 1),
                         "score": [round(float(q.sum()), 1), round(len(self.cats) - float(q.sum()), 1)],
-                        **({"games": sum(self.starts(ks, st2, un3).values())} if self.sched else {}), **kw}
-            found, full, raw = {}, [], {}  # {moves: path}, each opening's whole plan, {moves: (its moves, until)}
+                        **({"games": sum(self.starts(ks, st2, un3).values())} if self.sched else {}),
+                        **({"activate": act_name(bases[b][4])} if b else {}), **kw}
+
+            def regain(key):  # its moves with each gain on top of the days before (Q13), from its base's week
+                b, mv, st2, un3 = cand[key]
+                kb, sb, ub = bases[b][:3]
+                prev, out = float(self._wscore(odds(self.week_vec(kb, sb, ub)))), []
+                for i, x in enumerate(mv):
+                    done = mv[:i + 1]
+                    q = self.week_vec(kb + [y["add"] for y in done], {**sb, **{y["add"]: y["day"] for y in done}},
+                                      {**ub, **{y["add"]: y["end"] for y in done if y["end"]}, **{y["drop"]: un3[y["drop"]] for y in done}})
+                    s = float(self._wscore(odds(q)))
+                    out.append({**x, "gain": 100 * (s - prev)})
+                    prev = s
+                return out
+
+            found, full = {}, []  # {key: path}, each opening's whole plan
             for _, _, _, _, a, d in timed[:8]:
-                mv, _, un2, _ = self._plan(mine, cands, drops, odds, s0, n_left, ends, False, (a, d), st0, last)
+                mv, _, un2, _ = self._plan(mine, cands, drops, odds, s0, n_left, ends, False, (a, d), st0, block)
                 for k in range(1, len(mv) + 1):
-                    part = [x for x in mv if x["order"] < k]
-                    key = frozenset((x["add"], x["drop"], x["day"]) for x in part)
-                    if key not in found:
-                        found[key], raw[key] = path(part, un2), (part, un2)
+                    part = sorted((x for x in mv if x["order"] < k), key=lambda x: (x["day"], x["order"]))
+                    key = (0, frozenset((x["add"], x["drop"], x["day"]) for x in part))
+                    if key not in cand:
+                        cand[key] = (0, part, {**st0, **{x["add"]: x["day"] for x in part}},
+                                     {**ends, **{x["add"]: x["end"] for x in part if x["end"]}, **{x["drop"]: un2[x["drop"]] for x in part}})
+                        found[key] = path(key)
                     if k == len(mv):
                         full.append(((a, d), key))
-            top = max(full, key=lambda x: found[x[1]]["share"], default=None)
-            moves, st, un, news = self._plan(mine, cands, drops, odds, s0, n_left, ends, cap is not None, top and top[0], st0, last)
-            keyed = lambda fs: "; ".join(sorted(f"{d} {name(a)}>{name(x)}" for a, x, d in fs)) or "none"
-            mine_k = next((k for k in [frozenset(), *raw] if choose and keyed(k) == choose), None)
-            if mine_k is not None:  # your pick: the plan is that path, as Every path scored it
-                mv, un2 = raw.get(mine_k, ([], {}))
-                moves, news = sorted(mv, key=lambda x: (x["day"], x["order"])), None
-                st = {**st0, **{x["add"]: x["day"] for x in moves}}
-                un = {**ends, **{x["add"]: x["end"] for x in moves if x["end"]}, **{x["drop"]: un2[x["drop"]] for x in moves}}
+            if deep and n_left:
+                # B20: the deep search, seeded with every plan above, from each way to have a player back from an IL slot
+                bases = bases if _on else self._bases(punt)
+                dres = self._deep(bases, drops, fas, odds, n_left,
+                                  seeds=[(0, [(x["day"], x["add"], x["drop"]) for x in c[1]]) for c in cand.values()])
+                found, best = {}, {}
+                for k, L in dres.items():
+                    seen = set()  # two plans with the same players on the same days are one week (two drops swapped)
+                    for _, b, P, st2, un3 in L:
+                        if len(seen) == (1 if k < max(dres) else 4):
+                            break
+                        if (sig := frozenset((g, x) for x in [*bases[b][0], *(m[1] for m in P)] for g in
+                                             self.game_days(x, min(self.week_end, un3.get(x, "9999")), st2.get(x)))) in seen:
+                            continue
+                        seen.add(sig)
+                        key, u, mv = (b, frozenset((a, d, x) for x, a, d in P)), dict(bases[b][2]), []
+                        for j, (x, a, d) in enumerate(P):  # day order; `end`: the cut day a stream inherits, as _plan() sets it
+                            to = min(u.get(d, self.week_end), self.week_end)
+                            mv.append({"day": x, "add": a, "drop": d, "end": to if to < self.week_end else None, "order": j})
+                            u[d] = shift(x, -1)
+                            if to < self.week_end:
+                                u[a] = to
+                        cand[key] = (b, mv, st2, un3)
+                        found[key] = path(key)
+                        best.setdefault(k, key)
+                found.pop(best[0], None)
+                full = [(None, key) for key in found if found[key]["adds"] == max(dres)]
+                # the plan: the best count of adds, one fewer while the last adds under 0.1, and its last add against
+                # late news (M17): kept unless the best plan with it beats the best one add short by more than that's worth
+                sh = {k: dres[k][0][0] for k in best}
+                n = max(sh, key=lambda k: (sh[k], -k))
+                while n and 100 * (sh[n] - sh[n - 1]) < 0.1:
+                    n -= 1
+                news = None
+                if n and cap is not None and n == n_left:
+                    _, b0, P0, st2, un3 = dres[n - 1][0]
+                    gone0 = {x[2] for x in P0}
+                    avail = [x for x in [*drops, *(x[1] for x in P0)] if x not in gone0]
+                    r = self._reserve(bases[b0][0] + [x[1] for x in P0], cands, avail, odds, st2, un3,
+                                      {x: un3[x] for x in avail if x in un3}, bases[b0][3])
+                    ext = next((P for _, b, P, *_ in dres[n] if b == b0 and set(P0) < set(P)), None)  # the best with one more
+                    last = cand[best[n]][1][-1]
+                    mvx = next(iter(set(ext) - set(P0))) if ext else (last["day"], last["add"], last["drop"])
+                    xs = next(x for x, b, P, *_ in dres[n] if P == ext) if ext else sh[n]
+                    news = {"worth": r, "kept": 100 * (sh[n] - sh[n - 1]) < r,
+                            "move": {"day": mvx[0], "add": mvx[1], "drop": mvx[2], "gain": 100 * (xs - sh[n - 1])}}
+                    if news["kept"]:
+                        n -= 1
+                top_key = best.get(n) if n else None
+            else:
+                top = max(full, key=lambda x: found[x[1]]["share"], default=None)
+                moves, st, un, news = self._plan(mine, cands, drops, odds, s0, n_left, ends, cap is not None, top and top[0], st0, block)
+                top_key = (0, frozenset((x["add"], x["drop"], x["day"]) for x in moves))
+                if moves and top_key not in cand:
+                    cand[top_key] = (0, moves, st, un)
+                    found[top_key] = path(top_key)
+
+            def keyed(key):
+                b, fs = key
+                x = act_name(bases[b][4]) if b else None
+                return "; ".join([*sorted(f"{d} {name(a)}>{name(y)}" for a, y, d in fs),
+                                  *([f"park {x['name']}" if x.get("parked") else f"activate {x['day']} {x['name']}>{x['for']}"] if x else [])]) or "none"
+            by_n = {}
+            for key, x in found.items():
+                if x["adds"] not in by_n or x["share"] > found[by_n[x["adds"]]]["share"]:
+                    by_n[x["adds"]] = key
+            if adds is not None and choose is None:  # B20: how many adds to use: the best path with that many
+                choose = keyed(by_n[max((k for k in by_n if k <= adds), default=0)]) if adds and by_n else "none"
+            mine_k = next((k for k in [(0, frozenset()), *cand] if choose and keyed(k) == choose), None)
+            if mine_k is not None:  # your pick: the plan is that path
+                top_key, news = mine_k, None
+            pb = top_key[0] if top_key and top_key in cand else 0
+            if top_key in cand and (mine_k is not None or deep):
+                moves = regain(top_key)
+                _, _, st, un = cand[top_key]
+            elif mine_k is not None or (deep and n_left):
+                moves, st, un = [], st0, ends
             if moves or news:
-                g = self.starts(mine + [x["add"] for x in moves], st, un)
+                g = self.starts(bases[pb][0] + [x["add"] for x in moves], st, un)
                 kept = [x["add"] for x in moves if x["add"] not in un]
                 plan = {"moves": [{**x, "add": name(x["add"]), "drop": name(x["drop"]), "gain": round(x["gain"], 1),
                                    **({"games": g[x["add"]], "kept": g[x["drop"]]} if self.sched else {})} for x in moves],
@@ -3851,25 +4224,25 @@ class League:
                         "news": news and {"worth": round(news["worth"], 1), "kept": news["kept"],
                                           "move": {**news["move"], "add": name(news["move"]["add"]),
                                                    "drop": name(news["move"]["drop"]), "gain": round(news["move"]["gain"], 1)}}}
+                if pb:  # B20: this plan activates your player back from an IL slot another way than This week counts him
+                    sb = float(self._wscore(odds(self.week_vec(*bases[pb][:3]))))
+                    plan["activate"] = {**act_name(bases[pb][4]), "gain": round(100 * (sb - s0), 1)}
+                    plan["gain"] = round(plan["gain"] + plan["activate"]["gain"], 1)
             if found:
-                picked = frozenset((x["add"], x["drop"], x["day"]) for x in moves)
-                by_n = {}
-                for key, x in found.items():
-                    if x["adds"] not in by_n or x["share"] > found[by_n[x["adds"]]]["share"]:
-                        by_n[x["adds"]] = key
+                picked = top_key if moves else (0, frozenset())
                 rows = [by_n[k] for k in sorted(by_n)]
                 rows += [key for key in dict.fromkeys(k for _, k in sorted(full, key=lambda x: -found[x[1]]["share"])) if key not in rows][:3]
-                if picked and picked not in rows:
+                if picked[1] and picked not in rows:
                     rows.append(picked)
-                    found.setdefault(picked, path(moves, un))
+                    found.setdefault(picked, path(picked))
                 zero = odds(self.week_vec(*wk[me]))
                 paths = [{"adds": 0, "gain": 0.0, "moves": [], "win": round(100 * float(match_prob(zero, self.cats, WEEK_LOAD)), 1),
                           "odds": [round(100 * float(x), 1) for x in zero],
                           "score": [round(float(zero.sum()), 1), round(len(self.cats) - float(zero.sum()), 1)],
-                          **({"games": sum(self.starts(*wk[me]).values())} if self.sched else {}), **({} if picked else {"pick": True})},
-                         *({k: v for k, v in {**found[key], **({"pick": True} if key == picked else {})}.items() if k != "share"}
+                          **({"games": sum(self.starts(*wk[me]).values())} if self.sched else {}), **({} if picked[1] or pb else {"pick": True})},
+                         *({k: v for k, v in {**found[key], **({"pick": True} if key == picked and (picked[1] or pb) else {})}.items() if k != "share"}
                            for key in rows)]
-                for x, key in zip(paths, [frozenset(), *rows]):
+                for x, key in zip(paths, [(0, frozenset()), *rows]):
                     x["key"] = keyed(key)
             if fill:
                 # B18: the plan opens with the best add into the open spot (no drop: it beat every swap here, +2.8 vs
@@ -3884,11 +4257,11 @@ class League:
                 fm = {"day": d, "add": name(a), "drop": None}
                 news = None
                 if cap is not None and cap["left"] == 1:
-                    r = self._reserve(mine, cands, drops, odds, st0, dict(ends), ends, last)
+                    r = self._reserve(mine, cands, drops, odds, st0, dict(ends), ends, block)
                     news = {"worth": round(r, 1), "kept": fill["gain"] < r, "move": {**fm, "gain": round(fill["gain"], 1)}}
                 kept = bool(news and news["kept"])
                 sub = {"plan": None, "paths": []} if kept else lc.this_week(
-                    opp, punt, limit, keep, _on=({**(_on[0] if _on else {}), a: d}, (_on[1] if _on else 0) + 1))
+                    opp, punt, limit, keep, _on=({**(_on[0] if _on else {}), a: d}, (_on[1] if _on else 0) + 1), deep=deep)
                 sp, pp = sub["plan"] or {"moves": [], "gain": 0, "keep": [], "season": 0, "news": None}, sub["paths"]
                 later = [{**x, "order": x["order"] + 1} for x in sp["moves"]]
                 out = next((x for x in later if x["drop"] == name(a)), None)  # a later stream takes his place
@@ -3906,6 +4279,18 @@ class League:
                             "moves": sorted([fm, *x["moves"]], key=lambda m: m["day"])} for x in pp[1:])]
         if plan and (pk := next((x for x in paths if x.get("pick")), None)):  # Q32: what the plan gives, by category
             plan["cats"] = {c: [round(100 * float(x), 1), y] for c, x, y in zip(self.cats, p, pk["odds"])}
+        if plan and not _on:  # Nov 23 (Martin: "where does it even say how he improves my team?"): each move's odds by
+            # category on top of the moves before it in the table's (day) order, and the add kept for late news on all of them
+            act = {"activate": plan["activate"]} if plan.get("activate") else {}  # B20: on top of activating him that way
+            moves, ms, prev = [dict(x) for x in plan["moves"]], [], odds(self.week_vec(*self._plan_side(act, punt))) if act else p
+            cats = lambda a, b: {c: [round(100 * float(x), 1), round(100 * float(y), 1)] for c, x, y in zip(self.cats, a, b)}
+            for x in moves:
+                ms.append(x)
+                q = odds(self.week_vec(*self._plan_side({"moves": ms, **act}, punt)))
+                x["cats"], prev = cats(prev, q), q
+            plan["moves"] = moves
+            if (plan.get("news") or {}).get("kept") and (nm := plan["news"].get("move")) and nm.get("add"):
+                nm["cats"] = cats(prev, odds(self.week_vec(*self._plan_side({"moves": [*ms, nm], **act}, punt))))
         if _on:
             return {"plan": plan, "paths": paths}
         call = lambda c, x: "punt" if c in punt else "safe" if x >= 1 - WEAK else "lost" if x <= WEAK else "chase"
@@ -3925,6 +4310,7 @@ class League:
                              "odds": round(100 * float(x), 1), "call": call(c, x)} for c, x in zip(self.cats, p)},
                 "today": max(self.today, m.get("from", "")), "adds": cap, "streams": streams, "plan": plan, "paths": paths,
                 **({"chosen": True} if choose and any(x.get("pick") and x.get("key") == choose for x in paths) else {}),
+                **({"deep": round(time.time() - t0, 1)} if deep else {}),  # B20: the deep search ran, in this many seconds
                 **({} if self.lean is None else {"weights": {c: float(x) for c, x in zip(self.cats, self.lean) if x != 1}}),
                 "drops": self.names(drops), "keep": self.names([k for k in self.rosters[me] if k in never]),
                 # today's NBA games (M18): under way (tipped off), final, still to come; when the live scores were fetched
@@ -3945,6 +4331,11 @@ class League:
                 "held": [{"name": name(h["player"]), "parked": h["parked"], "day": h["day"], "for": name(h["cut"]),
                           "back": h["back"], "win": h["win"], "games": h["games"], "plays": h["plays"]} for h in mw["held"]],
                 "add_by": mw["by"] and {"day": mw["by"]["day"], "player": name(mw["by"]["player"])},
+                # B20: the days no add goes through, each while one of yours is healthy in an IL slot (parked, or until
+                # the day he's counted in)
+                "blocked": [{**b, "player": name(b["player"])} for b in mw["blocks"]],
+                # Nov 20: out in an active spot with an IL slot free, counted as moved there (_leaning): not done on Yahoo yet
+                **({"parks": self.names(self.parks)} if self.parks else {}),
                 # players back from IL slots this week (M21): from their first game, in place of who's cut after his last
                 "back": {t: {"in": [{"name": name(k), "day": wk[x][1].get(k, g[0])} for k in wk[x][0] if k in self.il[x] and (g := self.game_days(k, self.week_end))],
                              "cut": [{"name": name(k), "last": d} for k, d in wk[x][2].items() if k not in wk[x][1]],
@@ -4103,19 +4494,27 @@ class League:
 
     def _plan_side(self, plan, punt=()):
         """Your rest of the week as week_vec()'s (keys, start, until) after a this_week() plan's moves (names), in day
-        order: each add from his day, each drop until the day before (_handoff: one cut anyway for a player back hands
-        the add his last day), an add with `end` cut then. None with no moves. Start / sit runs on it (Martin, Nov 17:
+        order: each add from his day (from his claim's), each drop until the day before (_handoff: one cut anyway for a
+        player back hands the add his last day, and so on down the spot's chain of streams), an add with `end` cut then.
+        None with no moves. B20: a move without `end` (the held late-news add) in that spot was played past the cut,
+        14 active on Sunday; a claim dated before it clears played those days. Start / sit runs on it (Martin, Nov 17:
         Saturday's lineup had Huerter and not Gafford, the plan's add that day).
         ponytail: an open-spot fill is rebuilt as a plain add on this roster, not on the fill's copy (_fills)"""
-        if not plan or not plan.get("moves"):
+        if not plan or not plan.get("moves") and not plan.get("activate"):
             return None
         keys, start, until = self._week_side(self.me, punt)
+        if act := plan.get("activate"):  # B20: a deep plan activating your player back from an IL slot another way
+            keys, start, until = next((x[:3] for x in self._bases(punt)[1:] if self.names([x[4]["player"]])[0] == act["name"]
+                                       and x[4].get("day") == act.get("day")), (keys, start, until))
         keys, start, ends, until = list(keys), dict(start), dict(until), dict(until)
-        for m in sorted(plan["moves"], key=lambda m: (m["day"], m.get("order", 0))):
+        for m in sorted(plan.get("moves", ()), key=lambda m: (m["day"], m.get("order", 0))):
             a, d = self.find(m["add"]), m["drop"] and self.find(m["drop"])
-            keys, start[a] = keys + [a], m["day"]
+            s = max(m["day"], self._clears(a).get(a, ""))  # B20: a claim (and its drop) goes through the day it clears
+            keys, start[a] = keys + [a], s
             if d:
-                until = self._handoff(until, ends, [d], a, m["day"])
+                until = self._handoff(until, ends, [d], a, s)
+                if d in ends:  # B20: so a later stream in the spot cut for a player back is cut that day too
+                    ends[a] = ends.pop(d)
             if m.get("end"):
                 until[a] = m["end"]
         return keys, start, until
@@ -4266,6 +4665,15 @@ class League:
             prev = n
         return {**out, "opponent": opp, "days": rows}
 
+    def _dropped(self):
+        """B20: players you've dropped in a saved move (made or planned, Q30), not on a snapshot yet. Each goes to
+        waivers, which moved() can't date, so This week never offers adding him back (Nov 23: Larsson, dropped in a
+        planned move, read as a free agent from today). One a snapshot shows dropped carries Yahoo's own waiver date
+        (_clears): Washington, dropped Nov 16, was a free agent again by Nov 20."""
+        me = self.me
+        return {k for m in self.moves if m.get("state") in ("made", "plan") and (m.get("me") or me) == me
+                for n in m.get("drop") or () if (k := self.find(n, strict=False))}
+
     def _clears(self, k):
         """{k: the day his waiver claim clears} ("Jan 2" read on Dec 30 is next year), {} when he isn't on waivers:
         a claim only plays from then (starts(), week_vec())."""
@@ -4288,9 +4696,17 @@ class League:
         is another add. Points: value per game, the add's minus the drop's. KeyError unless add is a free agent and
         drop is on your roster (AI tool input comes through here). add None (Q29): a drop alone, which activates any
         player stuck in an IL slot (_stuck(): healthy, untagged) today or opens a spot; this week is drops()'s maths
-        (the league after it, _copy(), as This week counts it)."""
+        (the league after it, _copy(), as This week counts it). B20: the add goes on a day Yahoo takes adds
+        (_week_mine()'s `block`: one of yours healthy in an IL slot); a day you name in it moves to the next open one,
+        and with none left this week it's scored on its day all the same, `week.blocked` true."""
         if not add and not drop:
             raise KeyError("Pick a player to add, one to drop, or both")
+        # Nov 20: on the league This week runs on, your player who's out moved to a free IL slot (_leaning, `parks`),
+        # so an add takes his spot with no drop as This week's stream does; dropping him instead frees it on its own,
+        # and an injured add who'd go in the IL slot himself (B5, _stash) keeps it
+        if (lg := self._leaning()) is not self and not (drop and lg.find(drop) in lg.parks) and not (
+                add and self._stash(self.find(add), self.il[self.me])):
+            return {**lg.add_drop(add, drop, punt, opp, day), "parks": lg.names(lg.parks)}
         k, me = self.find(add) if add else None, self.rosters[self.me]
         if k is not None and k not in self.fa:
             who = self.owner(k)
@@ -4339,7 +4755,7 @@ class League:
             (act, st0, ends), claim = self._week_side(self.me, punt), self._clears(k)  # with players back from IL slots (M21, B17)
             gone = [x for x in [d] * bool(d) + auto if x in act]  # active players leaving: they play until the move
             p0 = odds(left[self.me])
-            lw, base = self, (act, st0, ends)
+            lw, base, blocked = self, (act, st0, ends), False
             if k is not None and k not in il and not gone:
                 # B18: he takes your open spot, which was your parked player's on his return (_week_mine): the league
                 # after the add, where that player is in for a cut or left parked (B17). Counting both in the spot
@@ -4364,10 +4780,16 @@ class League:
                 until = {**{x: e for x, e in ends2.items() if x not in gone}, **stay}
             elif day:
                 when = max(day, self.today, self.matchup.get("from", ""), claim.get(k, ""), self._move_day(gone))
+                while when in (blk := lw._week_mine(punt)["block"]) and when < self.week_end:  # B20: the next day Yahoo takes it
+                    when = shift(when)
+                blocked = when in blk
                 start, until = {**st0, k: when}, self._handoff(ends, ends, gone, k, when)
                 after = act + [k]
-            else:
-                _, when, start, until = lw._timed(act, k, gone, odds, float(self._wscore(p0)), st0, ends, ends)
+            else:  # its best day Yahoo takes an add on (B20); none left this week: its best day all the same, flagged
+                blk = lw._week_mine(punt)["block"]
+                g, when, start, until = lw._timed(act, k, gone, odds, float(self._wscore(p0)), st0, ends, ends, blk)
+                if blocked := g == float("-inf"):
+                    _, when, start, until = lw._timed(act, k, gone, odds, float(self._wscore(p0)), st0, ends, ends)
                 after = act + [k]
             p1 = odds(lw.week_vec(after, start, until))
             for c, x0, x1 in zip(self.cats, p0, p1):
@@ -4376,6 +4798,7 @@ class League:
                     "win": [pct1(match_prob(p0, self.cats, WEEK_LOAD)), pct1(match_prob(p1, self.cats, WEEK_LOAD))],
                     "score": [round(float(p0.sum()), 1), round(float(p1.sum()), 1)],
                     **({"claim": claim[k]} if claim else {}), **({"day": when} if when else {}),
+                    **({"blocked": True} if k is not None and k not in il and when and blocked else {}),
                     "today": max(self.today, self.matchup.get("from", ""))}
             if self.sched:
                 g0, g1 = self.starts(*base), lw.starts(after, start, until)
@@ -4572,7 +4995,7 @@ class League:
                 "moves": self.moves,  # Q30: roster moves made (or planned) since the snapshot, already on these rosters
                 # the season schedule's weeks from this one, for League's period picker (weeks_ahead())
                 "weeks": [{"week": w.get("week"), "start": w["start"], "end": w["end"]}
-                          for w in self.snap.get("schedule") or () if w["end"] >= self.today] if self.mode != "points" else [],
+                          for w in self.snap.get("schedule") or () if w["end"] >= self.week_end] if self.mode != "points" else [],
                 "matchup_days": [max(self.today, self.matchup.get("from", "")), self.week_end],  # days a move can still count
                 "sources": self.sources(),  # when stats, box scores, schedule, injuries, projections, news were fetched
                 "roster": sorted((self.player(k, punt) for k in self.rosters[self.me]), key=lambda p: -p["value"]),
@@ -4673,13 +5096,26 @@ class League:
         return [k for k in self.rosters[team] if k in self.il[team] and not tag.get(k)
                 and self.inj.get(k, {}).get("status") not in OUT]
 
+    def _parkable(self):
+        """Your players in active spots who are out now, as many as your free IL slots take, longest out first: This
+        week counts them parked (_leaning) and the roster check says to move them (Martin, Nov 20: Boozer ruled out at
+        4 PM on an 11 AM snapshot, "it still assumes i have him used rn"). Out is the league's tag or ESPN's feed
+        (meta), so news since the snapshot counts; Yahoo takes him once it tags him O (mchc: only Out goes in an IL
+        slot), and never a suspension. Not one whose game today has tipped off: Yahoo has locked him for the day."""
+        me = self.me
+        hurt = [k for k in self._playing(self.rosters[me])
+                if self.meta.get(k, {}).get("status") in OUT - {"SUSP"} and not self._locked(k)]
+        hurt.sort(key=lambda k: self.inj.get(k, {}).get("return") or SEASON_OFF, reverse=True)
+        return hurt[:max(self.il_n - len(self.il[me]), 0)]
+
     def roster_check(self, punt=()):
         """What's wrong with your roster right now (Q29, Martin Nov 16: "i have too many players rn cause one of my il
         players returned"), worst first. -> {active, il, spots, il_slots, problems: [{kind, players, text, fix}]}. kinds:
         il: a player in an IL slot who isn't injured any more (_stuck(): Yahoo blocks adds until he's moved); drop: more
-        players than active spots once he's activated (who: drops()); park: an injured player (Yahoo's O) in an active
-        spot while an IL slot is free, which frees a spot with no drop; open: an open active spot (yours holds nothing,
-        vec(), so every day it's open costs games); lineup: on the snapshot's own day (B8, slot_day), a starter who's out
+        players than active spots once he's activated (who: drops()); park: an injured player in an active spot while
+        an IL slot is free (_parkable(): Yahoo's O, or ESPN's since the snapshot), which frees a spot with no drop;
+        open: an open active spot (yours holds nothing, vec(), so every day it's open costs games; its fix is scored
+        with the park made, as This week counts it); lineup: on the snapshot's own day (B8, slot_day), a starter who's out
         or an empty starting slot a benched player with a game today fits. notes (B17): nothing to fix now, each
         {kind: "back", players, text, fix}: one of yours due back from an IL slot this week, and whether This week leaves
         him parked or activates him, on which day and for whom (_week_mine(); the cut depends on the build, so punt)."""
@@ -4688,9 +5124,8 @@ class League:
         said = lambda ks: (lambda ns: ", ".join(ns[:-1]) + " and " + ns[-1] if len(ns) > 1 else ns[0])(self.names(ks))
         many = lambda ks, one, more: more if len(ks) > 1 else one
         tag = {k: p.get("status") or "" for p in self.snap["teams"].get(me, ()) if (k := self.find(p["name"], strict=False))}
-        hurt = [k for k in act if tag.get(k) in OUT and self.meta[k].get("status") in OUT]
-        park = hurt[:max(self.il_n - len(il), 0)]
-        n, out = len(act) + len(stuck), []
+        park, n, out = self._parkable(), len(act) + len(stuck), []
+        news = [k for k in park if tag.get(k) not in OUT]  # ESPN has him out since the snapshot: Yahoo may not yet
         if stuck:
             out.append({"kind": "il", "players": self.names(stuck),
                         "text": f"{said(stuck)} {many(stuck, 'is', 'are')} healthy and still in an IL slot. You can't add "
@@ -4705,12 +5140,14 @@ class League:
         if park:
             out.append({"kind": "park", "players": self.names(park),
                         "text": f"{said(park)} {many(park, 'is', 'are')} out and in an active spot while an IL slot is free.",
-                        "fix": f"Move {many(park, 'him', 'them')} to the IL slot: that frees an active spot, no drop needed."})
-        if n - len(park) < self.roster_n:
+                        "fix": f"Move {many(park, 'him', 'them')} to the IL slot: that frees an active spot, no drop needed."
+                               + (f" ESPN has {said(news)} out since your snapshot, so Yahoo may need a little longer to "
+                                  f"tag {many(news, 'him', 'them')} O first." if news else "")})
+        if n - len(park) < self.roster_n:  # the fill is scored with them parked, as This week counts it (_leaning)
             out.append({"kind": "open", "players": [],
                         "text": f"You have {n - len(park)} players for {self.roster_n} active spots. An open spot holds "
                                 "nothing, so every day it's open costs you games.",
-                        "fix": self._fill_fix(punt) or "Add a free agent (Waivers)."})
+                        "fix": self._leaning()._fill_fix(punt) or "Add a free agent (Waivers)."})
         if self.slot_day == self.today and self.slots and (sl := self.slotted.get(me)):
             plays = lambda k: self.today in self.sched.get(self.nba.get(k), ()) and not self._locked(k)
             on = [k for k, s in sl.items() if s in self.slots]
@@ -4746,8 +5183,8 @@ class League:
 
     def drops(self, punt=(), opp=None):
         """Who to drop (Q29, Martin Nov 16: "show who i should drop to like win this week or for like the season or like
-        overall best choice"). A row per player you could cut: each active one (not one locked in a game under way, M18:
-        he goes tomorrow) and each one stuck in an IL slot (_stuck(): dropping him; leaving him parked counts the same
+        overall best choice"). A row per player you could cut: each active one (`tomorrow`: locked in a game under way,
+        M18, he plays it out and goes tomorrow) and each one stuck in an IL slot (_stuck(): dropping him; leaving him parked counts the same
         but blocks adds). Each row is the league with him gone and the stuck players activated today (_copy()):
         week: this week's chance to win vs opp (week_vec() on _week_side(), as This week; their side once), next: next
         week's vs that week's opponent (_capped(), as weeks_ahead()), season: your win % (vec()'s maths, every row in
@@ -4765,7 +5202,10 @@ class League:
             return self._dropc[key]
         me, name, stuck = self.me, lambda k: self.p.at[k, "PLAYER_NAME"], self._stuck()
         act, il = self._playing(self.rosters[me]), self.il[me] - set(stuck)
-        cands = [k for k in act if not self._locked(k)] + stuck
+        # Nov 22 (Martin: "why would i drop brandon ingram over pelle larsson"): a player locked in a game under way
+        # used to be left out, so on a Sunday night 8 of 13 were missing and Ingram won; he's a row now, `tomorrow`,
+        # playing tonight out as add_drop() counts him (M18)
+        cands = act + stuck
         rosters = [[x for x in self.rosters[me] if x != k] for k in cands]
         nobody, _, O = len(self._ix), *self._others(me)
 
@@ -4782,9 +5222,13 @@ class League:
         opp = self._opponent(opp)
         if opp:
             _, _, odds = self._their_week(opp, punt)
-            week = lambda lg: 100 * float(match_prob(odds(lg.week_vec(*lg._week_side(me, punt))), self.cats, WEEK_LOAD))
+            def week(lg, k):  # one locked today plays tonight out and goes tomorrow (add_drop()'s `stay`)
+                a, s, u = lg._week_side(me, punt)
+                if self._locked(k):
+                    a, u = a + [k], {**u, k: self.today}
+                return 100 * float(match_prob(odds(lg.week_vec(a, s, u)), self.cats, WEEK_LOAD))
         sch = self.snap.get("schedule") or []
-        i0 = next((i for i, w in enumerate(sch) if w["end"] >= self.today), len(sch))
+        i0 = next((i for i, w in enumerate(sch) if w["end"] >= self.week_end), len(sch))
         nw = sch[i0 + 1] if i0 + 1 < len(sch) else {}
         nopp = next((t for pr in nw.get("matchups") or () if me in pr for t in pr if t != me), None)
         if nopp and self.sched:  # as weeks_ahead(1): each side under the daily lineup limit, real odds
@@ -4802,10 +5246,11 @@ class League:
         rows, raw = [], []
         for i, (k, r) in enumerate(zip(cands, rosters)):
             lg = self._copy({me: r}, [*self.fa, k], {me: il})
-            w, x = week(lg) if opp else None, nxt(lg) if nopp and self.sched else None
+            w, x = week(lg, k) if opp else None, nxt(lg) if nopp and self.sched else None
             po = (lg.playoffs or {}).get("teams", {}).get(me, {})
             raw.append((float(S[i]), w))
             rows.append({"name": name(k), "status": self.meta.get(k, {}).get("status", ""), **({"stuck": True} if k in stuck else {}),
+                         **({"tomorrow": True} if self._locked(k) else {}),
                          "week": None if w is None else round(w, 1), "next": None if x is None else round(x, 1),
                          "season": round(float(S[i]), 2), **({"playoffs": po["playoffs"], "title": po["title"]} if po else {}),
                          **({"chip": True} if self.chips([k]) else {}),
@@ -4870,6 +5315,30 @@ def switched(snap, team):
     return {**m, **({"opponent": opp} if opp else {})}
 
 
+@functools.lru_cache(maxsize=2)
+def _seen_pos(files):
+    """{norm(name): positions} as the latest of these snapshot files (name, mtime) to list him showed them."""
+    import yahoo
+    out = {}
+    for f, _ in files:
+        for line in open(f, encoding="utf-8"):
+            if " - " in line and (m := yahoo.PLAYER.search(line.strip())):
+                out[norm(m[1].strip())] = m[3]
+    return out
+
+
+def positions(snap):
+    """B20: each player the snapshot lists with no positions gets the ones the latest snapshot in snapshots/ to
+    list him showed. yahoo.py pads the free agents a snapshot leaves out with none, and lineup() then fits them in
+    any slot, C included: Nov 23, 87 of 182 healthy free agents (Danny Wolf, PF/C, in most of the best plans);
+    31 of the 100 padded ones get theirs back (~0.1 s). The rest still fit anywhere."""
+    if miss := [p for ps in [*snap["teams"].values(), snap.get("free_agents", ())] for p in ps if not p.get("pos")]:
+        seen = _seen_pos(tuple((str(f), f.stat().st_mtime) for f in snapshots()))
+        for p in miss:
+            p["pos"] = seen.get(norm(p["name"]), "")
+    return snap
+
+
 def load(path=DATA / "league.json", refetch=(), what=None, made=None):
     """The league from the snapshot, with every cache refreshed once past its window. refetch: "injuries" and "live"
     (scores()) now, "stats" (this season's stats and box scores) once 15 minutes old: Refresh (Nov 1: a 9:57pm Refresh
@@ -4889,7 +5358,7 @@ def load(path=DATA / "league.json", refetch=(), what=None, made=None):
         hours = min(hours, 0.5)
         logs = gamelogs(CUR, hours)
     inj = injuries("injuries" in refetch)
-    snap, notes, shown = moved(json.loads(Path(path).read_text(encoding="utf-8")), made)
+    snap, notes, shown = moved(positions(json.loads(Path(path).read_text(encoding="utf-8"))), made)
     if shown:
         moves(undo=shown)
     lg = League(snap, cur=fetch(CUR, max_age_hours=hours), sched=schedule(),
@@ -4988,6 +5457,8 @@ def main():
     ap.add_argument("--skip", default="", help='week, lineup, today: free agents to leave out (taken, or you don\'t want them), e.g. "P.J. Washington"')
     ap.add_argument("--weight", default="", help='week, lineup, today: lean on categories, e.g. "PTS=2" (double) or "PTS=2,TOV=0.5"; 0 to 5, the rest count 1')
     ap.add_argument("--choose", help='week: a path\'s key from Every path ("none" = no move): the plan follows it')
+    ap.add_argument("--deep", action="store_true", help="week, lineup: the deep search for the plan (every free agent, every day, ~10 s)")
+    ap.add_argument("--adds", type=int, help="week, lineup: use this many adds: the plan is the best path with that many (0 = no move)")
     ap.add_argument("--add", default="", help="move: the free agent to add")
     ap.add_argument("--drop", default="", help="move: your player to drop (none: an open spot, else who you'd miss least). trade: who you cut to fit the deal, over the model's pick")
     ap.add_argument("--day", help="move: the day this week to make it, YYYY-MM-DD (default: its best day)")
@@ -5035,12 +5506,13 @@ def main():
            "waivers": lambda: lg.waivers(punt, cats=split(a.cats)),
            "movers": lambda: lg.movers(punt),
            "week": lambda: lg.without(split(a.skip)).this_week(a.vs, punt, keep=[x.strip() for x in a.keep.split(",") if x.strip()], weights=weights(a.weight),
-                                        cats=split(a.cats), choose=a.choose),
+                                        cats=split(a.cats), choose=a.choose, deep=a.deep, adds=a.adds),
            "strategy": lambda: lg.strategy(a.size),
            "news": lg.roster_news,
            "compare": lambda: lg.compare(split(a.players), punt),
            "schedule": lambda: lg.planner(punt),
-           "lineup": lambda: lg.without(split(a.skip)).this_week(a.vs, punt, keep=split(a.keep), weights=weights(a.weight), cats=split(a.cats), choose=a.choose)["lineups"],
+           "lineup": lambda: lg.without(split(a.skip)).this_week(a.vs, punt, keep=split(a.keep), weights=weights(a.weight), cats=split(a.cats), choose=a.choose,
+                                                                 deep=a.deep, adds=a.adds)["lineups"],
            "move": lambda: lg.add_drop(a.add, a.drop or None, punt, a.vs, a.day),
            "sources": lg.sources,
            "roster": lambda: lg.team_roster(a.team or lg.me, punt),

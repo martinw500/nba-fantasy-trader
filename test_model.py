@@ -1535,8 +1535,67 @@ def test_all():
     assert not any("Twin C" in d["start"] + d["sit"] for d in pk.start_sit()["days"]) and "Twin C" in [x["name"] for x in pk.planner()["il"]]
     b_note, b_po, b_s0 = pk.roster_check()["notes"][0], pk._their_week("Them")[2], float(pk._wscore(pk._their_week("Them")[2](pk.week_vec(b_act))))
     assert b_note["kind"] == "back" and "Leave him in his IL slot" in b_note["text"] and "adds by Saturday" in b_note["fix"]
-    assert pk._timed(b_act, "twin e", [c[0]], b_po, b_s0, last="2026-10-25")[0] == float("-inf")  # no day left to add on
-    assert pk._timed(b_act, "twin e", [c[0]], b_po, b_s0, last="2026-10-28")[1] <= "2026-10-28" < "2026-10-31"
+    assert pk._timed(b_act, "twin e", [c[0]], b_po, b_s0, block=set(model.span("2026-10-26", "2026-11-01")))[0] == float("-inf")  # no day left to add on
+    assert pk._timed(b_act, "twin e", [c[0]], b_po, b_s0, block=set(model.span("2026-10-29", "2026-11-01")))[1] <= "2026-10-28" < "2026-10-31"
+    assert b_w["block"] == {"2026-11-01"} and b_tw["blocked"] == [{"player": "Twin C", "from": "2026-11-01", "to": "2026-11-01", "parked": True}]
+    # B20 (Yahoo SLN6863): healthy in his IL slot he blocks every add until he's moved, also while he waits to be
+    # counted in on a later day. Twin C is back Friday (a what-if date) but counted in Sunday (5% to play Friday), so
+    # Friday and Saturday take no add: no plan or path uses them, an add whose game is then goes in Thursday
+    # (_can_add), and the deep search's bases (_bases) can activate him sooner: Friday leaves no block at all
+    gw = model.League(bsn, pd.concat([base, tw]), pd.concat([cur, tw]), today=model.date(2026, 10, 26), sched=sl.sched,
+                      inj=iinj, what={"Twin C": {"health": "out", "until": "2026-10-30"}})
+    gw.gameday["twin c"], gw.DEEP = ("2026-10-30", 0.05), 60
+    g_mw, g_w = gw._week_mine(), gw.this_week()
+    assert g_mw["held"][0]["day"] == "2026-11-01" and g_mw["block"] == {"2026-10-30", "2026-10-31"}
+    assert g_w["blocked"] == [{"player": "Twin C", "from": "2026-10-30", "to": "2026-10-31", "parked": False}] and g_w["add_by"] is None
+    assert all(m["day"] not in g_mw["block"] for x in [*g_w["paths"], g_w["plan"]] for m in x["moves"])
+    assert model.League._can_add(["2026-10-28", "2026-10-30", "2026-11-01"], "2026-10-26", g_mw["block"]) == ["2026-10-28", "2026-10-29", "2026-11-01"]
+    assert model.League._can_add(["2026-10-30"], "2026-10-30", g_mw["block"]) == []  # nothing open from his claim on
+    g_b = {(b[4] or {}).get("day", "parked" if b[4] else None): b for b in gw._bases()}
+    assert set(g_b) == {None, "parked", "2026-10-30", "2026-10-31"} and g_b[None][:4] == (*gw._week_side("Me"), g_mw["block"])
+    assert g_b["2026-10-30"][3] == frozenset() and g_b["2026-10-31"][3] == {"2026-10-30"} and g_b["parked"][3] == set(model.span("2026-10-30", "2026-11-01"))
+    assert g_b["2026-10-30"][1]["twin c"] == "2026-10-30" and g_b["2026-10-30"][2][c[0]] == "2026-10-29" and "twin c" not in g_b["parked"][0]
+    g_dw = gw.this_week(deep=True)  # each deep path keeps out of its own base's block; some activate him sooner to add Saturday
+    for x in g_dw["paths"]:
+        a = x.get("activate")
+        assert all(m["day"] not in g_b[(a or {}).get("day", "parked" if a else None)][3] for m in x["moves"])
+        assert x["key"].endswith("" if not a else "park Twin C" if a.get("parked") else f"activate {a['day']} Twin C>{a['for']}")
+    assert any(x.get("activate") for x in g_dw["paths"]) and g_dw["deep"] >= 0
+    g_a = next(x["activate"] for x in g_dw["paths"] if x.get("activate"))  # Start / sit builds on the plan's base
+    assert gw._plan_side({"activate": g_a}) == tuple(g_b[g_a.get("day", "parked")][:3])
+    # each plan move's Gives chains: its odds before are the last one's after, and the last one's after are the plan's
+    for g_pl in (g_w["plan"], g_dw["plan"]):  # the quick plan's and the deep one's
+        g_ms = g_pl["moves"]
+        assert all(g_ms[i]["cats"][q][0] == g_ms[i - 1]["cats"][q][1] for i in range(1, len(g_ms)) for q in gw.cats)
+        assert all(g_ms[-1]["cats"][q][1] == g_pl["cats"][q][1] for q in gw.cats) and abs(sum(m["gain"] for m in g_ms) - g_pl["gain"]) < 0.15
+    # _plan_side (Start / sit, the Gives column): a claim plays from the day it clears, its drop until then, whatever day
+    # the move says; and a stream in the spot cut for a player back hands that cut on down the chain (Nov 23: one with
+    # no `end`, the held late-news add, played past it: 14 active on Sunday)
+    wsn = {**bsn, "free_agents": [{**x, "waiver": "Oct 29"} if x["name"] == "Player 120" else x for x in bsn["free_agents"]]}
+    w_k, w_s, w_u = mk(wsn, iinj)._plan_side({"moves": [{"day": "2026-10-27", "add": "Player 120", "drop": "Player 150"}]})
+    assert w_s["player 120"] == "2026-10-29" and w_u["player 150"] == "2026-10-28"
+    _, ch_s, ch_u = bm._plan_side({"moves": [{"day": "2026-10-27", "add": "Twin E", "drop": bm.names(c)[0]},
+                                             {"day": "2026-10-29", "add": "Player 120", "drop": "Twin E"}]})
+    assert ch_u[c[0]] == "2026-10-26" and ch_u["twin e"] == "2026-10-28" and ch_u["player 120"] == "2026-10-31" == bm._week_mine()["until"][c[0]]
+    # _reserve: the late-news add parked in for a player ruled out (no drop, a free IL slot) holds his spot only as long
+    # as he would have (one leaving later in the plan hands it on), and he's out from the news day whatever the add's
+    r_k, r_calls = sl._playing(sl.rosters["Me"]), []
+    r_lg = sl._copy({}, sl.fa)
+    r_lg.il_n, r_out = 1, r_k[0]
+    r_lg.week_vec = lambda keys, start=None, until=None, by=None: (r_calls.append((list(keys), dict(start or {}), dict(until or {}))),
+                                                                    model.League.week_vec(r_lg, keys, start, until, by))[1]
+    r_odds = r_lg._their_week("Them")[2]
+    assert r_lg._reserve(r_k, ["player 120"], [], r_odds, {}, {r_out: "2026-10-29"}, {}) >= 0
+    r_add = [(s, u) for k, s, u in r_calls if "player 120" in k and u[r_out] < "2026-10-29"]  # news on him
+    assert r_add and all(u["player 120"] == "2026-10-29" and u[r_out] < s["player 120"] for s, u in r_add)
+    # a player you drop goes to waivers: This week never offers him back (Nov 23: Larsson, dropped in a planned move)
+    d_snap, d_notes, _ = model.moved(bsn, [{"id": "x", "me": "Me", "drop": ["Player 150"], "plan": True, "at": "2026-10-26T09:00:00"}])
+    dl = mk(d_snap, iinj)
+    dl.moves = d_notes
+    assert "player 150" in dl.fa and dl._dropped() == {"player 150"}
+    d_w = dl.this_week()
+    assert all(x["name"] != "Player 150" for x in d_w["streams"]) and all(m["add"] != "Player 150" for x in d_w["paths"] for m in x["moves"])
+    assert all(f["a"] != "player 150" for f in dl._fills(dl._their_week("Them")[2]))
     # B18 (Martin, Nov 17: "walker kessler js got injured short term ... i needa pick up smo short term"): with an
     # open active spot (bm's 15 active cut to 12) the streams list adds into it with no drop and the plan opens with the
     # best one, each scored on the league after it. There the spot isn't Twin C's any more, so he's B17's choice (in
@@ -1572,6 +1631,31 @@ def test_all():
     kc = bm._copy({}, bm.fa)
     kc.kept = frozenset(c[:1])
     assert bm._il_cut()[1] == c[:1] and c[0] not in kc._il_cut()[1] and len(kc._il_cut()[1]) == 1 and kc._il_cut()[2] <= 1e-9
+    # Nov 20 (Martin: Boozer ruled out after the snapshot, "it still assumes i have him used rn"): one of yours out in
+    # an active spot with an IL slot free is counted moved there, so This week is the snapshot with him parked to the
+    # key (streams into his spot with no drop, the plan, the paths, the odds), `parks` says so, the roster check says
+    # to move him and its open-spot fix is the parked one's, and Try a move adds with no drop. ESPN's news counts
+    psn = {**bsn, "settings": {**bsn["settings"], "il": 2},
+           "teams": {**bsn["teams"], "Me": [x for x in bsn["teams"]["Me"] if x["name"] not in ("Player 150", "Player 154")]}}
+    pinj = {**iinj, "Twin A": {"status": "O", "note": "Ankle.", "return": "2026-11-03"}}
+    pm = mk(psn, pinj)
+    p_hand = mk({**psn, "teams": {**psn["teams"], "Me": [{**x, "slot": "IL", "status": "O"} if x["name"] == "Twin A" else x
+                                                          for x in psn["teams"]["Me"]]}}, pinj)
+    pw, hw = pm.this_week(), p_hand.this_week()
+    assert pm._room("Me") == 0 and pm._parkable() == ["twin a"] and pm.parks == () and p_hand._parkable() == []
+    assert pw["parks"] == ["Twin A"] and {k: v for k, v in pw.items() if k != "parks"} == hw
+    p_top = next(s["name"] for s in pw["streams"] if s["drop"] is None)
+    pc, hc = pm.roster_check()["problems"], p_hand.roster_check()["problems"]
+    assert [p["kind"] for p in pc] == ["park", "open"] and "since your snapshot" in pc[0]["fix"] and pc[1:] == hc
+    p_try = pm.add_drop(p_top)
+    assert p_try["parks"] == ["Twin A"] and p_try["drop"] == [] and p_try["week"] == p_hand.add_drop(p_top)["week"]
+    assert "parks" not in pm.add_drop(p_top, "Twin A")  # dropping him frees the spot on its own
+    # the AI GM's note (Nov 20): a park made on Yahoo means Yahoo had him tagged O, so with no tag on the snapshot and
+    # nothing on ESPN he's no longer read as healthy and stuck in his IL slot (adds blocked); a plan isn't on Yahoo yet
+    p_mv = {"me": "Me", "park": ["Twin A"], "id": "p", "at": "2026-10-26T10:00:00"}
+    p_made, p_plan = (model.moved(psn, [m])[0] for m in (p_mv, {**p_mv, "plan": True}))
+    assert next(x for x in p_made["teams"]["Me"] if x["name"] == "Twin A") == {"name": "Twin A", "nba": "AAA", "slot": "IL", "status": "O"}
+    assert mk(p_made, iinj)._stuck() == [] and mk(p_plan, iinj)._stuck() == ["twin a"]
     # never drop (Martin, Nov 16: "i dont rlly wanna drop john collins"): a kept player is no stream's or plan's drop,
     # the next cheapest takes his place among the three, and a name that isn't a player is an error (the AI GM's input)
     kw0 = bm.this_week()
@@ -1633,6 +1717,9 @@ def test_all():
     assert on.starts(mine)["twin a"] == pre.starts(mine)["twin a"] - 1
     assert on._so_far()["Me"] == {"PTS": 130.0, "FGM": 52.0, "FGA": 100.0, **{s: 0.0 for s in model.RAW if s not in ("PTS", "FGM", "FGA")}}
     assert on._so_far()["Them"]["PTS"] == 90
+    # Who to drop keeps a locked player as a row (Nov 22: hiding them left Ingram as the pick over Larsson), marked tomorrow
+    dr = {r["name"]: r for r in on.drops()["rows"]}
+    assert dr["Twin A"].get("tomorrow") and not any(r.get("tomorrow") for r in pre.drops()["rows"])
     w = on.this_week()
     _, lft, odd = on._matchup("Them")  # M9: This week's win with the categories moving together, not independent
     assert w["win"] == round(100 * float(model.match_prob(odd(lft["Me"]), on.cats, model.WEEK_LOAD)), 1) != round(100 * float(model.match_prob(odd(lft["Me"]))), 1)
@@ -1759,6 +1846,47 @@ def test_all():
     none = sl.this_week("Them", choose="none")
     assert none["chosen"] and none["plan"] is None and none["paths"][0].get("pick")
     assert "chosen" not in sl.this_week("Them", choose="junk") and sl.this_week("Them", choose="junk")["plan"] == wk["plan"]
+    # B20 (Martin, Nov 23: "selecting how many adds I can use"): adds=n makes the plan the best path with n adds (the
+    # most there are if fewer), 0 no move, as choosing its key does
+    for n_ in (0, 1, 2, 9):
+        an = sl.this_week("Them", adds=n_)
+        best_n = next(x for x in an["paths"] if x["adds"] == min(n_, max(y["adds"] for y in an["paths"])))
+        assert an["chosen"] and best_n.get("pick") and len((an["plan"] or {"moves": []})["moves"]) == best_n["adds"]
+        assert an["plan"] == sl.this_week("Them", choose=best_n["key"])["plan"]
+    # the deep search never ends below the quick plan (it's seeded with it), and on a small week it's exact: every plan
+    # of up to 2 adds from 3 free agents for 2 drops, built move by move and scored with week_vec, has the same best
+    # share per number of adds as _deep()
+    sl.DEEP = 60
+    dw, fb, db = sl.this_week("Them", deep=True), {}, {}
+    for x in wk["paths"]:
+        fb.setdefault(x["adds"], x["gain"])
+    for x in dw["paths"]:
+        db.setdefault(x["adds"], x["gain"])
+    assert all(db[k] >= fb[k] for k in fb) and dw["deep"] >= 0 and "deep" not in wk
+    del sl.DEEP
+    s_odds, s_base = sl._their_week("Them")[2], sl._bases()[:1]
+    s_dr, s_fa, s_end = [sl.find(n) for n in wk["drops"][:2]], ["twin d", "twin e", "twin f"], sl.week_end
+    s_got, s_best = sl._deep(s_base, s_dr, s_fa, s_odds, 2, width=10 ** 6), {}
+
+    def every(keys, st, un, frm, mv):  # brute force: each move any add, any drop left, any day from his claim with a game from then
+        s_best[len(mv)] = max(s_best.get(len(mv), -9), float(sl._wscore(s_odds(sl.week_vec(keys, st, un)))))
+        if len(mv) == 2:
+            return
+        out = {x[2] for x in mv}
+        for d in [x for x in [*s_dr, *(x[1] for x in mv)] if x not in out]:
+            to = min(un.get(d, s_end), s_end)
+            for a in (a for a in s_fa if a not in keys):
+                for s in model.span(max(sl.today, sl._clears(a).get(a, ""), sl._move_day([d]), model.shift(frm[d]) if d in frm else sl.today), to):
+                    if any(s <= g <= to for g in sl.game_days(a, s_end)):
+                        every([*keys, a], {**st, a: s}, {**un, d: model.shift(s, -1), **({a: to} if to < s_end else {})}, {**frm, a: s}, [*mv, (s, a, d)])
+    every(list(s_base[0][0]), dict(s_base[0][1]), dict(s_base[0][2]), {}, [])
+    assert all(abs(s_got[k][0][0] - s_best[k]) < 1e-12 for k in (0, 1, 2)) and s_best[2] > s_best[1] > s_best[0]
+    # one day per split of the games (the earliest): two days giving the add the same games and the drop the same games
+    # before it are one week (verifier, Nov 23: the split was read relative to each day, so every open day was a child
+    # and the beam held copies of the same week)
+    s_sig = [(a, d, tuple(g for g in sl.game_days(a, s_end) if g >= s), sum(g < s for g in sl.game_days(d, s_end)))
+             for _, _, ((s, a, d),), _, _ in s_got[1]]
+    assert len(s_sig) == len(set(s_sig))
     for st in wk["streams"]:  # the best day beats adding him on any other of his game days
         k = sl.find(st["name"])
         assert st["day"] in sl.game_days(k, sl.week_end, sl._clears(k).get(k))
@@ -1835,7 +1963,11 @@ def test_all():
     assert w3["adds"]["left"] == 1 and len(n0["moves"]) == 1 and x["add"] == w3["streams"][0]["name"]
     assert x["day"] == w3["streams"][0]["day"] and x["gain"] == w3["streams"][0]["gain"]
     assert n0["news"] == {"worth": 0, "kept": False, "move": {k: x[k] for k in ("day", "add", "drop", "gain")}}
-    assert n1["moves"] == [] and n1["news"]["kept"] and n1["news"]["move"] == n0["news"]["move"] and n1["gain"] == 0
+    assert n1["moves"] == [] and n1["news"]["kept"] and n1["gain"] == 0
+    assert {k: v for k, v in n1["news"]["move"].items() if k != "cats"} == n0["news"]["move"]
+    # each move's category odds (Nov 23) chain from no move to the plan's, and the held add's start from the plan's end
+    assert all(v[1] == x["cats"][c][1] for c, v in n0["cats"].items()) and "cats" not in n0["news"]["move"]
+    assert all(v[0] == n1["cats"][c][0] if n1.get("cats") else True for c, v in n1["news"]["move"]["cats"].items())
     nw = w3["plan"]["news"]
     assert 0 < nw["worth"] < n1["news"]["worth"] and nw["kept"] == (nw["worth"] > x["gain"])
     assert w3["plan"]["moves"] == ([] if nw["kept"] else n0["moves"])

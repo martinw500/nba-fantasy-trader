@@ -463,6 +463,8 @@ const and = xs => xs.length > 1 ? xs.slice(0, -1).join(", ") + " and " + xs.at(-
 // has one on screen, else at the top: showCard). An inline span, not a <button>: a line can break after a button's box,
 // which left a list's comma at the start of the next line (Nov 4); Enter / Space click it like a button
 const nameBtn = n => !n ? "" : `<span class="rowbtn nm" role="button" tabindex="0" data-act="show-card" data-name="${esc(n)}" title="Open his player card">${esc(n)}</span>`;
+// an add with no drop: into your open spot, or the one freed by moving your player who's out to an IL slot (Nov 20: parks)
+const freed = w => w.parks?.length ? `nobody: ${and(w.parks.map(esc))} to IL` : "nobody: open spot";
 // B18: an add into your open spot (drop null): who goes once your player in an IL slot is back
 const thenBack = t => (t || []).map(x => x.parked ? `${esc(x.back)} stays in his IL slot this week` : `When ${esc(x.back)} is back ${esc(dayName(x.day))}, ${esc(x.cut)} is the one to drop for him`).join(". ");
 const into = (m, nm = esc) => m.drop ? "for " + nm(m.drop) : m.park ? "into an IL slot" : "into the open spot";  // B5: an injured add parks
@@ -746,12 +748,12 @@ async function loadDrops() {
 }
 const backOn = b => `${and(b.map(x => esc(x.name)))} ${b.length > 1 ? "are" : "is"} back${b[0].return ? ` (${esc(dayName(b[0].return))})` : ""}`;
 // B17: the next cut waits while This week leaves the player back in his IL slot (then.wait)
-const thenCut = t => t ? ` now, then ${and(t.cut.map(esc))} ${t.wait ? `next week, when you activate ${and(t.wait.map(esc))}` : `when ${backOn(t.back)}`}` : "";
+const thenCut = (t, tom) => t ? ` ${tom ? "tomorrow" : "now"}, then ${and(t.cut.map(esc))} ${t.wait ? `next week, when you activate ${and(t.wait.map(esc))}` : `when ${backOn(t.back)}`}` : tom ? " tomorrow" : "";
 function rosterAlert() {
   const ps = S.state.check?.problems || [], ns = S.state.check?.notes || [];
   if (!ps.length && !ns.length) return "";
   const drop = needDrop(), d = drop ? drops() : null, pk = d?.picks?.overall, row = d?.rows.find(r => r.name === pk);
-  const best = pk ? ` Best: drop <b>${nameBtn(pk)}</b>${thenCut(row.then)}.` : "";
+  const best = pk ? ` Best: drop <b>${nameBtn(pk)}</b>${thenCut(row.then, row.tomorrow)}.` : "";
   const go = drop ? `<button class="btn ghost" data-act="drops-go">Who to drop</button>` : "";
   const text = ps.map(p => esc(p.text) + (p.kind === "drop" ? best : p.kind === "il" && drop ? "" : ` <span class="muted">${esc(p.fix)}</span>`)).join(" ");
   const note = ns.map(n => `${esc(n.text)}${n.fix ? ` <span class="muted">${esc(n.fix)}</span>` : ""}`).join(" ");
@@ -765,12 +767,12 @@ function dropPanel() {
   const pk = d.picks, p1 = v => v == null ? `<span class="muted">—</span>` : v.toFixed(1) + "%", by = n => d.rows.find(r => r.name === n);
   const ov = by(pk.overall), sp = by(pk.season);
   const why = pk.overall === pk.season ? "" : ` His season number is within 0.1 of ${esc(pk.season)}'s, so this week decides.`;
-  const picks = `<div class="panel-b small" style="border-bottom:1px solid var(--line)"><b>Drop ${nameBtn(pk.overall)}${thenCut(ov.then)}.</b>${why}
+  const picks = `<div class="panel-b small" style="border-bottom:1px solid var(--line)"><b>Drop ${nameBtn(pk.overall)}${thenCut(ov.then, ov.tomorrow)}.</b>${why}
     <span class="muted">Best for this week: ${esc(pk.week)} (${p1(by(pk.week).week)}). Best for the season: ${esc(pk.season)} (${sp.season.toFixed(2)}%).</span></div>`;
   const tag = (on, t, tip, cls = "") => on ? `<span class="tag ${cls}" title="${esc(tip)}">${t}</span>` : "";
   const cut = r => ({ drop: [r.name], activate: r.stuck ? d.activate.filter(n => n !== r.name) : d.activate });  // the row's roster
   const rows = d.rows.map(r => `<tr><td class="pname">${nameBtn(r.name)}${tag(r.name === pk.overall, "Overall", "The season pick, unless another drop is within 0.1 on the season: then the better one this week", "safe")}${tag(r.name === pk.week && r.name !== pk.overall, "This week", "Best for this week")}${tag(r.name === pk.season && r.name !== pk.overall, "Season", "Best for the season")}
-      ${tag(r.stuck, "IL slot", "Drop him, or leave him in the IL slot: the same numbers, but Yahoo won't let you add anyone while he's there")}${tag(r.status, esc(r.status), "Injury tag", "out")}
+      ${tag(r.tomorrow, "tomorrow", "His game today has tipped off, so Yahoo won't let you drop him until tomorrow. His numbers count tonight's game")}${tag(r.stuck, "IL slot", "Drop him, or leave him in the IL slot: the same numbers, but Yahoo won't let you add anyone while he's there")}${tag(r.status, esc(r.status), "Injury tag", "out")}
       ${tag(r.chip, "trade chip", "The market ranks him in its first 8 rounds: he's worth more in a trade than dropped")}${r.fa ? tag(true, `${esc(r.fa.name)} over ${and(d.activate.map(esc))}`, `Dropping him and adding ${r.fa.name} instead of activating ${d.activate.join(" and ")}: ${r.fa.season.toFixed(2)}% for the season`) : ""}</td>
     <td class="n val">${p1(r.week)}</td><td class="n">${p1(r.next)}</td><td class="n">${r.season.toFixed(2)}%</td>
     ${r.playoffs != null ? `<td class="n">${chance(r.playoffs)}</td><td class="n">${(100 * r.title).toFixed(1)}%</td>` : ""}
@@ -920,7 +922,7 @@ function viewWeek() {
   const streamCols = [{ h: `<span title="${goalW ? `Change in ${goalW}` : oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}">This week</span>`, v: p => `<span class="val ${tone(p.gain)}">${delta(p.gain, "win%")}</span>` },
     { h: `<span title="Your real chance to win the week with him (now ${Math.round(w.win)}%)">Win</span>`, v: p => p.win == null ? "" : `<span class="${tone(p.win - w.win)}">${Math.round(p.win)}%</span>` },
     { h: `<span title="The categories whose odds he moves most this week, now → with him (his starts against the drop's)">Gives</span>`, cls: "small", v: p => gives(p.cats) + (p.games != null && p.drop ? ` <span class="muted">· ${plural(p.games, "start")} for ${esc(p.drop)}'s ${p.kept}</span>` : "") },
-    { h: "Drop", v: p => p.drop ? esc(p.drop) : `<span class="muted" title="${thenBack(p.then) || "No drop: he takes your open roster spot"}">nobody: open spot</span>` }, { h: `<span title="Change in your season-long ${WIN().of} if you keep him">Season</span>`, v: p => `<span class="${tone(p.season)}">${delta(p.season, "win%")}</span>` }, addOn];
+    { h: "Drop", v: p => p.drop ? esc(p.drop) : `<span class="muted" title="${thenBack(p.then) || "No drop: he takes your open roster spot"}">${freed(w)}</span>` }, { h: `<span title="Change in your season-long ${WIN().of} if you keep him">Season</span>`, v: p => `<span class="${tone(p.season)}">${delta(p.season, "win%")}</span>` }, addOn];
   streamCols.push({ h: "", v: p => skipBtn(p.name) });
   return head(`Week ends ${end}${w.live ? (w.night ? "" : tonight) : " · no live score yet"}${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}`) + todayPanel(w) + `
     <div class="panel"><div class="panel-h"><div class="verdict"><span class="pill ${verdict[0]}" style="text-transform:none">${verdict[1]}</span>
@@ -935,7 +937,7 @@ function viewWeek() {
         ${w.live ? "" : "No live score yet, so this assumes nothing has been played, which is right on Monday. A new snapshot adds the real score."}</div></div>
     ${lineupPanel(w)}
     <div class="panel"${W.streamBusy ? ` style="opacity:.6"` : ""}><div class="panel-h"><div><h2>Streaming adds</h2><p>Free agents who most raise your odds this week, each into your open spot if you have one (no drop), else swapped for whichever of your three cheapest healthy players helps most, on his best day: your drop plays until then. Season shows what keeping him does long-term.${w.goal?.length ? ` <b>Playing for ${and(w.goal.map(lab))}</b> (Start / sit's Play for): This week counts ${w.goal.length > 1 ? "those categories" : "it"} only. Win is your real chance to win the week.` : ""}</p></div></div>
-      ${keepRow(w)}${streamPlan(w)}${weekPaths(w)}
+      ${planRow(w)}${keepRow(w)}${streamPlan(w)}${weekPaths(w)}
       ${w.adds && !w.adds.left ? `<div class="empty"><b>No adds left this week</b>You've used all ${w.adds.max}. They reset ${esc(dayName(w.adds.resets))}. Waivers' moves still count for the season.</div>`
         : playerTable(w.streams, { extra: streamCols, empty: "<b>No stream helps this week</b>Nobody on waivers raises your odds by 0.1% or more over your weakest players." })}</div>`;
 }
@@ -1002,7 +1004,9 @@ function assumed(w) {
     ? `This leaves <b>${esc(h.name)}</b> in his IL slot all week: ${esc(h.for)} keeps playing (${h.win[0].toFixed(1)}% to win, against ${h.win[1].toFixed(1)}% activating him ${esc(dayName(h.day))}).`
     : `This counts <b>${esc(h.name)}</b> in from ${h.day === w.today ? "today" : esc(dayName(h.day))} for ${esc(h.for)} (${h.win[0].toFixed(1)}% to win, against ${h.win[1].toFixed(1)}% leaving him in his IL slot).`);
   const a = xs.length ? `This counts ${and(xs)}: you haven't made ${xs.length > 1 ? "those moves" : "that move"} yet. <button class="btn ghost" data-act="drops-go" style="padding-block:0">Who to drop</button> compares every option.` : "";
-  return a || hs.length ? `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${[a, ...hs].filter(Boolean).join(" ")}</div>` : "";
+  // Nov 20: out in an active spot with an IL slot free: counted as moved there, so his spot takes an add with no drop
+  const P = w.parks || [], pk = P.length ? `This counts <b>${and(P.map(esc))}</b> in ${P.length > 1 ? "IL slots: they're out and slots are" : "an IL slot: he's out and a slot is"} free. Move ${P.length > 1 ? "them" : "him"} there on Yahoo first, then the adds below with no drop go in ${P.length > 1 ? "their spots" : "his spot"}.` : "";
+  return a || pk || hs.length ? `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${[a, pk, ...hs].filter(Boolean).join(" ")}</div>` : "";
 }
 // start/sit (Q18): who starts each day left for the most category wins this week (or for the categories picked), every
 // sit, start and swap tested on the matchup odds; the picked day lists the lineup in slot order and what changing each call does
@@ -1031,10 +1035,18 @@ function lineupPanel(w) {
   const day = d => d === w.today ? "Today" : esc(dayName(d));
   const rows = X.days.map(x => `<tr class="pick${x.date === W.day ? " sel" : ""}" data-act="sit-day" data-date="${x.date}"><td><button class="rowbtn" data-act="sit-day" data-date="${x.date}" aria-pressed="${x.date === W.day}" title="Show this day's lineup and every option">${day(x.date)}</button></td>
     <td class="names">${x.sit.length ? (x.benched || x.sit.map(n => ({ name: n }))).map(b => `${esc(b.name)}${b.why ? ` <span class="muted">(${esc(b.why)})</span>` : ""}`).join("<br>") : `<span class="muted">Everyone starts</span>`}</td><td class="names">${change(x)}</td><td class="names">${why(x)}</td></tr>`).join("");
-  return `<div class="panel" id="start-sit">${head}<div class="panel-b" style="border-bottom:1px solid var(--line)">${chips}<p class="small" style="margin:10px 0 0">${sum}</p></div>
+  return `<div class="panel" id="start-sit">${head}<div class="panel-b" style="border-bottom:1px solid var(--line)">${chips}<p class="small" style="margin:10px 0 0">${sum}</p>${planned(w)}</div>
     <div class="tw"${W.streamBusy ? ` style="opacity:.5"` : ""}><table><thead><tr><th>Day</th><th title="On your bench that day, still on your roster: his game doesn't count">Benched</th><th title="What this plan does differently from starting your best per-game values">Change</th>
       <th title="Your odds in each category from that day's changes">Moves</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${sitDay(X.days.find(x => x.date === W.day), w, goal)}</div>`;
+}
+// Nov 23 (Martin: "why tf does start/sit show joan beringer when i dont even have him"): the lineups run on the add
+// plan's roster (this_week()'s lineups on _plan_side, Nov 17), so say whose adds they count as made
+function planned(w) {
+  const m = w.plan?.moves || [];
+  if (!m.length) return "";
+  const on = d => d === w.today ? "today" : esc(dayName(d));
+  return `<p class="small muted" style="margin:6px 0 0">These lineups count the add plan in Streaming adds as made: ${and(m.map(x => `<b>${esc(x.add)}</b> ${x.drop ? `for ${esc(x.drop)}` : "into your open spot"} ${on(x.day)}`))}. Make those moves on Yahoo, or pick another path there (Every path this week), and these follow.</p>`;
 }
 // a picked day: the lineup in Yahoo's slot order, then who sits, each with what changing his call does to the odds
 function sitDay(x, w, goal) {
@@ -1061,7 +1073,7 @@ function weekPaths(w) {
   return `<div class="panel-b small" style="border-bottom:1px solid var(--line)"><b>Every path this week.</b> No move, the best plan found with each number of adds, then the next best other plans, each with the games your lineup starts and where the week ends up. Nothing is held back for late news here. ${w.chosen ? "<b>You picked the plan</b>: Undo goes back to the model's." : "Use this makes a row the plan."}</div>
     <div class="tw" style="border-bottom:1px solid var(--line)"><table><thead><tr><th class="n">Adds</th><th>Moves</th>${ps[0].games != null ? `<th class="n" title="Games your lineup starts the rest of this week">Starts</th>` : ""}<th class="n" title="Expected categories won and lost">Score</th><th class="n" title="Your chance to win more categories than you lose">Win</th><th class="n" title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, against no move">This week</th><th></th></tr></thead><tbody>
     ${ps.map(x => `<tr${x.pick ? ` style="background:var(--accent-soft)"` : ""}><td class="n">${x.adds}</td>
-      <td>${x.moves.length ? x.moves.map(m => `<span class="muted">${on(m.day)}:</span> ${nameBtn(m.add)} ${into(m, nameBtn)}`).join("<br>") : `<span class="muted">No moves</span>`}${x.pick ? `<span class="tag" title="The plan above${w.chosen ? ": you picked it" : w.plan?.news?.kept ? ", with its last add kept for late news" : ""}">${w.chosen ? "your pick" : "the plan"}</span>` : ""}</td>
+      <td>${x.moves.length ? x.moves.map(m => `<span class="muted">${on(m.day)}:</span> ${nameBtn(m.add)} ${into(m, nameBtn)}`).join("<br>") : `<span class="muted">No moves</span>`}${x.activate ? `<br><span class="muted">${x.activate.parked ? `${esc(x.activate.name)} left in his IL slot` : `${on(x.activate.day)}: activate ${esc(x.activate.name)} for ${esc(x.activate.for)}`}</span>` : ""}${x.pick ? `<span class="tag" title="The plan above${w.chosen ? ": you picked it" : w.plan?.news?.kept ? ", with its last add kept for late news" : ""}">${w.chosen ? "your pick" : "the plan"}</span>` : ""}</td>
       ${x.games != null ? `<td class="n">${x.games}</td>` : ""}<td class="n">${x.score[0].toFixed(1)}–${x.score[1].toFixed(1)}</td><td class="n val">${x.win.toFixed(1)}%</td><td class="n ${tone(x.gain)}">${x.adds ? delta(x.gain, "win%") : ""}</td><td class="n">${use(x)}</td></tr>`).join("")}</tbody></table></div>`;
 }
 // Q34: lean on categories this week. Start / sit, streams and the plan favour them; the odds shown stay real
@@ -1073,6 +1085,24 @@ function leanRow(w) {
     ${on ? `<button class="btn ghost" data-act="lean" data-cat="">Clear</button><span>Start / sit, streams and the plan now favour ${and(Object.entries(L).map(([c, x]) => `${lab(c)} ×${x}`))}. Their gains count it that many times; Win, Score and the odds are real.</span>` : `<span class="muted">Click a category you think you can still win: your lineups, streams and plan then favour it.</span>`}</div>`;
 }
 // adds left this week (Q11) and the best way to spend them: one line for the last add, else the moves in order
+// B20 (Martin, Nov 23: "you can add features if necessary like selecting how many adds I can use"): the plan with a
+// given number of adds (each count's best path: expected score and chance to win), and the deep search (every free
+// agent on every day, slower), both remembered in this browser
+function planRow(w) {
+  const P = w.paths || [], A = w.adds;
+  if (P.length < 2 || (A && !A.left)) return "";
+  const best = {};
+  P.forEach(x => { if (!(x.adds in best)) best[x.adds] = x; });
+  const n = store.get("weekAdds", null), deep = store.get("weekDeep", false), busy = S.week.streamBusy;
+  const on = n == null ? null : Math.max(...Object.keys(best).map(Number).filter(k => k <= n));
+  const btn = (k, label, tip) => `<button data-act="week-adds" data-n="${k ?? ""}" aria-pressed="${on === k}" title="${esc(tip)}">${label}</button>`;
+  return `<div class="panel-b small" style="border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center">
+    <span class="field" title="The plan below uses this many adds: the best way found to spend that many, with its expected score (categories won) and chance to win the week. Best lets the model pick, keeping the last one for late news when that's worth more">Adds to use <span class="muted" style="font-weight:400">(score · win)</span></span>
+    <span class="seg" role="group" aria-label="Adds to use">${btn(null, "Best", "The model's pick")}${Object.keys(best).map(Number).sort((a, b) => a - b).map(k =>
+      btn(k, `<b>${k}</b> <span class="muted">· ${best[k].score[0].toFixed(1)} · ${Math.round(best[k].win)}%</span>`, `${k === 1 ? "1 add" : `${k} adds`}: ${best[k].score[0].toFixed(1)}–${best[k].score[1].toFixed(1)} expected, ${best[k].win.toFixed(1)}% to win the week`)).join("")}</span>
+    <button class="btn" data-act="week-deep" aria-pressed="${deep}" title="${deep ? "On: every plan is searched, not just the ones that open with a top stream. Click for the quick search" : "Search every free agent on every day for the best plan with each number of adds. Slower (about 20 seconds); it can find a week the quick search misses, like a one-game stream the day before another"}"${busy ? " disabled" : ""}>${deep ? "Deep search on" : "Deep search (slower)"}</button>
+    <span class="muted" aria-live="polite">${busy ? (deep ? "Searching every free agent on every day…" : "Updating…") : w.deep != null ? `Deep search took ${w.deep} s.` : ""}</span></div>`;
+}
 // who the streams may drop (the 3 you'd miss least over the season), and the ones you've said never to drop
 function keepRow(w) {
   if (!w.drops?.length && !w.keep?.length && !S.skip.length) return "";
@@ -1095,27 +1125,35 @@ function streamPlan(w) {
   const on = d => d === w.today ? "today" : "on " + esc(dayName(d));
   const tip = A && `Yahoo's count in the snapshot${A.listed != null ? ` (${A.listed})` : ""} or the adds and waiver claims in its transaction log since ${mdy(A.week_start)} (${A.counted}), whichever is higher. A move made after the snapshot counts once you mark it Done on Yahoo.`;
   const B = w.add_by, byTip = "Left in his IL slot once he's healthy, he blocks every add until you activate or drop him. Yahoo drops the injury tag once he plays, sometimes that morning.";
-  const left = (w.chosen ? `<b>Your pick</b> from Every path below (Undo there). ` : "") + (A ? `<b title="${esc(tip)}">${A.left ? `${A.left} of ${A.max} adds left` : "No adds left"}</b> this week (${A.used} used). ` : "")
-    + (B && (!A || A.left) ? `<b title="${esc(byTip)}">Make them by ${B.day < w.today ? "now" : B.day === w.today ? "today" : esc(dayName(B.day))}</b>: once ${esc(B.player)} plays, his tag drops and Yahoo blocks adds until he's moved. ` : "");
+  const nA = store.get("weekAdds", null);
+  const left = (w.chosen ? (nA != null ? `<b>Your pick</b>: the best plan found with ${nA === 1 ? "one add" : `${m.length} add${m.length === 1 ? "" : "s"}`} (Adds to use above). ` : `<b>Your pick</b> from Every path below (Undo there). `) : "") + (A ? `<b title="${esc(tip)}">${A.left ? `${A.left} of ${A.max} adds left` : "No adds left"}</b> this week (${A.used} used). ` : "")
+    + (B && (!A || A.left) ? `<b title="${esc(byTip)}">Make them by ${B.day < w.today ? "now" : B.day === w.today ? "today" : esc(dayName(B.day))}</b>: once ${esc(B.player)} plays, his tag drops and Yahoo blocks adds until he's moved. ` : "")
+    // B20: one counted in on a later day blocks adds from the day his tag drops until you activate him
+    + (w.blocked || []).filter(b => !b.parked && !P?.activate).map(b => `<b title="${esc(byTip)}">No adds ${b.from === b.to ? esc(dayName(b.from)) : `${esc(dayName(b.from))} to ${esc(dayName(b.to))}`}</b>: ${esc(b.player)}'s tag is expected to drop then and he's counted in after, so Yahoo blocks adds until you activate him. `).join("")
+    + (P?.activate ? `<b>This plan ${P.activate.parked ? `leaves ${esc(P.activate.name)} in his IL slot` : `activates ${esc(P.activate.name)} ${on(P.activate.day)} for ${esc(P.activate.for)}`}</b> (<span class="${tone(P.activate.gain)}">${delta(P.activate.gain, "win%")}</span> before any add), not as This week counts him, ${P.activate.parked ? "and makes every add before his tag drops" : "so adds go through from then"}. ` : "");
   const keep = P && P.keep.length ? ` You end the week with ${and(P.keep.map(esc))}: <span class="${tone(P.season)}">${delta(P.season, "win%")}</span> for the season.` : "";
   // M17: the last add only goes on a move worth more than keeping it for someone ruled out later in the week
   const N = P?.news, newsTip = "Players who are playing get ruled out for their next game about 7% of the time, more if they often miss games, and about 4 in 10 of those miss the rest of the week (2022-23 to 2025-26 box scores). This is that chance for each of your games left times what a stream into his games wins then, on average.";
   const hold = !N ? "" : N.kept
-    ? ` <b title="${esc(newsTip)}">Keep your last add for late news</b>: if one of your players is ruled out later this week, an add then is worth <span class="pos">${delta(N.worth, "win%")}</span> on average, more than ${esc(N.move.add)} ${into(N.move)} now (<span class="${tone(N.move.gain)}">${delta(N.move.gain, "win%")}</span>).`
+    ? ` <b title="${esc(newsTip)}">Keep your last add for late news</b>: if one of your players is ruled out later this week, an add then is worth <span class="pos">${delta(N.worth, "win%")}</span> on average, more than ${esc(N.move.add)} ${into(N.move)} now (<span class="${tone(N.move.gain)}">${delta(N.move.gain, "win%")}</span>${N.move.cats ? `: ${gives(N.move.cats)}` : ""}).`
     : ` <span title="${esc(newsTip)}">That last add beats keeping it for late news (<span class="pos">${delta(N.worth, "win%")}</span> on average).</span>`;
   if (!m.length) return A?.left ? `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}${hold}</div>` : "";
   if (A && A.left === 1) { const x = m[0];
     return `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}Your last one is best spent ${on(x.day)}: add <b>${nameBtn(x.add)}</b> ${into(x, nameBtn)} (<span class="pos">${delta(x.gain, "win%")}</span>${x.games != null ? `, ${plural(x.games, "start")}` : ""}${P.cats ? `; ${gives(P.cats)}` : ""}).${doneBtn({ add: [x.add], drop: x.drop ? [x.drop] : [] })}${skipBtn(x.add)} ${thenBack(x.then)}${x.then?.length ? "." : ""}
       ${x.day > w.today ? `Hold it until then: ${x.kept ? `${esc(x.drop)} starts ${plural(x.kept, "more game")} first` : "waiting costs nothing"}, and the add is still yours if someone gets hurt.` : ""}${hold}${keep}</div>`; }
   return `<div class="panel-b small" style="border-bottom:1px solid var(--line)">${left}${A ? `The best way to spend ${A.left > 1 ? "them" : "it"}` : "The best streams in a row (no weekly add limit)"}, each on top of the one before. A later one can replace an earlier streamer once his games are used.</div>
-    <div class="tw" style="border-bottom:1px solid var(--line)"><table><thead><tr><th>Day</th><th>Add</th><th>Drop</th><th class="n" title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, on top of the moves above">This week</th>${m[0].games != null ? `<th class="n" title="Games he starts for you this week">Starts</th>` : ""}<th></th></tr></thead><tbody>
-    ${m.map(x => `<tr><td>${x.day === w.today ? "Today" : esc(dayName(x.day))}</td><td class="pname">${nameBtn(x.add)}${x.end ? `<span class="tag" title="Cut after this day, when your player in an IL slot is back">until ${esc(dayName(x.end))}</span>` : ""}</td><td>${x.drop ? nameBtn(x.drop) : `<span class="muted">nobody: open spot</span>`}</td><td class="n val ${tone(x.gain)}">${delta(x.gain, "win%")}</td>${x.games != null ? `<td class="n">${x.games}</td>` : ""}<td class="n">${doneBtn({ add: [x.add], drop: x.drop ? [x.drop] : [] })}${skipBtn(x.add)}</td></tr>`).join("")}</tbody></table></div>
+    <div class="tw" style="border-bottom:1px solid var(--line)"><table><thead><tr><th>Day</th><th>Add</th><th>Drop</th><th class="n" title="${oneWin() ? "Change in your chance to win this week" : "Change in your share of this week's categories"}, on top of the moves above">This week</th><th title="The categories whose odds this move changes most, on top of the moves above">Gives</th>${m[0].games != null ? `<th class="n" title="Games he starts for you this week">Starts</th>` : ""}<th></th></tr></thead><tbody>
+    ${m.map(x => `<tr><td>${x.day === w.today ? "Today" : esc(dayName(x.day))}</td><td class="pname">${nameBtn(x.add)}${x.end ? `<span class="tag" title="Cut after this day, when your player in an IL slot is back">until ${esc(dayName(x.end))}</span>` : ""}</td><td>${x.drop ? nameBtn(x.drop) : `<span class="muted">${freed(w)}</span>`}</td><td class="n val ${tone(x.gain)}">${delta(x.gain, "win%")}</td><td class="small">${x.cats ? gives(x.cats) : ""}</td>${x.games != null ? `<td class="n">${x.games}</td>` : ""}<td class="n">${doneBtn({ add: [x.add], drop: x.drop ? [x.drop] : [], park: x.drop ? [] : w.parks || [] })}${skipBtn(x.add)}</td></tr>`).join("")}</tbody></table></div>
     <div class="panel-b small muted" style="border-bottom:1px solid var(--line)">Together <span class="pos">${delta(P.gain, "win%")}</span> this week${P.cats ? `: ${gives(P.cats)}` : ""}.${m.some(x => x.then?.length) ? ` ${thenBack(m.find(x => x.then?.length).then)}.` : ""}${hold}${keep}</div>`;
 }
+// /api/week's body: the keep and skip lists, the lean, Play for, the path picked (Use this), how many adds to use and
+// the deep search (B20), all remembered in this browser
+const weekBody = goal => ({ keep: S.keep, skip: S.skip, weights: S.lean, cats: goal || [], choose: store.get("weekPick", ""),
+  adds: store.get("weekAdds", null), deep: store.get("weekDeep", false) });
 async function loadWeek(opponent) {
   const W = S.week, goal = W.goal; W.loading = true; W.streamBusy = !!W.data;
   let r;
-  try { r = await api("/api/week", { ...(opponent ? { opponent } : {}), keep: S.keep, skip: S.skip, weights: S.lean, cats: goal || [], choose: store.get("weekPick", "") }); } catch (e) { r = { error: e.message }; }
+  try { r = await api("/api/week", { ...(opponent ? { opponent } : {}), ...weekBody(goal) }); } catch (e) { r = { error: e.message }; }
   if (W.goal !== goal) return;  // Play for changed meanwhile: that answer is the one to show
   if (!r.error && !r.chosen && store.get("weekPick", "")) store.set("weekPick", "");  // that path is gone (a move made, a new snapshot)
   W.data = r; W.loading = W.streamBusy = false;
@@ -1754,6 +1792,7 @@ function moveResult(r) {
     !r.drop.length && !add.parks && `He goes into your open spot.`,
     r.activate?.length && `${and(r.activate.map(esc))} ${r.activate.length > 1 ? "move" : "moves"} out of the IL slot into the spot, from today.`,
     add.parks && `He's injured, so he goes into a free IL slot, no drop, and plays from his return (this week too, if he's back in time).`,
+    r.parks?.length && `This moves ${and(r.parks.map(esc))} to a free IL slot first (out, as This week counts ${r.parks.length > 1 ? "them" : "him"}), so the add takes that spot.`,
     r.open && `This leaves ${plural(r.open, "active spot")} open. Filling ${r.open > 1 ? "them is more adds" : "it is another add"}: try that move too.`,
     wk?.claim && `He's on waivers: he counts from ${mdy(wk.claim)}, when the claim clears.`,
     wk?.day && wk.day > (wk.claim || wk.today) && `This week it's ${S.move.day ? "made" : "best made"} on ${esc(dayName(wk.day))}${wk.games?.kept ? `: ${and(gone.map(x => esc(x.name)))} ${gone.length > 1 ? "start" : "starts"} ${plural(wk.games.kept, "more game")} first` : ", his first game"}.`,
@@ -1766,7 +1805,7 @@ function moveResult(r) {
   const players = playerTable([...(r.add ? [{ ...add, side: "Add" }] : []), ...r.drop.map(x => ({ ...x, side: x.auto ? "Also dropped" : "Drop" }))],
     { extra: [{ h: "Side", v: p => `<span class="muted">${p.side}</span>` }] });
   // the move as scored, for Done on Yahoo: the add (into an IL slot if he parks), every drop, who it activates
-  const tried = { add: r.add ? [add.name] : [], drop: r.drop.map(x => x.name), activate: r.activate || [], park: add.parks ? [add.name] : [] };
+  const tried = { add: r.add ? [add.name] : [], drop: r.drop.map(x => x.name), activate: r.activate || [], park: [...(r.parks || []), ...(add.parks ? [add.name] : [])] };
   if (r.unit !== "win%") return `<div class="panel-b"><div class="verdict"><span class="pill ${r.verdict}" style="text-transform:none">${MV_VERDICT[r.verdict]}</span>
       <dl class="side-by"><div><dt>Fantasy points per game</dt><dd class="${tone(r.net)}">${sign(r.net)}</dd></div></dl>
       <div class="toolbar">${doneBtn(tried).replace("btn ghost", "btn")}</div></div>
@@ -2148,8 +2187,14 @@ document.addEventListener("click", async e => {
     const { goal, day, days } = S.week; S.week = { data: S.week.data, goal, day, days }; render();
     return loadWeek();
   }
+  if (act === "week-adds" || act === "week-deep") {  // B20: how many adds to use (a count, or the model's pick), the deep search on / off
+    if (act === "week-adds") { store.set("weekAdds", t.dataset.n === "" ? null : +t.dataset.n); store.set("weekPick", ""); }
+    else store.set("weekDeep", !store.get("weekDeep", false));
+    const { goal, day, days } = S.week; S.week = { data: S.week.data, goal, day, days };
+    const done = loadWeek(); render(); return done;  // render after loadWeek marks the panel busy (the deep search takes ~20 s)
+  }
   if (act === "path-use") {  // Every path: this one is the plan (none: back to the model's pick), then the week again
-    store.set("weekPick", t.dataset.key);
+    store.set("weekPick", t.dataset.key); store.set("weekAdds", null);
     const { goal, day, days } = S.week; S.week = { data: S.week.data, goal, day, days }; render();
     return loadWeek();
   }
@@ -2298,7 +2343,7 @@ setInterval(async () => {
   try {
     const st = await api("/api/state?punt=" + encodeURIComponent(S.punt.join(",")) + (S.healthyFa ? "&healthy_fa=1" : ""));
     const { goal, day, days } = S.week;  // B7: Play for and the day picked in Start / sit stay (Q32: it steers the streams too)
-    const w = await api("/api/week", { keep: S.keep, skip: S.skip, weights: S.lean, cats: goal || [], choose: store.get("weekPick", "") });
+    const w = await api("/api/week", weekBody(goal));
     fresh(st); S.week = { data: w, goal, day, days }; render();
   } catch (e) { /* offline or restarting: keep what's on screen */ }
 }, 5 * 60e3);
