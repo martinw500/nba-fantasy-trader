@@ -1645,6 +1645,46 @@ def test_all():
                                                                        {**u0, "player 150": "2026-10-29"}))
     c_tw = c1.this_week()
     assert all(x["name"] != "Player 150" for x in c_tw["streams"]) and c_tw["adds"]["left"] == c0.this_week()["adds"]["left"] - 1
+    # B21: a drop costs the season his worth over the best healthy free agent, every matchup week left (none without a
+    # schedule); streams, the quick plan, the deep search and late news pick net of it, and the pool is who costs least.
+    # pool = your own pick of who may go: all of them, charged nothing, everyone else kept
+    s_sn = {**c_sn, "schedule": [{"week": i, "start": model.shift("2026-11-02", 7 * i), "end": model.shift("2026-11-08", 7 * i)}
+                                 for i in range(10)]}
+    s0l = mk(c_sn, {})
+    s_ev = s0l.effective()  # only free agents below every one of yours, so each costs something to drop
+    s_sn["free_agents"] = [x for x in c_sn["free_agents"] if float(s_ev.get(s0l.find(x["name"], strict=False), 0)) <
+                           min(float(s_ev[k]) for k in s0l._playing(s0l.rosters["Me"]))]
+    s1l = mk(s_sn, {})
+    assert s_sn["free_agents"]
+    s_act = s1l._playing(s1l.rosters["Me"])
+    s_pen = s1l._surplus(s_act)
+    assert s0l._surplus(s_act) == {k: 0.0 for k in s_act} and all(v >= 0 for v in s_pen.values())
+    s_top = max(s_act, key=lambda k: float(s1l.effective().get(k, -99)))
+    assert s_pen[s_top] > 0 and s_pen[s_top] == max(s_pen.values())  # the best player costs most
+    s_w = s1l.this_week()
+    assert set(s_w["drop_cost"]) == set(s_w["drops"]) and sorted(s_w["drop_cost"].values()) == sorted(round(s_pen[s1l.find(n)], 1) for n in s_w["drops"])
+    assert all(s_pen[s1l.find(n)] <= min(v for k, v in s_pen.items() if s1l.p.at[k, "PLAYER_NAME"] not in s_w["drops"] and k in s1l._contrib("Me", s_act)) + 0.05
+               for n in s_w["drops"])
+    # one drop the plan makes (good free agents, nothing charged) made to cost more than any stream gains: no stream,
+    # quick or deep plan drops him then
+    s_base = mk(c_sn, {}).this_week()
+    d_n = s_base["plan"]["moves"][0]["drop"]
+    assert s_base["streams"] and any(st["drop"] == d_n for st in s_base["streams"])
+    big = model.League._surplus
+    model.League._surplus = lambda self, keys, punt=(): {k: (99.0 if self.p.at[k, "PLAYER_NAME"] == d_n else 0.0) for k in keys}
+    try:
+        s2l = mk(c_sn, {})
+        for x in (s2l.this_week(), s2l.this_week(deep=True)):
+            assert x["drop_cost"].get(d_n, 99.0) == 99.0 and x["streams"]
+            assert all(st["drop"] != d_n for st in x["streams"])
+            assert all(m["drop"] != d_n for m in (x["plan"] or {"moves": []})["moves"])
+    finally:
+        model.League._surplus = big
+    s_p = s1l.this_week(pool=[s_w["drops"][0], s1l.p.at[s_top, "PLAYER_NAME"]])
+    assert s_p["picked"] and set(s_p["drops"]) == {s_w["drops"][0], s1l.p.at[s_top, "PLAYER_NAME"]} and set(s_p["drop_cost"].values()) == {0.0}
+    assert set(s_p["keep"]) == {s1l.p.at[k, "PLAYER_NAME"] for k in s_act} - set(s_p["drops"])
+    s_n = s1l.this_week(pool=[])  # nobody may go: no swap at all
+    assert s_n["picked"] and s_n["drops"] == [] and all(st["drop"] is None for st in s_n["streams"])
     q_dw = qw.this_week(deep=True)
     for x in [*q_dw["paths"], q_dw["plan"] or {"moves": []}]:
         a = x.get("activate")
@@ -2299,6 +2339,10 @@ def test_all():
     assert p2.player(k0)["playoff_games"] == [3] and p2.playoff_games(k0) == [len([d for d in sch["AAA"] if day(28) <= d <= day(34)])]
     p3 = model.League(two, base, cur, today=model.date(2026, 11, 1), sched=sch, inj={p2.p.at[k0, "PLAYER_NAME"]: {"status": "O", "note": "", "return": day(29)}})
     assert p3.playoff_games(k0) == [2] and "playoff_games" not in pl.player(k0)  # no NBA schedule, no count
+    # ... a roster's playoff-week games count only the roster_n best who play then (Nov 25: a trade's IL-slot pickup)
+    big = [k for t in p2.rosters.values() for k in t if sum(p2.playoff_games(k))]
+    assert len(big) > p2.roster_n and p2.po_games(big) == sum(sorted((sum(p2.playoff_games(k)) for k in sorted(
+        big, key=lambda k: -p2.value()[k])[:p2.roster_n]))) < sum(sum(p2.playoff_games(k)) for k in big)
     # ... the Playoffs view: one round, Them the only opponent (100%), the round's odds are theirs, thin = under 50%
     pv = p2.playoff_view()
     r1 = pv["rounds"][0]

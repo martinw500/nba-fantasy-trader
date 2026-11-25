@@ -1,6 +1,80 @@
 [
  {
   "me": "fatty zhou",
+  "team": "John Ball",
+  "give": [
+   "Brandin Podziemski"
+  ],
+  "get": [
+   "Josh Giddey"
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": -0.5,
+  "their_net": 0.3,
+  "their_view": 1.56,
+  "win": 62.1,
+  "win_after": 61.6,
+  "market": {
+   "give": 4.1,
+   "get": 22.5,
+   "diff_pct": 81.8,
+   "verdict": "they overpay 82%",
+   "sum": {
+    "give": 4.1,
+    "get": 22.5,
+    "diff_pct": 81.8,
+    "verdict": "they overpay 82%"
+   }
+  },
+  "accept": "Long shot",
+  "verdict": "decline",
+  "punt": [],
+  "id": "61af8926",
+  "sent": "2026-11-25T11:11:50",
+  "outcome": null,
+  "yahoo": "478.l.231900.pt.233"
+ },
+ {
+  "me": "fatty zhou",
+  "team": "John Ball",
+  "give": [
+   "VJ Edgecombe"
+  ],
+  "get": [
+   "Josh Giddey",
+   "Payton Pritchard"
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": -1.2,
+  "their_net": 1.1,
+  "their_view": 3.22,
+  "win": 57.6,
+  "win_after": 56.4,
+  "market": {
+   "give": 16.6,
+   "get": 23.0,
+   "diff_pct": 27.7,
+   "verdict": "they overpay 28%",
+   "sum": {
+    "give": 16.6,
+    "get": 23.9,
+    "diff_pct": 30.4,
+    "verdict": "they overpay 30%"
+   }
+  },
+  "accept": "Maybe",
+  "verdict": "decline",
+  "punt": [],
+  "id": "91bef095",
+  "sent": "2026-11-25T02:19:50",
+  "outcome": "yes",
+  "by": "them",
+  "yahoo": "478.l.231900.pt.232"
+ },
+ {
+  "me": "fatty zhou",
   "team": "Mathmagicians",
   "give": [
    "Walker Kessler",
@@ -74,8 +148,9 @@
   "punt": [],
   "id": "d5916d7d",
   "sent": "2026-11-23T23:52:28",
-  "outcome": null,
-  "yahoo": "478.l.231900.pt.227"
+  "outcome": "no",
+  "yahoo": "478.l.231900.pt.227",
+  "auto": true
  },
  {
   "me": "fatty zhou",

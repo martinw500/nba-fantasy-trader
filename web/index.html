@@ -441,7 +441,7 @@ const S = {
   news: {},  // { data, error }: My team's News panel; replaced on team / refresh
   strategy: {},  // { data, busy, sel }: the punt planner (sel: the build whose plan shows), ignores your punt, so only team / refresh / Healthy only replace it
   trade: { give: new Set(), get: new Set(), team: null, roster: null, result: null, busy: false },
-  keep: store.get("keep", []),  // players This week's streams never drop, kept in this browser
+  pool: store.get("pool", null),  // B21: who This week's streams may drop, your pick (null: the model's 3), kept in this browser
   skip: store.get("skip", []),  // free agents This week's streams and plan leave out (taken, or not wanted), kept in this browser
   // Nov 24: This week's one Play for control (Lean on and Start / sit's Play for merged): the categories picked, and
   // whether to lean on them (×2 in lineups, streams and the plan) or play for only them. Kept in this browser; the old
@@ -1252,13 +1252,18 @@ function planRow(w) {
     <button class="btn" data-act="week-deep" aria-pressed="${deep}" title="${deep ? "On: every plan is searched, not just the ones that open with a top stream. Click for the quick search" : "Search every free agent on every day for the best plan with each number of adds. Slower (about 20 seconds); it can find a week the quick search misses, like a one-game stream the day before another"}"${busy ? " disabled" : ""}>${deep ? "Deep search on" : "Deep search (slower)"}</button>
     <span class="muted" aria-live="polite">${busy ? (deep ? "Searching every free agent on every day…" : "Updating…") : w.deep != null ? `Deep search took ${w.deep} s.` : ""}</span></div>`;
 }
-// who the streams may drop (the 3 you'd miss least over the season), and the ones you've said never to drop
+// B21: who the streams may drop. The model's 3 (who cost the season least: worth no more than the best free agent you
+// could hold instead), or your own pick (S.pool, kept in this browser): click anyone to pick, "Let the model pick" undoes it
 function keepRow(w) {
-  if (!w.drops?.length && !w.keep?.length && !S.skip.length) return "";
-  const chip = (n, on) => `<button class="chip pick" aria-pressed="${on}" data-act="keep" data-name="${esc(n)}" title="${on ? "Kept: no stream drops him, and he isn't the one cut when your player in an IL slot is back. Click to allow it again" : "Click to keep him: no stream will drop him, and the next cheapest player takes his place here"}">${esc(n)}</button>`;
+  if (!w.roster?.length && !S.skip.length) return "";
+  const mine = S.pool != null, on = n => (mine ? S.pool : w.drops).includes(n);
+  const cost = n => w.drop_cost?.[n], costTip = n => cost(n) == null ? "" : cost(n) > 0
+    ? ` Dropping him costs the season ${cost(n)} (his worth over the best free agent you could pick up instead, every week left), so a stream for him has to win more than that this week.`
+    : " He's worth no more than the best free agent on the season, so streaming him costs nothing.";
+  const chip = n => `<button class="chip pick" aria-pressed="${on(n)}" data-act="pool" data-name="${esc(n)}" title="${on(n) ? `Streams may drop him.${mine ? "" : costTip(n)} Click to keep him` : "Click to let streams drop him"}${mine ? "" : " (then you pick who, not the model)"}">${esc(n)}${!mine && cost(n) > 0 ? ` <span class="muted">−${cost(n)}</span>` : ""}</button>`;
   return `<div class="panel-b small" style="border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px;align-items:center">
-    <span>Streams may drop:</span>${w.drops.map(n => chip(n, false)).join("") || `<span class="muted">nobody</span>`}
-    ${w.keep.length ? `<span style="margin-left:8px">Never drop:</span>${w.keep.map(n => chip(n, true)).join("")}` : `<span class="muted">Click one to never drop him.</span>`}
+    <span>${tip("Streams may drop", "The model picks the 3 who cost the season least: a player no better than the best free agent costs nothing to stream, a better one costs his worth over that free agent every week left, which a stream has to beat. Click players to pick your own instead: then streams may drop exactly those, and nobody else is dropped, including for a player back from an IL slot.")}:</span>${w.roster.map(chip).join("")}
+    ${mine ? `<button class="btn" data-act="pool-auto" title="Go back to the model's 3">Let the model pick</button>` : ""}
     ${S.skip.length ? `<span style="margin-left:8px">Taken:</span>${S.skip.map(n => `<button class="chip pick" aria-pressed="true" data-act="skip" data-name="${esc(n)}" title="Left out of the streams and plan. Click to put him back">${esc(n)}</button>`).join("")}` : ""}</div>`;
 }
 // Q32 (Martin, Nov 16: "is it possible to see like what they provide and why i should do that"): a move's biggest
@@ -1302,7 +1307,7 @@ function streamPlan(w) {
 // /api/week's body: the keep and skip lists, Play for (weights or cats), the path picked (Use this), how many adds to use and
 // the deep search (B20), all remembered in this browser
 const weekBody = () => { const cs = focusCats();
-  return { keep: S.keep, skip: S.skip, weights: S.focus.only ? {} : Object.fromEntries(cs.map(c => [c, 2])), cats: S.focus.only ? cs : [],
+  return { pool: S.pool, skip: S.skip, weights: S.focus.only ? {} : Object.fromEntries(cs.map(c => [c, 2])), cats: S.focus.only ? cs : [],
     choose: store.get("weekPick", ""), adds: store.get("weekAdds", null), deep: store.get("weekDeep", false) }; };
 async function loadWeek(opponent) {
   const W = S.week; W.loading = true; W.streamBusy = !!W.data;
@@ -1583,7 +1588,7 @@ function tradeResultOdds(r) {
         <div><dt>Projected finish</dt><dd>${ord(r.rank)} → ${ord(r.rank_after)}</dd></div>
         ${r.playoffs ? `<div><dt title="Chance to make the playoffs: your record so far plus the rest of the season simulated, both rosters updated">Playoff odds</dt><dd><span class="${tone(r.playoffs.you[1] - r.playoffs.you[0])}">${delta(r.playoffs.you[1] - r.playoffs.you[0], "win%")}</span> <span class="muted small">${r.playoffs.you.map(v => chance(v / 100)).join(" → ")} · them ${r.playoffs.them.map(v => chance(v / 100)).join(" → ")}</span></dd></div>` : ""}
         ${r.title ? `<div><dt title="Chance to win the league: the same simulation through the playoff bracket">Title odds</dt><dd><span class="${tone(r.title.you[1] - r.title.you[0])}">${delta(r.title.you[1] - r.title.you[0], "win%")}</span> <span class="muted small">${r.title.you.map(v => chance(v / 100)).join(" → ")} · them ${r.title.them.map(v => chance(v / 100)).join(" → ")}</span></dd></div>` : ""}
-        ${r.playoff_games ? `<div><dt>${tip("Playoff-week games", "Every player's NBA games in the three fantasy playoff weeks, from his return date, summed over the roster (lineup limits aside)")}</dt><dd>${ba(r.playoff_games.you)} <span class="muted small">· them ${r.playoff_games.them.join(" → ")}</span></dd></div>` : ""}
+        ${r.playoff_games ? `<div><dt>${tip("Playoff-week games", "NBA games in the three fantasy playoff weeks, from each player's return date, summed over the 13 best who play then: by March everyone on IL is back, so a pickup for an IL slot the trade opens gets cut again")}</dt><dd>${ba(r.playoff_games.you)} <span class="muted small">· them ${r.playoff_games.them.join(" → ")}</span></dd></div>` : ""}
         <div><dt title="Mostly the market, a little how it really helps them">Will they say yes</dt><dd>${acceptPill(r.accept)}</dd></div></dl></div>
       <div class="toolbar">${saveBtn(r)}<button class="btn" data-act="copy-offer" title="Copies the offer and a short pitch to paste into Yahoo's trade note, and logs it under Offers sent">Copy offer</button><button class="btn" data-act="pitch">Ask AI GM for a pitch</button></div></div>
     ${base}${cats}
@@ -2435,6 +2440,13 @@ document.addEventListener("click", async e => {
   }
   if (act === "path-use") {  // Every path: this one is the plan (none: back to the model's pick), then the week again
     store.set("weekPick", t.dataset.key); store.set("weekAdds", null);
+    const { day, days } = S.week; S.week = { data: S.week.data, day, days }; render();
+    return loadWeek();
+  }
+  if (act === "pool" || act === "pool-auto") {  // B21: pick who streams may drop (from the model's 3 the first time), or go back to them
+    const n = t.dataset.name, P = S.pool ?? (S.week.data?.drops || []);
+    S.pool = act === "pool-auto" ? null : P.includes(n) ? P.filter(x => x !== n) : [...P, n];
+    store.set("pool", S.pool);
     const { day, days } = S.week; S.week = { data: S.week.data, day, days }; render();
     return loadWeek();
   }

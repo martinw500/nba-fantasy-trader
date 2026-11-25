@@ -336,7 +336,9 @@ def api(path, q, body):
             fl = lg.healthy_fa() if fl is not lg else lg  # the copy was made before the new opponent
         keep, wts, fl = body.get("keep") or (), body.get("weights") or None, fl.without(body.get("skip") or ())  # skip: taken off waivers
         w = fl.this_week(punt=punt, keep=keep, weights=wts, cats=body.get("cats") or (), choose=body.get("choose") or None,  # Healthy only: no injured free agent as a stream (audit #15); keep: never dropped
-                         deep=bool(body.get("deep")), adds=None if body.get("adds") in (None, "") else int(body["adds"]))  # B20: the deep search; how many adds to use
+                         deep=bool(body.get("deep")), adds=None if body.get("adds") in (None, "") else int(body["adds"]),  # B20: the deep search; how many adds to use
+                         pool=body.get("pool"))  # B21: who streams may drop, picked on the page (null: the model's 3)
+        keep = w.get("keep", keep) if w.get("picked") else keep  # your pick keeps everyone else, Today's moves too
         return {**w, "night": fl.game_night(punt=punt, keep=keep, weights=wts, week=w)} if w.get("opponent") else w  # Q31: the Today panel
     if path == "/api/recap":  # Q33: last week (or ?week=N) and the season so far, from data/history.jsonl
         return lg.recap(int(q.get("week", ["-1"])[0]))
