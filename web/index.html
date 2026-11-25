@@ -555,7 +555,7 @@ const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() +
 // a game-day listing (probable / questionable / doubtful for one game) leads the tag: "Q Wed", counted at how often
 // players so listed play that game
 const listed = l => `${l.as[0].toUpperCase()} ${new Date(l.day + "T12:00").toLocaleDateString("en-US", { weekday: "short" })}`;
-const statusTag = p => (p.what ? `<span class="tag" style="background:var(--warn-soft);color:var(--warn-ink)" title="What if (your call): ${esc(p.what)}. His numbers are on it">what if</span>` : "") + (p.status || p.injury || p.listed ? `<span class="tag ${OUT.has(p.status) && !p.listed ? "out" : ""}"${p.injury ? ` title="${esc((p.listed ? `Listed as ${p.listed.as} for ${mdy(p.listed.day)}: players listed that way played ${p.listed.plays}% of the time, so that game counts at ${p.listed.plays}%. ` : "") + p.injury)}"` : ""}>${p.listed ? listed(p.listed) : esc(p.status || "News")}${!p.listed && p.return && p.return >= localDay() ? ` · back ${mdy(p.return)}` : ""}</span>` : "");
+const statusTag = p => (p.team && p.team === S.state.me && p.waiver ? `<span class="tag" title="Your waiver claim, still pending on Yahoo. The app counts him from the day it clears, though a team ahead of you in the waiver order can take him first">claim pending · clears ${esc(p.waiver)}</span>` : "") + (p.what ? `<span class="tag" style="background:var(--warn-soft);color:var(--warn-ink)" title="What if (your call): ${esc(p.what)}. His numbers are on it">what if</span>` : "") + (p.status || p.injury || p.listed ? `<span class="tag ${OUT.has(p.status) && !p.listed ? "out" : ""}"${p.injury ? ` title="${esc((p.listed ? `Listed as ${p.listed.as} for ${mdy(p.listed.day)}: players listed that way played ${p.listed.plays}% of the time, so that game counts at ${p.listed.plays}%. ` : "") + p.injury)}"` : ""}>${p.listed ? listed(p.listed) : esc(p.status || "News")}${!p.listed && p.return && p.return >= localDay() ? ` · back ${mdy(p.return)}` : ""}</span>` : "");
 const gpNote = p => p.gp < 3 ? ` title="Only ${p.gp} games this season"` : "";
 // teammates' injuries: the minutes and shots he picks up while they sit, counted in his lines for those games only.
 // Tables tag a lift of a minute or more (most are smaller, spread over a whole rotation) with how long the biggest one
@@ -1079,7 +1079,7 @@ function viewWeek() {
   const streams = `<div class="panel" id="streams"${W.streamBusy ? ` style="opacity:.6"` : ""}><div class="panel-h"><div><h2>${tip("Streaming adds", streamTip)}</h2><p>The adds that most raise your odds this week${gl ? `, <b>playing for ${gl}</b> only` : ""}.</p></div>
       ${more ? `<button class="btn ghost" data-act="paths-toggle" aria-expanded="${!!S.weekMore}">More paths</button>` : ""}</div>
       ${planRow(w)}${keepRow(w)}${streamPlan(w)}
-      ${none ? `<div class="empty"><b>No adds left this week</b>You've used all ${w.adds.max}. They reset ${esc(dayName(w.adds.resets))}. Waivers' moves still count for the season.</div>`
+      ${none ? `<div class="empty"><b>No adds left this week</b>${w.adds.claims ? `You've made ${w.adds.used - w.adds.claims}; your pending ${w.adds.claims > 1 ? "claims use" : `claim${w.claims?.length === 1 ? ` for ${esc(w.claims[0].add)}` : ""} uses`} the rest, since Yahoo counts an add the day it goes through. An add you make before then makes Yahoo reject the claim at the cap.` : `You've used all ${w.adds.max}.`} They reset ${esc(dayName(w.adds.resets))}. Waivers' moves still count for the season.</div>`
         : S.weekMore ? weekPaths(w) + playerTable(w.streams, { extra: streamCols, empty: "<b>No stream helps this week</b>Nobody on waivers raises your odds by 0.1% or more over your weakest players." }) : ""}</div>`;
   // Nov 24 (critique): Today, then the score, start / sit and streams; last week folded at the bottom
   return head(`Week ends ${end}${w.live ? (w.night ? "" : tonight) : " · no live score yet"}${S.punt.length ? ` · punting ${S.punt.map(lab).join(", ")}` : ""}${aimTitle() ? ` · <span title="Every number here is about winning this week's matchup, whatever you aim for">aiming for the title doesn't change this week</span>` : ""}`)
@@ -1282,7 +1282,7 @@ function streamPlan(w) {
   const addsTip = A && `Yahoo's count${A.listed != null ? ` (${A.listed})` : ""} or the adds and waiver claims in the league's transaction log since ${mdy(A.week_start)} (${A.counted}), whichever is higher. ${S.state.api ? "A move you make on Yahoo counts from the next sync (every 15 minutes, or Refresh)." : "A move you make on Yahoo counts once a newer snapshot loads."}`;
   const B = w.add_by, byTip = "Left in his IL slot once he's healthy, he blocks every add until you activate or drop him. Yahoo drops the injury tag once he plays, sometimes that morning.";
   const nA = store.get("weekAdds", null);
-  const left = (w.chosen ? (nA != null ? `<b>Your pick</b>: the best plan found with ${nA === 1 ? "one add" : `${m.length} add${m.length === 1 ? "" : "s"}`} (Adds to use above). ` : `<b>Your pick</b> from Every path below (Undo there). `) : "") + (A ? `<b>${tip(A.left ? `${A.left} of ${A.max} adds left` : "No adds left", addsTip)}</b> this week (${A.used} used). ` : "")
+  const left = (w.chosen ? (nA != null ? `<b>Your pick</b>: the best plan found with ${nA === 1 ? "one add" : `${m.length} add${m.length === 1 ? "" : "s"}`} (Adds to use above). ` : `<b>Your pick</b> from Every path below (Undo there). `) : "") + (A ? `<b>${tip(A.left ? `${A.left} of ${A.max} adds left` : "No adds left", addsTip)}</b> this week (${A.claims ? `${A.used - A.claims} made, ${A.claims} for your pending ${A.claims > 1 ? "claims" : "claim"}` : `${A.used} used`}). ` : "")
     + (B && (!A || A.left) ? `<b>${tip(`Make them by ${B.day < w.today ? "now" : B.day === w.today ? "today" : dayName(B.day)}`, byTip)}</b>: once ${esc(B.player)} plays, his tag drops and Yahoo blocks adds until he's moved. ` : "")
     // B20: one counted in on a later day blocks adds from the day his tag drops until you activate him
     + (w.blocked || []).filter(b => !b.parked && !P?.activate).map(b => `<b>${tip(`No adds ${b.from === b.to ? dayName(b.from) : `${dayName(b.from)} to ${dayName(b.to)}`}`, byTip)}</b>: ${esc(b.player)}'s tag is expected to drop then and he's counted in after, so Yahoo blocks adds until you activate him. `).join("")
@@ -1730,16 +1730,21 @@ function offersPanel() {
   const ans = (o, v, h) => `<button data-act="offer-set" data-id="${o.id}" data-v="${v}" aria-pressed="${o.outcome === v}">${h}</button>`;
   const seg = o => `<div class="seg" role="group" aria-label="Their answer">${ans(o, "yes", "Accepted")}${ans(o, "no", "Declined")}</div>`;
   // Yahoo's own answer is text, with Change for a withdrawn offer it reads as Declined; a copied offer is marked by hand
-  const answer = o => o.by === "them" ? `<span class="muted">They offered it</span>`
+  const answer = o => o.by === "them" ? `<span class="muted">They offered it${o.open === false ? ", gone from Yahoo" : ""}</span>`
     : o.auto && o.outcome && !S.offerEdit?.has(o.id) ? `<span class="${o.outcome === "yes" ? "pos" : "neg"}">${o.outcome === "yes" ? "Accepted" : "Declined"}</span> <span class="muted small">on Yahoo</span> <button class="btn ghost" data-act="offer-edit" data-id="${o.id}" style="padding-block:0" title="Yahoo reads a withdrawn offer as declined: set the answer by hand">Change</button>`
     : o.yahoo && !o.outcome ? `<span class="muted">Waiting on Yahoo</span>` : seg(o);
-  return `<div class="panel"><div class="panel-h"><div><h2>${tip("Offers", "Every offer you copied from a trade here, plus every offer on Yahoo to or from you, with what the app predicted when it was made. Yahoo's answers come in with each sync; an offer you copied but sent outside Yahoo is marked by hand. These answers are the only real data for tuning Will they say yes.")}</h2><p>Your trade offers, what the app predicted, and how they went.</p></div></div>
-    <div class="tw"><table><thead><tr><th>Sent</th><th>Team</th><th>You give</th><th>You get</th><th class="n" title="${MKT_TIP}">Market</th><th class="n" title="${PKG_TIP}">Package</th><th title="What the app predicted when you copied it">Predicted</th><th>Their answer</th><th></th></tr></thead><tbody>
-    ${L.map(o => `<tr><td class="muted">${new Date(o.sent).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</td><td>${esc(o.team || "")}</td>
+  // Nov 25 (Martin: "when a trade gets rejected ... why is it still there?"): open offers up top, the answered and
+  // withdrawn ones folded (kept: they're M6's data); Open loads one into the picker above with the full result
+  const live = o => o.open ?? (o.outcome == null), open = L.filter(live), past = L.filter(o => !live(o));
+  const table = rows => `<div class="tw"><table><thead><tr><th>Sent</th><th>Team</th><th>You give</th><th>You get</th><th class="n" title="${MKT_TIP}">Market</th><th class="n" title="${PKG_TIP}">Package</th><th title="What the app predicted when it was made">Predicted</th><th>Their answer</th><th></th></tr></thead><tbody>
+    ${rows.map(o => `<tr><td class="muted">${new Date(o.sent).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</td><td>${esc(o.team || "")}</td>
       <td class="names">${o.give.map(esc).join(", ")}</td><td class="names">${o.get.map(esc).join(", ")}</td>
       <td class="n">${o.market ? mktSum(o.market) : "—"}</td><td class="n">${o.market ? mktPair(o.market) : "—"}</td><td>${o.accept ? acceptPill(o.accept) : "—"}</td>
       <td>${answer(o)}</td>
-      <td class="n"><button class="btn ghost" data-act="offer-del" data-id="${o.id}">Remove</button></td></tr>`).join("")}</tbody></table></div></div>`;
+      <td class="n" style="white-space:nowrap"><button class="btn ghost" data-act="offer-open" data-id="${o.id}" title="Load it into You give / You get above and work it out on today's rosters: every number, category and roster change">Open</button><button class="btn ghost" data-act="offer-del" data-id="${o.id}">Remove</button></td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="panel"><div class="panel-h"><div><h2>${tip("Offers", "Every offer you copied from a trade here, plus every offer on Yahoo to or from you, with what the app predicted when it was made. Yahoo's answers come in with each sync; an offer you copied but sent outside Yahoo is marked by hand. These answers are the only real data for tuning Will they say yes, so past ones are kept, folded.")}</h2><p>${open.length ? `${plural(open.length, "offer")} still open. Open one for the full breakdown on today's rosters.` : "No offers open right now."}</p></div></div>
+    ${open.length ? table(open) : ""}
+    ${past.length ? `<details class="panel-b small"${open.length ? ` style="border-top:1px solid var(--line)"` : ""}><summary>${plural(past.length, "past offer")}: answered, declined or withdrawn</summary>${table(past)}</details>` : ""}</div>`;
 }
 async function loadOffers() {
   S.offers = [];  // so a render while it loads doesn't ask again
@@ -2474,6 +2479,7 @@ document.addEventListener("click", async e => {
   if (act === "load-saved") return loadDeal(S.saved.list[+t.dataset.i]);
   if (act === "unsave") { S.saved.list.splice(+t.dataset.i, 1); store.set("saved", S.saved.list); return render(); }
   if (act === "copy-offer") return copyOffer(S.trade.result);
+  if (act === "offer-open") { const o = S.offers.find(x => x.id === t.dataset.id); return loadDeal({ team: o.team, give: o.give, get: o.get }); }
   if (act === "offer-set") { const o = S.offers.find(x => x.id === t.dataset.id); return offersCall({ set: o.id, outcome: o.outcome === t.dataset.v ? null : t.dataset.v }); }
   if (act === "offer-del") return offersCall({ delete: t.dataset.id });
   if (act === "offer-edit") { (S.offerEdit ??= new Set()).add(t.dataset.id); return render(); }

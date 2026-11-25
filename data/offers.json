@@ -3,6 +3,44 @@
   "me": "fatty zhou",
   "team": "John Ball",
   "give": [
+   "Brandon Ingram"
+  ],
+  "get": [
+   "Josh Giddey"
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": 0.2,
+  "their_net": -0.6,
+  "their_view": 0.0,
+  "win": 62.1,
+  "win_after": 62.3,
+  "market": {
+   "give": 4.9,
+   "get": 22.5,
+   "diff_pct": 78.2,
+   "verdict": "they overpay 78%",
+   "sum": {
+    "give": 4.9,
+    "get": 22.5,
+    "diff_pct": 78.2,
+    "verdict": "they overpay 78%"
+   }
+  },
+  "accept": "Long shot",
+  "verdict": "accept",
+  "punt": [],
+  "id": "f5893dc2",
+  "sent": "2026-11-25T11:17:17",
+  "outcome": "yes",
+  "by": "them",
+  "yahoo": "478.l.231900.pt.234",
+  "open": true
+ },
+ {
+  "me": "fatty zhou",
+  "team": "John Ball",
+  "give": [
    "Brandin Podziemski"
   ],
   "get": [
@@ -32,8 +70,10 @@
   "punt": [],
   "id": "61af8926",
   "sent": "2026-11-25T11:11:50",
-  "outcome": null,
-  "yahoo": "478.l.231900.pt.233"
+  "outcome": "no",
+  "yahoo": "478.l.231900.pt.233",
+  "auto": true,
+  "open": false
  },
  {
   "me": "fatty zhou",
@@ -71,7 +111,8 @@
   "sent": "2026-11-25T02:19:50",
   "outcome": "yes",
   "by": "them",
-  "yahoo": "478.l.231900.pt.232"
+  "yahoo": "478.l.231900.pt.232",
+  "open": true
  },
  {
   "me": "fatty zhou",
@@ -111,46 +152,8 @@
   "id": "4de11b5b",
   "sent": "2026-11-23T23:55:19",
   "outcome": null,
-  "yahoo": "478.l.231900.pt.228"
- },
- {
-  "me": "fatty zhou",
-  "team": "Kerala blasters",
-  "give": [
-   "Damian Lillard",
-   "LaMelo Ball",
-   "Anthony Black"
-  ],
-  "get": [
-   "Luka Dončić"
-  ],
-  "text": "",
-  "unit": "win%",
-  "net": 1.2,
-  "their_net": 0.3,
-  "their_view": -4.31,
-  "win": 58.5,
-  "win_after": 59.7,
-  "market": {
-   "give": 60.4,
-   "get": 99.2,
-   "diff_pct": 39.2,
-   "verdict": "they overpay 39%",
-   "sum": {
-    "give": 70.6,
-    "get": 99.2,
-    "diff_pct": 28.8,
-    "verdict": "they overpay 29%"
-   }
-  },
-  "accept": "Long shot",
-  "verdict": "accept",
-  "punt": [],
-  "id": "d5916d7d",
-  "sent": "2026-11-23T23:52:28",
-  "outcome": "no",
-  "yahoo": "478.l.231900.pt.227",
-  "auto": true
+  "yahoo": "478.l.231900.pt.228",
+  "open": true
  },
  {
   "me": "fatty zhou",
@@ -189,7 +192,8 @@
   "sent": "2026-11-23T23:46:47",
   "outcome": "no",
   "yahoo": "478.l.231900.pt.226",
-  "auto": true
+  "auto": true,
+  "open": false
  },
  {
   "me": "fatty zhou",
@@ -227,7 +231,8 @@
   "id": "7b2c4b4b",
   "sent": "2026-11-23T23:38:15",
   "outcome": null,
-  "yahoo": "478.l.231900.pt.225"
+  "yahoo": "478.l.231900.pt.225",
+  "open": true
  },
  {
   "me": "fatty zhou",
@@ -266,7 +271,8 @@
   "sent": "2026-11-23T23:26:56",
   "outcome": "yes",
   "by": "them",
-  "yahoo": "478.l.231900.pt.224"
+  "yahoo": "478.l.231900.pt.224",
+  "open": false
  },
  {
   "me": "fatty zhou",
@@ -303,7 +309,8 @@
   "sent": "2026-11-23T23:23:57",
   "outcome": "yes",
   "by": "them",
-  "yahoo": "478.l.231900.pt.223"
+  "yahoo": "478.l.231900.pt.223",
+  "open": false
  },
  {
   "me": "fatty zhou",
@@ -341,7 +348,8 @@
   "id": "3166d86a",
   "sent": "2026-11-23T23:03:49",
   "outcome": null,
-  "yahoo": "478.l.231900.pt.222"
+  "yahoo": "478.l.231900.pt.222",
+  "open": true
  },
  {
   "me": "fatty zhou",
@@ -379,7 +387,8 @@
   "id": "a0e0c9bb",
   "sent": "2026-11-23T18:19:27",
   "outcome": null,
-  "yahoo": "478.l.231900.pt.220"
+  "yahoo": "478.l.231900.pt.220",
+  "open": true
  },
  {
   "me": "fatty zhou",
@@ -417,6 +426,7 @@
   "sent": "2026-11-20T15:33:31",
   "outcome": "no",
   "yahoo": "478.l.231900.pt.200",
-  "auto": true
+  "auto": true,
+  "open": false
  }
 ]

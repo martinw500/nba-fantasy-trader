@@ -60,7 +60,7 @@ import pandas as pd
 import model
 
 ARGS = [a for a in sys.argv[1:]
-        if a not in ("replay", "teammates", "onoff", "minor", "backups", "usage", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season", "league", "fill", "stream", "habits", "opponent",
+        if a not in ("replay", "teammates", "onoff", "minor", "backups", "usage", "bench", "rookies", "yahoo", "experts", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season", "league", "fill", "stream", "habits", "opponent",
                      "base", "pos", "opp", "held", "beam", "adds")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
@@ -480,6 +480,55 @@ def yahoo_lines(top=1.0):
               f"{err['first'].reindex(moved).mean():.4f}")
     day, fst = pd.concat(out["day"]), pd.concat(out["first"])
     print(f"moved, pooled ({len(day)} player-weeks): live {day.mean():.4f}, first {fst.mean():.4f}; first better in {int((fst < day).sum())}")
+
+def expert_ab(ages=(0, 7, 14)):
+    """B22 (Nov 25): Yahoo's line or ESPN's as the expert, head to head (never measured before: experts() took Yahoo
+    wherever it had a player). From each text snapshot (games before it, ESPN's copy of that day), each player's
+    rest-of-season line with experts() on that snapshot's Yahoo lines, on Yahoo's lines from the snapshot `age` days
+    older (the API has no projections, so the app's Yahoo line ages from the last text snapshot), or on ESPN's alone,
+    against his games after it (2+): the same error as yahoo_lines(). Pooled per player-week, for players both
+    project, and for those out (O / IL slot) on that snapshot."""
+    import glob, json, yahoo
+    g, base = model.gamelogs(model.CUR), model.baseline(model.fetch(model.LAST), model.fetch(model.OLDER))
+    keys, snaps, rows = base.index.union(g.key.unique()), [], []
+    for f in map(str, model.snapshots()):
+        if f.endswith(".txt") and (s := yahoo.parse_text(open(f, encoding="utf-8").read())).get("pulled"):
+            snaps.append((pd.Timestamp(s["pulled"][:10]) + pd.Timedelta(days=1 if s["pulled"][11:13] >= "17" else 0), s))
+    for d, s in snaps:
+        past, left = g[g.GAME_DATE < d], per_game(g[g.GAME_DATE >= d]).query("GP >= 2")
+        if not len(left):
+            continue
+        ep = sorted(p for p in glob.glob(str(model.DATA / "projections_20??-??-??.json")) if p[-15:-5] <= str(d.date()))
+        esp = json.load(open(ep[-1] if ep else model.DATA / f"projections_{model.CUR}.json", encoding="utf-8"))
+        cur, err = per_game(past), {}
+        out = {model.match(p["name"], keys) or model.norm(p["name"]) for ps in s["teams"].values() for p in ps
+               if p.get("slot") in ("IL", "IL+") or p.get("status") == "O"}
+        lines = {"espn": {}, **{f"yahoo {a}d": next((x["projections"] for t, x in reversed(snaps) if t <= d - pd.Timedelta(days=a)), None)
+                                for a in ages}}
+        has = {model.match(n, keys) or model.norm(n) for n in esp}  # ESPN first, Yahoo only where ESPN has none
+        lines |= {f"espn+{k}": {n: x for n, x in v.items() if (model.match(n, keys) or model.norm(n)) not in has}
+                  for k, v in list(lines.items()) if k != "espn" and v is not None}
+        for kind, yl in lines.items():
+            if yl is None:
+                continue
+            ex = model.experts(yl, esp, base, keys, cur)
+            line = model.ros(model.prior(base, ex), model.recent(past, d)).reindex(left.index)[model.RAW].fillna(0)
+            err[kind] = ((line - left[model.RAW]).abs() / left[model.RAW].mean()).mean(axis=1)
+        both = left.index.intersection(model.experts(s["projections"], {}, base, keys, cur).index).intersection(
+            model.experts({}, esp, base, keys, cur).index)
+        rows.append(pd.DataFrame({**err, "both": left.index.isin(both), "out": left.index.isin(out), "day": d}, index=left.index))
+        print(f"  {d.date()}: " + ", ".join(f"{k} {v.mean():.4f}" for k, v in err.items()), flush=True)
+    r = pd.concat(rows, ignore_index=True)
+    cols = [c for c in r if c.startswith(("espn", "yahoo"))]
+    print("error minus ESPN's on the same player-weeks (below 0: better than ESPN), +- 2 standard errors by snapshot day:")
+    for name, m in (("everyone", r.index == r.index), ("both project him", r.both), ("out on the snapshot", r.out & r.both)):
+        x = r[m]
+        for c in cols[1:]:
+            dd = (x[c] - x.espn).dropna()
+            by = dd.groupby(x.loc[dd.index, "day"]).mean()  # a day's players share its games: one point per day
+            print(f"  {name}, {c}: {dd.mean():+.4f} +- {2 * by.std() / max(len(by), 1) ** 0.5:.4f} (n {len(dd)}, {len(by)} days, "
+                  f"better than ESPN in {int((dd < 0).sum())})")
+
 
 def trend(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
     """M8: how far a FORM_DAYS window's value runs from rest of season by the games it holds. Each Monday from week 3 to
@@ -2103,6 +2152,8 @@ if __name__ == "__main__":
         bench()
     elif "rookies" in sys.argv:
         rookies()
+    elif "experts" in sys.argv:
+        expert_ab()
     elif "yahoo" in sys.argv:
         yahoo_lines()
     elif "minor" in sys.argv:

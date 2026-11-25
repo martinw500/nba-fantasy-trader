@@ -412,3 +412,17 @@ Martin, on Jalen Suggs (64% after missing 8 of Orlando's 12 with one injury, lis
 - **Backups:** shipped wins on stats in all four seasons, every variant: 0.4767 → 0.4784 (A, minutes only), 0.4543 → 0.4548 (B 0.2/2), 0.5072 → 0.5089 (A), 0.4909 → 0.4933 (B 0.35/2). Their *minutes* do get better under every variant in all four (e.g. A 0.1950 → 0.1893, 0.1851 → 0.1791, 0.2043 → 0.1971, 0.2097 → 0.2094) and the shipped line runs 1.0–1.7 min short for them, but the extra minutes don't come with the stats: the backup's line is already about right on production.
 - **Everyone:** minutes a hair better with A (0.1418 → 0.1417, 0.1449 → 0.1444, 0.1456 → 0.1450, 0.1513 → 0.1504), stats worse in 2022-23 and 2024-25 (0.3887 → 0.3891, 0.3946 → 0.3951), level in 2023-24, better by 0.0003 in 2025-26. B is worse than A almost everywhere, more so at 0.35 and `ROLE_LOW` 4.
 - **So nothing ships and no roadmap item:** a backup does play ~1 more minute while a 15–25 min teammate sits, but fantasy stats don't follow, in any season. The switches (`ROLE_LOW`, `USAGE_LOW`, as `SHARE_LOW` / `CAP_GIVE` before them) stay in `model.py`, off. Rerun when this season's box scores are a full season (they only add 2026-27 if `backups 2026-27` is run). Bamba's 36-minute game is one game; his this-week line (18.9 min vs 16.6 season) already carries it through `recent()`.
+
+## Nov 25: Yahoo's projection or ESPN's? (B22, measured, shipped ESPN first)
+
+Martin asked why the model trusted Yahoo over ESPN. It had never been measured: `experts()` took Yahoo's line wherever it had a player. Yahoo's API serves no projections (`stats;type=projected_season` and four other names: 400 "Invalid type"), so since the API pulls every Yahoo line is the Nov 22 text snapshot's. ESPN's file is preseason (0 of 348 lines changed Nov 5–24).
+
+`python backtest.py experts`, the 29 text snapshots, rest-of-season error against each player's games after (2+), paired on the same player-weeks, ± 2 SE over snapshot days:
+- **Everyone (10,439):** Yahoo same day −0.0001 ± 0.0008 against ESPN; 7 days old +0.0002 ± 0.0005; 14 days old +0.0003 ± 0.0004. A tie.
+- **Both project him (5,003):** −0.0007 ± 0.0014, +0.0001, −0.0000. A tie.
+- **Out (O / IL slot) on the snapshot (190):** +0.0048 ± 0.0061 same day (ESPN better in 128), +0.0090 ± 0.0060 a week old (95 of 134), +0.0068 ± 0.0056 two weeks old (40 of 56). Yahoo worse: its rest-of-season totals over projected games bake the missed games in. Ingram (IL slot Nov 22): Yahoo 14.5 pts, ESPN 22.6; the model had him 27.2 min / 16.9 pts all season, now 33.0 / 21.0.
+- **ESPN first, Yahoo only where ESPN has none:** ±0.0001 of ESPN everywhere. Shipped.
+- **The real league** (`backtest.py league`, 132 matchups, old vs new code on the same data): category log loss 0.3762 → 0.3789, Brier 0.1155 → 0.1162; per matchup +0.0027 ± 0.0042, better in 65, worse in 67: noise. `python backtest.py` (past seasons, ESPN only) unchanged.
+- **fatty zhou:** 56.8% season win either way (after the Morant claim fix below), Ingram −1.48 → −0.61. Giddey for Ingram: toss-up → accept (56.8 → 57.2%, title 18.6 → 19.3%).
+
+Same day, a bug: `claimed()` put a no-drop claim for an Out player (Morant) on the bench, a 14th active player, so every season number counted him (60.8% instead of 56.8%, title ~32% instead of ~21%). He goes into a free IL slot now.

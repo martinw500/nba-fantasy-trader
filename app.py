@@ -247,6 +247,8 @@ def sync_offers(lg):
                 yes = deal(x) in done or (all(map(have, x["get"])) and not any(map(have, x["give"])))
                 if yes or x.get("yahoo"):  # one never seen on Yahoo may not have been sent: left for you
                     x.update(outcome="yes" if yes else "no", auto=True)
+            if x["me"] == me and x.get("yahoo"):  # Nov 25: still live on Yahoo; the page folds the rest under Past offers
+                x["open"] = x["yahoo"] in pending
         if json.dumps(saved) != before:
             write(OFFERS, saved)
 

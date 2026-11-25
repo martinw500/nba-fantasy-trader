@@ -840,15 +840,20 @@ def availability(best, played, games):
 
 
 def experts(yahoo, espn, base, keys=(), cur=None):
-    """One expert per-game line per player, with its source: Yahoo's (the snapshot's, updated in-season) where it has
-    him, else ESPN's. A Yahoo line under half of ESPN's (points + rebounds + assists) isn't a per-game line (Oct 30:
-    Jaxson Hayes 1.7 points while playing 27 minutes a game, Capela 0.4; games missed look baked in), so ESPN's wins.
-    With no ESPN line, under half of the baseline's or of this season's (`cur`, 3+ games) is the same junk (Nov 4 audit:
+    """One expert per-game line per player, with its source: ESPN's where it has him, else Yahoo's (the snapshot's).
+    B22 (Nov 25, `python backtest.py experts`, 29 text snapshots, 10,439 player-weeks): Yahoo first had never been
+    measured. It tied ESPN on everyone (error -0.0001 +- 0.0008) and was worse for players out on the snapshot (+0.0048
+    same day, +0.0090 +- 0.0060 a week old: ESPN better in 95 of 134), since Yahoo's rest-of-season totals over its
+    projected games bake missed games in (Ingram, in an IL slot Nov 22: 14.5 points, ESPN 22.6). The API has no
+    projections, so Yahoo's line also freezes at the last text snapshot; ESPN's file is preseason and doesn't move
+    either (0 of 348 changed Nov 5-24), and ros() leans on this season's games from there. ESPN first ties both.
+    A Yahoo line under half of the baseline's or of this season's (`cur`, 3+ games) isn't a per-game line (Oct 30:
+    Jaxson Hayes 1.7 points while playing 27 minutes a game, Capela 0.4; games missed look baked in). (Nov 4 audit:
     Kobe Sanders 1.9 points, 11.0 this season; Brandon Williams, Quenton Jackson, Huff, Bamba), and the player goes on
     as one no expert projects (prior()'s BENCH_MIN). Checked on the Oct 26-31 snapshots against the games after each:
     those players' error -2.0% (40 of 70 player-weeks better), everyone else's unchanged. Names are matched to `keys`
     (the stats' players) like League.find, so a spelling variant lands on the player it means; the rest are rookies yet
-    to play. Yahoo shows no minutes, so his are ESPN's (else the baseline's) scaled by how much more or less Yahoo has
+    to play. Yahoo shows no minutes, so his are the baseline's scaled by how much more or less Yahoo has
     him scoring, rebounding and assisting: a role change moves minutes, not rates. A stat a source leaves out is 0:
     ESPN drops zeros (Duren: no 3PM, PTS = 2 FGM + FTM)."""
     def frame(d):  # a row with no numbers at all is no projection, not a zero line (ESPN's 2023-24 file lists 43 of
@@ -858,11 +863,12 @@ def experts(yahoo, espn, base, keys=(), cur=None):
         df["key"] = [match(n, keys) or norm(n) for n in df.PLAYER_NAME]
         return df.drop_duplicates("key").set_index("key").astype({c: float for c in ["MIN"] + RAW})
     y, e = frame(yahoo), frame(espn)
+    y = y[~y.index.isin(e.index)]  # B22: ESPN's line first (above)
     vol = lambda d: d[["PTS", "REB", "AST"]].sum(axis=1)
     seen = vol(cur).where(cur.GP >= 3) if cur is not None else pd.Series(dtype=float)
     own = pd.concat([vol(base).reindex(y.index), seen.reindex(y.index)], axis=1).max(axis=1)  # under half of either
-    y = y[~(vol(y) < 0.5 * vol(e).reindex(y.index).fillna(own))]
-    ref = e.reindex(y.index).combine_first(base.reindex(y.index))
+    y = y[~(vol(y) < 0.5 * own)]
+    ref = base.reindex(y.index)
     y["MIN"] = ref.MIN * vol(y) / vol(ref).clip(lower=1)
     return pd.concat([y.dropna(subset=["MIN"]).assign(src="Yahoo"),  # a rookie only Yahoo projects: no minutes to go on
                       e[~e.index.isin(y.index)].assign(src="ESPN")])
@@ -1452,7 +1458,11 @@ def claimed(snap):
         if not a or (c.get("drop") and not d) or d is a:
             continue
         fa.remove(a)
-        mine.append({**{k: v for k, v in a.items() if k != "slot"}, "slot": "BN", "claim": c["clears"]})
+        # Nov 25: one Out with no drop goes into a free IL slot (Q29: only O is IL-eligible), as This week parks him;
+        # on the bench he was a 14th active player and every season number counted him (Morant: 56.8 -> 60.8% win)
+        il = not d and a.get("status") == "O" and sum(p.get("slot") in ("IL", "IL+") for p in mine) < snap["settings"].get("il", 0)
+        mine.append({**{k: v for k, v in a.items() if k != "slot"}, "slot": "IL" if il else "BN", **({"il": "IL"} if il else {}),
+                     "claim": c["clears"]})
         if d:
             mine.remove(d)
             fa.append({k: v for k, v in d.items() if k not in ("slot", "waiver")})
@@ -3984,8 +3994,9 @@ class League:
         pulled = (self.snap.get("pulled") or "")[:10]
         listed = self.snap.get("adds", {}).get(team) if (start <= pulled <= self.week_end if pulled else not self.rolled) else None
         # Q35: a pending claim spends an add in the week it clears (Yahoo counts it then); yours only
-        used = max(counted, listed or 0) + (sum(start <= c <= self.week_end for _, c in self._claims.values()) if team == self.me else 0)
-        return {"used": used, "max": cap, "left": max(cap - used, 0), "counted": counted, "listed": listed,
+        claims = sum(start <= c <= self.week_end for _, c in self._claims.values()) if team == self.me else 0
+        used = max(counted, listed or 0) + claims
+        return {"used": used, "max": cap, "left": max(cap - used, 0), "counted": counted, "listed": listed, "claims": claims,
                 "week_start": start, "resets": (date.fromisoformat(self.week_end) + timedelta(1)).isoformat()}
 
     @staticmethod

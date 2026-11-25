@@ -71,12 +71,12 @@ def test_all():
     old = model.keyed(pd.DataFrame([{**line("Vet", 150), "AGE": 32}, {**line("Kid", 150), "AGE": 26}]))
     pa = model.prior(model.baseline(old, old), model.experts({}, {}, old, old.index))
     assert np.isclose(pa.at["vet", "PTS"] / pa.at["kid", "PTS"], (1 + 6 * model.AGE_SLOPE) / 1) and pa.at["vet", "MIN"] == pa.at["kid", "MIN"]
-    # experts(): Yahoo's line where it has him, but one under half of ESPN's isn't a per-game line (Oct 30: Jaxson
-    # Hayes 1.7 points while playing 27 minutes a game), so ESPN's wins
+    # experts(): ESPN's line where it has him (B22, Nov 25: Yahoo first tied it and was worse for players out on the
+    # snapshot), Yahoo's only where ESPN has none
     yl = {"Player 100": {"PTS": 1.7, "REB": 1.0, "AST": 0.2}, "Player 101": {"PTS": 9.0, "REB": 4.0, "AST": 1.0}}
-    el = {n: {"MIN": 20.0, "PTS": 8.0, "REB": 5.0, "AST": 1.0} for n in yl}
+    el = {"Player 100": {"MIN": 20.0, "PTS": 8.0, "REB": 5.0, "AST": 1.0}}
     ex = model.experts(yl, el, base, base.index)
-    assert ex.at["player 100", "src"] == "ESPN" and ex.at["player 101", "src"] == "Yahoo"
+    assert ex.at["player 100", "src"] == "ESPN" and ex.at["player 100", "PTS"] == 8.0 and ex.at["player 101", "src"] == "Yahoo"
     # ...and with no ESPN line, one under half of the baseline's or this season's (3+ games) is the same junk (Nov 4
     # audit: Kobe Sanders 1.9 points, 11.0 this season): no expert line at all, so prior()'s bench line
     yl = {"Player 102": {"PTS": 2.0, "REB": 0.8, "AST": 0.2},   # baseline ~24: junk
@@ -1636,9 +1636,13 @@ def test_all():
                                              {"add": "Twin E", "drop": "Nobody Here", "clears": "2026-10-30"}]})
     assert c_ap["claims"] == [{"add": "Player 120", "drop": "Player 150", "clears": "2026-10-30"}] and "claims" not in snap
     assert {"name": "Player 120", "slot": "BN", "claim": "2026-10-30"}.items() <= next(x for x in c_ap["teams"]["Me"] if x["name"] == "Player 120").items()
+    # Nov 25: one Out with no drop goes into a free IL slot, not the bench as an extra active player (Morant)
+    c_o = {**c_sn, "settings": {**c_sn["settings"], "il": 1}, "free_agents": [{**x, "status": "O"} if x["name"] == "Player 120" else x for x in c_sn["free_agents"]]}
+    c_il = lambda s: next(x for x in model.claimed({**s, "claims": [{"add": "Player 120", "drop": None, "clears": "2026-10-30"}]})["teams"]["Me"] if x["name"] == "Player 120")["slot"]
+    assert (c_il(c_o), c_il(c_sn)) == ("IL", "BN")
     c0, c1 = mk(c_sn, {}), mk(c_ap, {})
     assert c1._claims == {"player 120": ("player 150", "2026-10-30")} and "player 150" in c1.fa and "player 150" in c1._dropped()
-    assert c1.adds()["used"] == c0.adds()["used"] + 1
+    assert c1.adds()["used"] == c0.adds()["used"] + 1 and (c0.adds()["claims"], c1.adds()["claims"]) == (0, 1)
     c_w, (k0, s0, u0) = c1._week_mine(), c0._week_side("Me")
     assert c_w["start"]["player 120"] == "2026-10-30" and c_w["until"]["player 150"] == "2026-10-29" and "player 150" in c_w["keys"]
     assert np.allclose(c1.week_vec(*c1._week_side("Me")), c0.week_vec(k0 + ["player 120"], {**s0, "player 120": "2026-10-30"},
@@ -2077,7 +2081,7 @@ def test_all():
                                        "pulled": "2026-10-27T09:30:00-07:00", **x}, pd.concat([base, twins]),
                                       pd.concat([cur, twins]), today=model.date(2026, 10, 27), sched=sl.sched, inj={"Twin C": sl.inj["twin c"]})
     c2 = capped(adds={"Me": 1})
-    assert c2.adds() == {"used": 2, "max": 4, "left": 2, "counted": 2, "listed": 1, "week_start": "2026-10-26",
+    assert c2.adds() == {"used": 2, "max": 4, "left": 2, "counted": 2, "listed": 1, "claims": 0, "week_start": "2026-10-26",
                          "resets": "2026-11-02"}
     assert c2.adds("Them")["used"] == 1 and c2.state()["adds"]["left"] == 2 and c2.planner()["adds"]["left"] == 2
     assert len(c2.this_week()["plan"]["moves"]) <= 2
@@ -2581,19 +2585,19 @@ Sharks has an open SF slot.""")
     assert [(p["name"], p["by"]) for p in dr] == [("Player 103", "Them"), ("Player 102", "Me")]
     assert set(lg.profile()["odds"]) == set(model.CATS)
 
-    # expert projections (N4): Yahoo's (the snapshot's) where it has him, else ESPN's, blended into the pre-season
-    # line at PROJ_W. Yahoo's minutes are ESPN's scaled by output, a spelling variant lands on the player it means,
+    # expert projections (N4): ESPN's where it has him, else Yahoo's (the snapshot's; B22), blended into the pre-season
+    # line at PROJ_W. Yahoo's minutes are the baseline's scaled by output, a spelling variant lands on the player it means,
     # and a rookie with no games yet gets a row: his projection blended with the fringe line. Nobody else moves.
     stat = lambda i, x=1.0, cols=model.RAW: {c: line("", i)[c] * x for c in cols}
     full = ["MIN"] + model.RAW
-    ex = model.League({**lg.snap, "projections": {"Player 150": stat(150, 2), "Zed Unknown": stat(150)}}, base, cur,
+    ex = model.League({**lg.snap, "projections": {"Player 150": stat(150, 2), "Player 151": stat(151, 2), "Zed Unknown": stat(150)}}, base, cur,
                       proj={"Player 150": stat(150, cols=full),
                             "Player 152": {c: v for c, v in stat(152, 1.5, full).items() if c != "FG3M"},  # ESPN drops 0s
                             "Nikola Jokich": stat(199, 0.5, full), "New Rookie": stat(190, cols=full)})
     pj = ex.proj
-    assert pj.at["player 150", "src"] == "Yahoo" and pj.at["player 152", "src"] == "ESPN"
+    assert pj.at["player 150", "src"] == "ESPN" and pj.at["player 151", "src"] == "Yahoo" and pj.at["player 152", "src"] == "ESPN"
     assert pj.at["player 152", "FG3M"] == 0 and not ex.z.isna().any().any()  # a missing stat is 0, never NaN
-    assert abs(pj.at["player 150", "MIN"] - 2 * line("", 150)["MIN"]) < 1e-9  # twice the output: twice ESPN's minutes
+    assert abs(pj.at["player 151", "MIN"] - 2 * base.at["player 151", "MIN"]) < 1e-9  # twice the output: twice the minutes
     assert "nikola jokic" in pj.index and "zed unknown" not in pj.index  # Yahoo-only, no minutes to go on: left out
     pre = model.prior(base, pj)
     assert abs(pre.at["player 152", "PTS"] - (1 - model.PROJ_W + 1.5 * model.PROJ_W) * base.at["player 152", "PTS"]) < 1e-9
@@ -2612,11 +2616,11 @@ Sharks has an open SF slot.""")
     # an expert row with no numbers at all is no projection (ESPN's 2023-24 file: 43 of that season's rookies), not 0s
     assert "player 153" not in model.experts({}, {"Player 153": {}, "Player 154": {"MIN": 0.0}}, base, base.index).index
     assert ex.find("New Rookie") == "new rookie" and ex.find("Zed Unknown", strict=False) is None
-    assert ex.p.at["player 150", "PTS"] > lg.p.at["player 150", "PTS"] and ex.p.at["player 152", "PTS"] > lg.p.at["player 152", "PTS"]
+    assert ex.p.at["player 151", "PTS"] > lg.p.at["player 151", "PTS"] and ex.p.at["player 152", "PTS"] > lg.p.at["player 152", "PTS"]
     assert np.allclose(ex.p.loc["player 160", model.RAW].astype(float), lg.p.loc["player 160", model.RAW].astype(float))
-    assert ex.player("player 150")["proj"] == "Yahoo" and "proj" not in lg.player("player 150")
-    yc = ex.card("Player 150")["lines"]["yahoo"]
-    assert yc["MIN"] is None and yc["PTS"] == round(2 * line("", 150)["PTS"], 1) and "espn" in ex.card("Player 152")["lines"]
+    assert ex.player("player 151")["proj"] == "Yahoo" and "proj" not in lg.player("player 151")
+    yc = ex.card("Player 151")["lines"]["yahoo"]
+    assert yc["MIN"] is None and yc["PTS"] == round(2 * line("", 151)["PTS"], 1) and "espn" in ex.card("Player 150")["lines"]
 
     test_freshness(lg)
 
