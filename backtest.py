@@ -60,7 +60,7 @@ import pandas as pd
 import model
 
 ARGS = [a for a in sys.argv[1:]
-        if a not in ("replay", "teammates", "onoff", "minor", "backups", "usage", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season", "league", "fill", "stream", "habits",
+        if a not in ("replay", "teammates", "onoff", "minor", "backups", "usage", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season", "league", "fill", "stream", "habits", "opponent",
                      "base", "pos", "opp", "held", "beam", "adds")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
@@ -209,7 +209,17 @@ def team_weeks(games="fixed", leagues=LEAGUES, info=None, season=False):
             flag = lambda j: np.array([j <= len(f := b2.get(t, ())) and f[j - 1] for t in team])
             chain = sum(model.fresh_plays(avail, j, flag(j)) * np.clip(n - j + 1, 0, 1) for j in range(1, int(n.max()) + 1))
             played_n = np.where(fresh, chain, played_n)
-        yield w, R @ (played_n[:, None] * line[model.RAW].to_numpy()), R @ actual[w]
+        F = 1.0
+        if games != "fixed" and (fac := model.opp_factors(g[g.week < w])):  # D1: his games at their NBA opponents'
+            one, wk = np.ones(len(model.RAW)), g[g.week == w].drop_duplicates(["TEAM_ABBREVIATION", "GAME_ID"])  # factors
+            f = {(t, d): fac.get(m[-3:], one) for t, d, m in zip(wk.TEAM_ABBREVIATION, wk.GAME_DATE, wk.MATCHUP)}
+            mean = lambda t, ds: np.mean([f[t, d] for d in ds if (t, d) in f] or [one], 0)
+            by = {t: mean(t, [d for u, d in f if u == t]) for t in set(wk.TEAM_ABBREVIATION)}
+            F = np.array([by.get(t, one) for t in team])
+            for k, back in backs.items():  # one out at Monday: the games from his return (League._gm: the games he's in)
+                F[idx[k]] = mean(team[k], [d for (u, d) in f if u == team[k] and d >= back])
+            # ponytail: his games weighed alike, not by his chance to play each (fresh_plays, RAMP) as League._gm is
+        yield w, R @ (played_n[:, None] * line[model.RAW].to_numpy() * F), R @ actual[w]
 
 
 def build(games="fixed"):
@@ -981,6 +991,45 @@ def ahead(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
                                                       "flat": x.played.sum() / x.flat.sum()})).round(3).to_string())
     print(f"Brier (per 1000 games): chain {brier('chain'):.2f}, flat {brier('flat'):.2f}; model.HAZARD, ONE_GAME:",
           model.HAZARD, model.ONE_GAME)
+    return d
+
+
+def opponent(seasons=("2022-23", "2023-24", "2024-25", "2025-26")):
+    """D1: the NBA opponent. Every game next week of a 15+ minute line on each Monday's ros() (mondays()), against the
+    other team's factor (model.opp_factors() on the box scores so far): actual / line by fifth of the factor, with and
+    without it, the squared error a game it saves by season, then the weekly matchups (build("schedule")) with OPP_K
+    off and on. Nov 24: BLK 0.864 / 1.123 of the line in the bottom / top fifth, 0.97-1.01 with it; every stat gains in
+    every season, and so do the weekly matchups (docs/MODEL.md §3)."""
+    C, rows = model.RAW, []
+    for s in seasons:
+        use(s)
+        for m in mondays():
+            fac, nx = model.opp_factors(m["past"]), m["nxt"]
+            L = m["line"].reindex(nx.key)
+            ok = (L.MIN >= 15).to_numpy() & nx.MATCHUP.str[-3:].isin(list(fac)).to_numpy()
+            nx, L = nx[ok], L[ok]
+            F = np.array([fac[o[-3:]] for o in nx.MATCHUP]) if len(nx) else np.zeros((0, len(C)))
+            rows.append(pd.DataFrame({"season": s, **{f"a_{c}": nx[c].to_numpy() for c in C},
+                                      **{f"l_{c}": L[c].to_numpy() for c in C}, **{f"f_{c}": F[:, i] for i, c in enumerate(C)}}))
+    d = pd.concat(rows, ignore_index=True).dropna()
+    print(f"\n== D1: {len(d)} player-games, OPP_K {model.OPP_K} ==\nactual / line by fifth of the opponent's factor "
+          "(factor: without -> with it):")
+    for c in C:
+        q = pd.qcut(d[f"f_{c}"], 5, labels=False)
+        print(f"  {c:5}", " | ".join(f"{x[f'f_{c}'].mean():.3f}: {x[f'a_{c}'].sum() / x[f'l_{c}'].sum():.3f} -> "
+                                     f"{x[f'a_{c}'].sum() / (x[f'l_{c}'] * x[f'f_{c}']).sum():.3f}" for _, x in d.groupby(q)))
+    print("squared error a game saved (%), by season:")
+    print(pd.DataFrame({s: {c: 100 * (1 - ((x[f"a_{c}"] - x[f"l_{c}"] * x[f"f_{c}"]) ** 2).mean()
+                                     / ((x[f"a_{c}"] - x[f"l_{c}"]) ** 2).mean()) for c in C}
+                        for s, x in d.groupby("season")}).round(2).to_string())
+    for s in seasons:
+        use(s)
+        for k in (None, model.OPP_K):
+            old = knobs(OPP_K=k)
+            try:
+                report(*build("schedule"), f"{s}, real schedule, OPP_K {k}")
+            finally:
+                knobs(**old)
     return d
 
 
@@ -2024,6 +2073,8 @@ if __name__ == "__main__":
             playoffs(games=games, grid=((0.25, 0.6), (0.35, 0.6), (0.45, 0.6), (0.35, 0.5), (0.35, 0.7)))
     elif "gameday" in sys.argv:
         gameday()
+    elif "opponent" in sys.argv:
+        opponent()
     elif "lineups" in sys.argv:
         lineups()
     elif "league" in sys.argv:

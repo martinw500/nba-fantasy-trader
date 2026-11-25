@@ -260,6 +260,15 @@ RETURN_LATE = {"O": 0.62, "DTD": 0.4}
 # season counts as the longest
 RAMP = ((2, (0.96, 0.98)), (5, (0.91, 0.94, 0.97, 0.98)), (10, (0.86, 0.90, 0.96)), (20, (0.78, 0.89, 0.89, 0.98)),
         (float("inf"), (0.71, 0.72, 0.73, 0.82) + (0.94,) * 6))
+# The NBA opponent (D1, Nov 24): each game this week counts his line x what the other team allowed per game so far ÷ the
+# league's, per stat (pace and defense together), shrunk toward 1 by OPP_K of its games (opp_factors()). `python
+# backtest.py opponent`, 2022-23 to 2025-26, 77,373 games of 15+ minute lines on each Monday's ros(): against the fifth of
+# teams allowing the fewest blocks players made 0.864 of the line, the most 1.123 (factor 0.86 / 1.16); PTS 0.976 /
+# 1.059, STL 0.933 / 1.121; with it every fifth reads 0.97-1.05; weekly matchups better in all four seasons
+# (docs/MODEL.md §3). The full factor (b = 1) fits: b fitted per stat is
+# 0.73-1.05, every held-out season gains at 0.8-1.0 (squared error a game -0.2 to -0.9% by stat, BLK most), and K 5-40
+# is within 0.03%. None: off
+OPP_K = 10
 # Teammates' injuries (lifts()), fitted on 2025-26 box scores (python backtest.py teammates): while a regular (REGULAR+
 # minutes) sits, SHARE of his minutes go to teammates playing 10+, split by their room under ROOM minutes x
 # e^(ROLE x role similarity) and played at their own rates; USAGE of the USAGE_STATS those minutes don't replace go to
@@ -436,6 +445,8 @@ def match(name, keys):
 SOURCES = [("stats", "Stats", f"stats_{CUR}.csv", 12, "this season's stats"),
            ("logs", "Box scores", f"gamelogs_{CUR}.csv", 12, "recent form, the card's recent lines and teammates' injury boosts"),
            ("schedule", "Schedule", f"schedule_{CUR}.json", 24, "NBA games per week (a flat 3.4 is used)"),
+           ("opponents", "Opponents", f"opponents_{CUR}.json", 24, "each game's NBA opponent (This week counts every "
+            "game at the player's own line)"),
            ("injuries", "Injuries", "injuries.json", 3, "ESPN's injury notes and return dates (Yahoo's tags still count)"),
            ("projections", "Projections", f"projections_{CUR}.json", 24, "ESPN's projections (Yahoo's still count)"),
            ("news", "News", "news_index.json", 3, "ESPN's news"),
@@ -518,18 +529,46 @@ def _cached(cache, hours, get, force=False):
     return json.loads(cache.read_text(encoding="utf-8")) if cache.exists() else {}
 
 
-def schedule(season=CUR):
-    """{NBA tricode: sorted game dates "YYYY-MM-DD"} from stats.nba.com, cached in data/ for a day."""
+def schedule(season=CUR, force=False):
+    """{NBA tricode: sorted game dates "YYYY-MM-DD"} from stats.nba.com, cached in data/ for a day. The same fetch
+    writes opponents()' file (D1), so the two always agree. A side still TBD (the NBA Cup's knockouts) is left out:
+    no NaN team, and its opponent's game has no opponent yet (factor 1)."""
     def get():
         from nba_api.stats.endpoints import scheduleleaguev2
         d = scheduleleaguev2.ScheduleLeagueV2(season=season, timeout=60).get_data_frames()[0]
-        day = pd.to_datetime(d.gameDate).dt.strftime("%Y-%m-%d")
-        out = {}
-        for side in ("homeTeam_teamTricode", "awayTeam_teamTricode"):
-            for t, dt in zip(d[side], day):
-                out.setdefault(t, []).append(dt)
+        day, out, opp = pd.to_datetime(d.gameDate).dt.strftime("%Y-%m-%d"), {}, {}
+        ok = lambda t: isinstance(t, str) and bool(t)
+        for a, b, dt in zip(d.homeTeam_teamTricode, d.awayTeam_teamTricode, day):
+            for t, o in ((a, b), (b, a)):
+                if ok(t):
+                    out.setdefault(t, []).append(dt)
+                    if ok(o):
+                        opp.setdefault(t, {})[dt] = o
+        if out:
+            _write(DATA / f"opponents_{season}.json", json.dumps(opp))
         return {t: sorted(ds) for t, ds in out.items()}
-    return _cached(DATA / f"schedule_{season}.json", 24, get)
+    return _cached(DATA / f"schedule_{season}.json", 24, get, force)
+
+
+def opponents(season=CUR):
+    """{NBA tricode: {game date: the other team's tricode}} (D1): written by schedule()'s fetch (refetched now if the
+    file isn't there yet). Offline with no file: {}, and This week counts every game at the player's own line."""
+    f = DATA / f"opponents_{season}.json"
+    schedule(season, force=not f.exists())
+    return json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+
+
+def opp_factors(logs):
+    """{NBA tricode: what that team allowed per game ÷ the league's per team-game, as a RAW array} from these box scores
+    (D1): its opponents' team totals in its games, shrunk toward 1 by OPP_K games. {} with OPP_K None or no box scores.
+    ponytail: pace and defense in one number per stat; home / away and rest left out"""
+    if OPP_K is None or logs is None or not len(logs) or "MATCHUP" not in logs:
+        return {}
+    tg = logs.assign(OPP=logs.MATCHUP.str[-3:]).groupby(["GAME_ID", "OPP"])[RAW].sum()  # a team's line in one game
+    by, n = tg.groupby(level="OPP"), tg.groupby(level="OPP").size()
+    f = (by.mean() / tg.mean()).mul(n, axis=0).add(OPP_K).div(n + OPP_K, axis=0)
+    f["FTM"] = f["FTA"]  # his FT% is his own: a defense sends him to the line, it doesn't make his free throws
+    return {t: r.to_numpy(float) for t, r in f.iterrows()}
 
 
 def injuries(force=False):
@@ -1398,8 +1437,9 @@ class League:
     """A league snapshot (see yahoo.py) joined with NBA stats."""
 
     def __init__(self, snap, base=None, cur=None, sched=None, inj=None, today=None, logs=None, proj=None, news=None,
-                 live=None, now=None, inj_at=None, what=None, habit=None):
+                 live=None, now=None, inj_at=None, what=None, habit=None, opps=None):
         s = snap["settings"]
+        self.opps = opps or {}  # D1: {NBA team: {date: opponent}} (opponents()), for _gm
         self.habit = habit or {}  # Y5: each team's lineup habit on its rest of This week (habits(), _rest())
         self.snap, self.teams_n, self.roster_n = snap, s.get("teams", 12), s.get("roster", 13)
         self.slots = s.get("slots") or []  # starting slots by position (yahoo.py reads them); none = any players start
@@ -1729,7 +1769,7 @@ class League:
         plays: his expected starts instead: each game at his chance to play it (_plays()), a bench player filling in
         for a starter who sits (M19, _subs). Today's starters in games under way hold their slots and count nothing:
         their stats are in the score so far (M18, _held). ramp: each start weighted by his line's share that game, back
-        from missing games (B11, _ramp), for week_vec().
+        from missing games (B11, _ramp) and by the NBA opponent's factor per stat (D1): _gm, for week_vec().
         ponytail: best = per-game value, each in a slot his positions fit (_lineup); a lineup set by hand can count fewer."""
         day, n = self._days(keys, self.week_end, start or {}, until, by), collections.Counter()
         for d, ks in day.items():
@@ -1740,7 +1780,7 @@ class League:
                 w = [k in on for k in ks]
             for k, x in zip(ks, w):
                 if x and (d != self.today or not self._locked(k)):
-                    n[k] += x * (self._ramp.get((k, d), 1.0) if ramp else 1)
+                    n[k] += x * (self._gm.get((k, d), 1.0) if ramp else 1)  # ramp: an array per RAW stat (D1)
         return n
 
     def _subs(self, ks, p):
@@ -1855,6 +1895,20 @@ class League:
             missed += sum(self.today <= d < days[0] for d in self.sched.get(t, ()))
             f = next(f for m, f in RAMP if missed <= m) if missed else ()
             out.update({(k, d): f[j] for j, d in enumerate(days) if j < len(f)})
+        return out
+
+    @functools.cached_property
+    def _gm(self):
+        """{(player, date): his line's multiplier that game this week}: _ramp's share (B11) x the NBA opponent's factor
+        per RAW stat (D1, opp_factors(): an array), for games with either. week_vec(), _week_plan(), game_night() and
+        record() read it where they read _ramp; later weeks and season numbers don't (it averages out over a season)."""
+        f, ramp, out = opp_factors(self.logs) if self.opps else {}, self._ramp, {}
+        for k in self._ix:
+            vs = self.opps.get(self.nba.get(k), {})
+            for d in self.game_days(k, self.week_end):
+                x = f.get(vs.get(d))
+                if x is not None or (k, d) in ramp:
+                    out[k, d] = ramp.get((k, d), 1.0) * (1.0 if x is None else x)
         return out
 
     def _pos(self, k):
@@ -2283,12 +2337,15 @@ class League:
         """This week's expected totals: per-game line x games he starts the rest of this week (starts(), start /
         until / by as there), his expected starts: each game at his chance to play it (rate_week, or a game-day listing's
         rate: _plays()), a bench player filling in for a starter who sits (M19), the first games back from missing some
-        short (B11, _ramp). Without a schedule it's the
+        short (B11, _ramp), each game against its NBA opponent (D1, _gm). Without a schedule it's the
         season-average week, vec()."""
         if not self.sched:
             return self.vec(keys)
         g = self.starts([k for k in keys if k in self._ix], start, until, by, plays=True, ramp=True)
-        return np.fromiter(g.values(), float, len(g)) @ self._pw[[self._ix[k] for k in g]] if g else np.zeros(len(RAW))
+        if not g:
+            return np.zeros(len(RAW))
+        W = np.array([np.broadcast_to(v, len(RAW)) for v in g.values()])  # starts per RAW stat (D1's factor in)
+        return (W * self._pw[[self._ix[k] for k in g]]).sum(0)
 
     @functools.cached_property
     def _pw(self):  # p_week's RAW lines as an array, rows as _ix (week_vec() runs thousands of times a view); p_week
@@ -4089,7 +4146,7 @@ class League:
         width, END, today = width or self.DEEP, self.week_end, self.today
         D0, tom = max(today, self.matchup.get("from", "")), shift(today)
         days, zero, cache = span(D0, END), np.zeros(len(RAW)), {}
-        val, ix, ramp, plays, subs, locked = self._value.to_dict(), self._ix, self._ramp, self._plays, self._subs, self._locked
+        val, ix, ramp, plays, subs, locked = self._value.to_dict(), self._ix, self._gm, self._plays, self._subs, self._locked
         every = {k for b in bases for k in b[0]} | set(fas) | set(drops)
         G = {k: tuple(self.game_days(k, END)) if k in ix else () for k in every}
         row = {k: self._pw[ix[k]] for k in every if k in ix}
@@ -4731,7 +4788,7 @@ class League:
         # today's starters in games under way (_held, M18): set (they hold their slots: plays 1), and their stats are
         # in the score so far (a line of 0)
         lock = {(d, k) for d, ks in day.items() if d == self.today for k in ks if self._locked(k)}
-        per = {(d, k): zero if (d, k) in lock else self._ramp.get((k, d), 1.0) * (  # back from missing games (B11)
+        per = {(d, k): zero if (d, k) in lock else self._gm.get((k, d), 1.0) * (  # back from missing games (B11), the opponent (D1)
                flat[k] + sum((x[1:] for a, b, _, x in bump[k] if a <= d < b), zero)) for d, ks in day.items() for k in ks}
         pl = {x: 1.0 if x in lock else self._plays(x[1], x[0], rate) for x in per}
         one = {x: pl[x] * per[x] for x in per}
@@ -4921,7 +4978,7 @@ class League:
         if any(g["status"] > 1 for g in games):  # tonight's lines so far against the night the model expected
             zero = np.zeros(len(RAW))
             got = {t: sum((box.loc[k, RAW].to_numpy(float) for k in on[t] if k in box.index and self._locked(k)), zero) for t in on}
-            exp = {t: sum((self._plays(k, d0) * self._ramp.get((k, d0), 1.0) * self.p_week.loc[k, RAW].to_numpy(float)
+            exp = {t: sum((self._plays(k, d0) * self._gm.get((k, d0), 1.0) * self.p_week.loc[k, RAW].to_numpy(float)
                            for k in on[t] if k in self.p_week.index), zero) for t in on}
             out["night"] = {c: {"you": [total(got[me], c), total(exp[me], c)], "them": [total(got[opp], c), total(exp[opp], c)]}
                             for c in self.cats}
@@ -5323,7 +5380,7 @@ class League:
         (`pairs`: the totals so far plus week_vec on each _week_side, This week's headline and backtest.py league's
         odds; `win` = its first team's chance to win the week, match_prob at WEEK_LOAD); and `players`: each of yours
         in this week's numbers, his expected games for the rest of it (each at his chance to play, _plays) and his line
-        over them (his _ramp in), lineup limits aside, so it reads against his box scores."""
+        over them (his _ramp and opponents in: _gm), lineup limits aside, so it reads against his box scores."""
         so, me, cap = self._so_far(), self.me, self.adds()  # a snapshot pulled after its week ended: no week to call
         v = lambda t: np.array([float(so[t].get(c, 0)) for c in RAW])
         left = {t: self._rest(t) for t in self.rosters if t in so}
@@ -5335,8 +5392,8 @@ class League:
                               "odds": {c: round(100 * float(x), 1) for c, x in zip(self.cats, p)}})
         keys, start, until, players = *self._week_side(me), {}
         for k in (k for k in keys if k in self._ix and not self.rolled):
-            g = [(self._plays(k, d), self._ramp.get((k, d), 1.0)) for d in self.game_days(k, until.get(k, self.week_end), start.get(k))]
-            line = sum(x * r for x, r in g) * self.p_week.loc[k, RAW]
+            g = [(self._plays(k, d), self._gm.get((k, d), 1.0)) for d in self.game_days(k, until.get(k, self.week_end), start.get(k))]
+            line = self.p_week.loc[k, RAW] * sum((x * r for x, r in g), np.zeros(len(RAW)))
             players[self.p.at[k, "PLAYER_NAME"]] = {"g": round(sum(x for x, _ in g), 2), **{c: round(float(line[c]), 2) for c in RAW}}
         st, po = self.standings()[me], ((self.playoffs or {}).get("teams") or {}).get(me, {}) if self.mode != "points" else {}
         pct = lambda x: None if x is None else round(100 * x, 1)
@@ -5794,7 +5851,7 @@ def load(path=DATA / "league.json", refetch=(), what=None, made=None):
     snap, notes, shown = moved(positions(json.loads(Path(path).read_text(encoding="utf-8"))), made)
     if shown:
         moves(undo=shown)
-    lg = League(snap, cur=fetch(CUR, max_age_hours=hours), sched=schedule(),
+    lg = League(snap, cur=fetch(CUR, max_age_hours=hours), sched=schedule(), opps=opponents(),
                 inj=inj, logs=logs, proj=espn(), news=news, live=live, inj_at=mtime(DATA / "injuries.json"), what=what,
                 habit=habits(lineup_days(), logs, snap["settings"].get("slots"), _keys_of(snap),
                              (date.today() - timedelta(1)).isoformat()))
@@ -5884,9 +5941,12 @@ def outcome(A, B, cats=CATS):
 
 @functools.lru_cache(maxsize=1)
 def _replay_data(at):
-    """replay()'s caches: this season's box scores, the baseline and the NBA schedule, read once per box-score file time."""
+    """replay()'s caches: this season's box scores, the baseline, the NBA schedule and each game's opponent (D1; {}
+    without the file), read from disk once per box-score file time."""
+    opp = DATA / f"opponents_{CUR}.json"
     return (gamelogs(CUR), baseline(fetch(LAST), fetch(OLDER)),
-            json.loads((DATA / f"schedule_{CUR}.json").read_text(encoding="utf-8")))
+            json.loads((DATA / f"schedule_{CUR}.json").read_text(encoding="utf-8")),
+            json.loads(opp.read_text(encoding="utf-8")) if opp.exists() else {})
 
 
 def replay(path, end=None, bank=False):
@@ -5903,7 +5963,7 @@ def replay(path, end=None, bank=False):
     else:
         with contextlib.redirect_stdout(sys.stderr):  # build()'s "Left out ..." line stays out of the CLI's JSON
             snap = yahoo.build(s, text=str(path), write=False)
-    logs, base, sched = _replay_data(mtime(DATA / f"gamelogs_{CUR}.csv"))
+    logs, base, sched, opps = _replay_data(mtime(DATA / f"gamelogs_{CUR}.csv"))
     d = s["from"]
     day = lambda x, n: (date.fromisoformat(x) + timedelta(n)).isoformat()
     past = logs[logs.GAME_DATE < pd.Timestamp(d)]
@@ -5916,7 +5976,7 @@ def replay(path, end=None, bank=False):
     return League(snap, base, cur, sched, json.loads(inj.read_text(encoding="utf-8")) if inj.exists() else {},
                   today=date.fromisoformat(day(end, 1) if bank else d),
                   logs=logs[logs.GAME_DATE <= pd.Timestamp(end)] if bank else past,
-                  proj=json.loads(ps[-1].read_text(encoding="utf-8")) if ps else {},
+                  proj=json.loads(ps[-1].read_text(encoding="utf-8")) if ps else {}, opps=opps,
                   habit=habits(lineup_days(), past, snap["settings"].get("slots"), _keys_of(snap), day(d, -1)))
 
 

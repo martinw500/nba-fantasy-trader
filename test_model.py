@@ -1226,6 +1226,26 @@ def test_all():
                       sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week}, logs=bx.assign(key=bx.PLAYER_NAME.map(model.norm)))
     assert wl.p.at["twin a", "MIN"] < no.p.at["twin a", "MIN"] and wl.p.at["twin d", "MIN"] == no.p.at["twin d", "MIN"]
     assert wl.p_week.at["twin a", "MIN"] < no.p_week.at["twin a", "MIN"]
+    # D1: each game this week counts the NBA opponent's factor per stat (opp_factors(): what that team allowed per game
+    # ÷ the league's, shrunk by OPP_K of its games). AAA scored Twin A + Twin C against BBB, Twin A alone at CCC, so
+    # BBB allowed more than the league and CCC less; all of AAA's games this week at BBB scale This week's line and
+    # Start / sit's game by BBB's factor, and with no opponents nothing moves
+    bo = bx.assign(key=bx.PLAYER_NAME.map(model.norm), MATCHUP=["AAA vs. BBB" if g < 2 else "AAA @ CCC" for g in bx.GAME_ID])
+    tot, f = bo.groupby("GAME_ID")[model.RAW].sum(), model.opp_factors(bo)
+    assert np.allclose(f["BBB"], (2 * tot.iloc[:2].mean() / tot.mean() + model.OPP_K) / (2 + model.OPP_K))
+    assert (f["BBB"] > 1).all() and (f["CCC"] < 1).all() and np.allclose((f["BBB"] - 1) / (1 - f["CCC"]), 1)
+    off, on = (model.League(snap, pd.concat([base, twins]), pd.concat([cur, twins]), today=model.date(2026, 10, 26),
+                            sched={"AAA": week, "BBB": week[:1] + week[3:], "XXX": week}, logs=bo, opps=o)
+               for o in ({}, {"AAA": dict.fromkeys(week, "BBB")}))
+    assert np.allclose(off.week_vec(["twin a"]), wl.week_vec(["twin a"]))
+    assert np.allclose(on.week_vec(["twin a"]), off.week_vec(["twin a"]) * f["BBB"])
+    d0, old_k = week[0], model.OPP_K
+    assert np.allclose(on._week_plan("Them")["one"][d0, "twin a"], off._week_plan("Them")["one"][d0, "twin a"] * f["BBB"])
+    try:
+        model.OPP_K = None  # off
+        assert model.opp_factors(bo) == {}
+    finally:
+        model.OPP_K = old_k
     # A6/A7: the season line (p) nets NET_SEASON of had() with MIN_SHRINK_SEASON games of minutes, This week (p_week)
     # all of it at MIN_SHRINK. One line when the knobs agree; This week never moves with them; half netted is the
     # midpoint (minutes are linear in it); 6 games keep (GP + 3) / (GP + 6) of what 3 do of Twin A's gap from his prior
@@ -2536,8 +2556,8 @@ def test_freshness(lg):
                 (d / name[k]).write_text("{}")
                 os.utime(d / name[k], (now - hours_ago * 3600,) * 2)
             got = {x["key"]: x for x in model.freshness(now)}
-            assert list(got) == ["stats", "logs", "schedule", "injuries", "projections", "news", "live"]
-            assert {k: x["status"] for k, x in got.items()} == {"stats": "ok", "logs": "stale", "schedule": "ok",
+            assert list(got) == ["stats", "logs", "schedule", "opponents", "injuries", "projections", "news", "live"]
+            assert {k: x["status"] for k, x in got.items()} == {"stats": "ok", "logs": "stale", "schedule": "ok", "opponents": "missing",
                                                                 "injuries": "ok", "projections": "missing", "news": "missing",
                                                                 "live": "missing"}
             assert got["logs"]["age"] == 13 and got["projections"]["fetched"] == "" and got["projections"]["lost"]
