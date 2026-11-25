@@ -24,7 +24,7 @@ Every recommendation is computed from the user's actual league (rosters, free ag
 
 ## Operating Context
 
-Used alongside the Yahoo Fantasy site/app: the user analyzes here, then executes trades and add/drops on Yahoo. Checked around waiver periods, before proposing trades, and when a player gets hot or injured. League data is pulled on demand (`yahoo.py`); a demo league exists for use without Yahoo.
+Used alongside the Yahoo Fantasy site/app: the user analyzes here, then executes trades and add/drops on Yahoo. Checked around waiver periods, before proposing trades, and when a player gets hot or injured. League data syncs from Yahoo's API every 15 minutes (`yahoo.py`), with text snapshots as the fallback; a demo league exists for use without Yahoo.
 
 ## Capabilities and Constraints
 
@@ -32,11 +32,11 @@ Used alongside the Yahoo Fantasy site/app: the user analyzes here, then executes
 - Values are per game, rest of season; early-season samples are noisy and the UI should say so.
 - Read-only toward Yahoo: no trade proposals or roster moves are sent from the app.
 - AI chat needs Claude Code installed and logged in; everything else works without it.
-- Ignores positions/roster slots and games-per-week schedules (known gap).
+- Lineups follow the league's roster slots and the NBA schedule (This week, Start / sit, Schedule).
 
 ## Evidence on Hand
 
-Real NBA stats via nba_api (2025-26 and 2026-27). No real league data is committed; the demo league is generated.
+Real NBA stats via nba_api (2025-26 and 2026-27). The real league (mchc fantasy) from Yahoo's API since Nov 23 and text snapshots in `snapshots/` since Oct 26; the demo league is generated.
 
 ## Product Principles
 

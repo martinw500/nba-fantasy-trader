@@ -339,6 +339,25 @@ def test_all():
     # ... and a player outside the league (no game this season, no injury listing, not in the snapshot) ranks after
     # everyone in it, however good his line: Jokić here (Oct 30: Westbrook #170 and Chris Paul #164 pushed Yahoo's down)
     assert m.at["nikola jokic", "rank"] == len(m) and "nikola jokic" not in mk.here
+    # with the league's draft (an API pull) the starting price is the pick, not Yahoo's preseason rank (Edwards: 5th
+    # vs 79); a drafted player Yahoo doesn't rank still gets a league price (yahoo True). An undrafted pickup's form takes
+    # over at HOT_CHASE's pace (Anthony Black, Nov 23): a hot undrafted George climbs past where no draft had him
+    dr = model.League({**mk.snap, "draft": {"Player 170": 80, "Player 174": 3}}, base, cur).market
+    assert dr.at["player 171", "rank"] < dr.at["player 170", "rank"] and dr.at["player 174", "yahoo"]
+    assert dr.at["player 174", "rank"] < m.at["player 174", "rank"] and dr.at["player 171", "rank"] < m.at["player 171", "rank"]
+    # rest of season (Nov 24, LaMelo): ESPN projecting a drafted player like the league's best moves his price up;
+    # an undrafted one (George) keeps his form, whatever ESPN says
+    top = cur.loc[cur.PTS.idxmax(), ["MIN", *model.RAW]].to_dict()
+    pj = {**{cur.at[k, "PLAYER_NAME"]: cur.loc[k, ["MIN", *model.RAW]].to_dict() for k in cur.index}, "Player 170": top, "Player 171": top}
+    ro = model.League({**mk.snap, "draft": {"Player 170": 80, "Player 174": 3}}, base, cur, proj=pj).market
+    assert ro.at["player 170", "rank"] < dr.at["player 170", "rank"] and ro.at["player 171", "rank"] <= dr.at["player 171", "rank"] + 1
+    # out with a return date: the price drops by OUT_DISCOUNT x the share of his team's games he misses (Martin, Nov 23,
+    # Edwards out to late January at #4), so out longer costs more and back tomorrow next to nothing
+    days = [str(model.date(2026, 10, 26) + model.timedelta(3 * i)) for i in range(55)]
+    nba = mk.nba["player 170"]
+    out = lambda back: model.League(mk.snap, base, cur, today=model.date(2026, 10, 26), sched={nba: days},
+                                    inj={"Player 170": {"status": "O", "note": "", "return": back}}).market.at["player 170", "rank"]
+    assert out("2027-02-25") > out("2026-12-01") > m.at["player 170", "rank"] - 1 and out("2026-10-27") <= m.at["player 170", "rank"] + 1
     # drop cost: the side taking more players gives up its drops' market value; the other's open spot is worth the
     # waiver level (spot), whoever fills it: a free agent is free. Players traded together count as a package
     r = lg.trade(["Player 198"], ["Player 151", "Player 155"])
@@ -609,6 +628,12 @@ def test_all():
     chk = stuck.roster_check()
     assert [p["kind"] for p in chk["problems"]][:2] == ["il", "drop"] and chk["problems"][0]["players"] == ["Hurt Guy"]
     assert stuck._stuck() == ["hurt guy"] and [p["kind"] for p in lg.roster_check()["problems"]] == ["open"] * (lg._room("Me") > 0)
+    # Nov 24 (Martin: in mchc only Out sits in an IL slot): Yahoo's own flag decides (`il`: "IL" among his eligible
+    # positions on the API), else a tag other than O, so a Q / GTD one is stuck too (before, only untagged players were)
+    il_as = lambda **f: model.League({**ill.snap, "teams": {**ill.snap["teams"], "Me": [
+        {**p, **f} if p["name"] == "Hurt Guy" else p for p in ill.snap["teams"]["Me"]]}}, pd.concat([base, hurt]), pd.concat([cur, hurt.assign(GP=5)]))
+    assert il_as(status="GTD")._stuck() == ["hurt guy"] and il_as(status="GTD", il=True)._stuck() == [] and ill._stuck() == []
+    assert il_as(status="O", il=False)._stuck() == ["hurt guy"] and il_as(status="GTD").roster_check()["problems"][0]["kind"] == "il"
     # drops(): each row's season number is outlook() on that roster built by hand (him gone, Hurt Guy active), its week
     # number add_drop() with no add (a drop alone activates him); the overall pick follows the rule
     d = stuck.drops()
@@ -631,47 +656,36 @@ def test_all():
     tw = stuck.this_week()
     assert tw["win"] == row[pick]["week"] and tw["assumes"] == [{"in": "Hurt Guy", "for": pick, "from": stuck.today}]
     assert stuck.drops() is d and ill._drop_pick() is None and lg._drop_pick() is None  # cached; nobody stuck: no pick
-    # "I made this move" (Q30): moved() puts a saved move on the snapshot before the league is built. Dropped the pick
-    # and activated Hurt Guy: the alert goes, and the season and This week numbers are that row's
+    # plan picks (Q30): moved() puts a saved pick on the snapshot before the league is built. Picked dropping the
+    # pick and activating Hurt Guy: the alert goes, and the season and This week numbers are that row's
     mv = {**stuck.made(drop=pick, activate="Hurt Guy"), "id": "a", "at": "2026-11-16T10:00:00"}
-    assert mv == {"me": "Me", "drop": [pick], "activate": ["Hurt Guy"], "id": "a", "at": "2026-11-16T10:00:00"}
+    assert mv == {"me": "Me", "drop": [pick], "activate": ["Hurt Guy"], "plan": True, "id": "a", "at": "2026-11-16T10:00:00"}
     snap2, notes, shown = model.moved(stuck.snap, [mv])
     done = model.League(snap2, pd.concat([base, hurt]), pd.concat([cur, hurt.assign(GP=5)]))
-    assert shown == [] and [(n["text"], n["state"]) for n in notes] == [(f"Dropped {pick}, activated Hurt Guy", "made")]
+    assert shown == [] and [(n["text"], n["state"]) for n in notes] == [(f"Drop {pick}, activate Hurt Guy", "plan")]
     assert not done.roster_check()["problems"] and not done._stuck() and done.find(pick) in done.fa
     # (the season number within 0.05: the league is rebuilt with him among the free agents, which moves the waiver level
     # a missed game is filled at; here he's far better than any free agent, on the real league it matched to 0.01)
     assert abs(100 * done.outlook("Me")["win"] - row[pick]["season"]) < 0.05 and done.this_week()["win"] == row[pick]["week"]
     assert done.this_week()["assumes"] == [] and any(p["name"] == pick for p in stuck.snap["teams"]["Me"])  # the snapshot itself is untouched
     assert snap2["transactions"][0] == {"when": "Nov 16 10:00am", "team": "Me", "type": "drop", "player": pick}
-    # a snapshot that already shows the move: nothing to apply, its id comes back (load() drops it from the file)
-    assert model.moved(snap2, [mv]) == (snap2, [], ["a"])
-    # a snapshot pulled after the move that doesn't show it wins: not applied, kept as stale. Pulled before it: applied.
-    # A plan isn't on Yahoo yet, so it stays on a newer snapshot while it can still be made
-    late, early = {**stuck.snap, "pulled": "2026-11-17T09:00:00"}, {**stuck.snap, "pulled": "2026-11-15T09:00:00"}
-    s3, n3, _ = model.moved(late, [mv])
-    assert n3[0]["state"] == "stale" and s3["teams"] == stuck.snap["teams"] and model.moved(early, [mv])[0]["teams"] == snap2["teams"]
-    s4, n4, _ = model.moved(late, [{**mv, "plan": True}])
-    assert n4[0]["state"] == "plan" and n4[0]["text"] == f"Drop {pick}, activate Hurt Guy" and s4["teams"] == snap2["teams"]
-    assert model.moved({**snap2, "pulled": "2026-11-17T09:00:00"}, [{**mv, "plan": True}])[2] == ["a"]  # made since: cleared
-    # an add counts against the week's adds (the snapshot's own count while the move is in its week, and the log)
+    # a pull that shows it (made on Yahoo) or where it can't be made any more: nothing applied, its id comes back
+    # (load() drops it from the file), whenever the pull was
+    assert model.moved(snap2, [mv]) == (snap2, [], ["a"]) and model.moved({**snap2, "pulled": "2026-11-15T09:00:00"}, [mv])[1:] == ([], ["a"])
+    gone = {**stuck.snap, "teams": {**stuck.snap["teams"], "Me": [p for p in stuck.snap["teams"]["Me"] if p["name"] != pick]}}
+    g_snap, g_notes, g_ids = model.moved(gone, [mv])
+    assert g_snap["teams"] == gone["teams"] and (g_notes, g_ids) == ([], ["a"])
+    # an add counts against the week's adds (the snapshot's own count while the pick is in its week, and the log)
     wk = {**stuck.snap, "matchup": {"opponent": "Them", "week_start": "2026-11-16", "week_end": "2026-11-22"},
           "pulled": "2026-11-16T08:00:00", "adds": {"Me": 1}, "settings": {**stuck.snap["settings"], "max_adds": 4}}
-    swap = {"me": "Me", "add": ["Player 139"], "drop": ["Player 150"], "id": "b", "at": "2026-11-16T10:00:00"}
+    swap = {"me": "Me", "add": ["Player 139"], "drop": ["Player 150"], "plan": True, "id": "b", "at": "2026-11-16T10:00:00"}
     s5, n5, _ = model.moved(wk, [mv, swap])
     mk = lambda sn: model.League(sn, pd.concat([base, hurt]), pd.concat([cur, hurt.assign(GP=5)]), today=model.date(2026, 11, 16))
     was, now = mk(wk), mk(s5)
-    assert (was.adds()["used"], now.adds()["used"], now.adds()["counted"]) == (1, 2, 1) and n5[1]["text"] == "Added Player 139, dropped Player 150"
+    assert (was.adds()["used"], now.adds()["used"], now.adds()["counted"]) == (1, 2, 1) and n5[1]["text"] == "Add Player 139, drop Player 150"
     assert "player 139" in now.rosters["Me"] and "player 150" in now.fa and "player 139" not in now.fa and not now.roster_check()["problems"]
     assert s5["transactions"][0] == {"when": "Nov 16 10:00am", "team": "Me", "type": "add", "player": "Player 139", "dropped": "Player 150"}
-    # a trade swaps the players; a part that can't be made on this snapshot is skipped, never an error
-    tr = {**stuck.made(give=["Player 154"], get=["Player 195"]), "id": "c", "at": "2026-11-16T10:00:00"}
-    s6 = model.moved(stuck.snap, [tr, {"me": "Me", "drop": ["Nobody Here"], "add": ["Player 195"], "id": "d", "at": "2026-11-16T10:00:00"}])[0]
-    names_on = lambda sn, t: {p["name"] for p in sn["teams"][t]}
-    assert tr["team"] == "Them" and "Player 195" in names_on(s6, "Me") and "Player 154" in names_on(s6, "Them") and "Player 154" not in names_on(s6, "Me")
-    assert model.move_text(tr) == "Traded Player 154 to Them for Player 195"
-    for bad in (dict(add="Player 195"), dict(drop="Player 195"), dict(activate="Player 154"), dict(park="Hurt Guy"), dict(),
-                dict(give=["Player 154"]), dict(give=["Player 154"], get=["Player 139"])):
+    for bad in (dict(add="Player 195"), dict(drop="Player 195"), dict(activate="Player 154"), dict(park="Hurt Guy"), dict()):
         try:
             stuck.made(**bad)
             assert False, bad
@@ -888,6 +902,9 @@ def test_all():
     assert [day(f"Twin (back) is {n}") for n in ("questionable for Wednesday against the Bucks.", "probable to play Wednesday.",
             "questionable to face the Knicks on Wednesday.", "doubtful for Wednesdays' game.", "out for Wednesday's game.")] == [
         ("questionable", "wednesday"), ("probable", "wednesday"), ("questionable", "wednesday"), ("doubtful", "wednesday"), None]
+    # the designation nearest the day wins (Nov 21 AI GM note: Washington's downgrade read as questionable)
+    assert day("Twin has been downgraded from questionable to doubtful ahead of Saturday's game.") == ("doubtful", "saturday")
+    assert day("Twin has been upgraded from doubtful to questionable for Friday's game.") == ("questionable", "friday")
     # this week (M27): one who played his team's last game (before any games: untagged) plays his next game at
     # 1 - HAZARD x his missing share and each later one a little less (late news, fresh_plays()), not one flat
     # whole-week chance; This week's line is the sum. Twin C, out, isn't on the chain
@@ -1449,8 +1466,8 @@ def test_all():
     tw = pd.concat([twins, model.keyed(pd.DataFrame([line("Twin G", 180)]))])
     mk = lambda s, i: model.League(s, pd.concat([base, tw]), pd.concat([cur, tw]), today=model.date(2026, 10, 26),
                                    sched=sl.sched, inj=i)
-    isnap = {**snap, "teams": {**snap["teams"], "Me": [{**x, "slot": "IL"} if x["name"] == "Twin C" else x for x in snap["teams"]["Me"]],
-                               "Them": snap["teams"]["Them"] + [{"name": "Twin G", "nba": "AAA", "slot": "IL"}]}}
+    isnap = {**snap, "teams": {**snap["teams"], "Me": [{**x, "slot": "IL", "status": "O"} if x["name"] == "Twin C" else x for x in snap["teams"]["Me"]],
+                               "Them": snap["teams"]["Them"] + [{"name": "Twin G", "nba": "AAA", "slot": "IL", "status": "O"}]}}
     iinj = {"Twin C": {"status": "O", "note": "Ankle.", "return": "2026-10-30"},
             "Twin G": {"status": "O", "note": "Twin is listed as probable for Wednesday's game.", "return": "2026-10-28",
                        "date": "2026-10-26T20:00Z"}}
@@ -1650,12 +1667,9 @@ def test_all():
     p_try = pm.add_drop(p_top)
     assert p_try["parks"] == ["Twin A"] and p_try["drop"] == [] and p_try["week"] == p_hand.add_drop(p_top)["week"]
     assert "parks" not in pm.add_drop(p_top, "Twin A")  # dropping him frees the spot on its own
-    # the AI GM's note (Nov 20): a park made on Yahoo means Yahoo had him tagged O, so with no tag on the snapshot and
-    # nothing on ESPN he's no longer read as healthy and stuck in his IL slot (adds blocked); a plan isn't on Yahoo yet
-    p_mv = {"me": "Me", "park": ["Twin A"], "id": "p", "at": "2026-10-26T10:00:00"}
-    p_made, p_plan = (model.moved(psn, [m])[0] for m in (p_mv, {**p_mv, "plan": True}))
-    assert next(x for x in p_made["teams"]["Me"] if x["name"] == "Twin A") == {"name": "Twin A", "nba": "AAA", "slot": "IL", "status": "O"}
-    assert mk(p_made, iinj)._stuck() == [] and mk(p_plan, iinj)._stuck() == ["twin a"]
+    # a park picked, not made: Yahoo hasn't tagged him, so with nothing on ESPN he reads as healthy, stuck in his IL slot
+    p_plan = model.moved(psn, [{"me": "Me", "park": ["Twin A"], "plan": True, "id": "p", "at": "2026-10-26T10:00:00"}])[0]
+    assert mk(p_plan, iinj)._stuck() == ["twin a"]
     # never drop (Martin, Nov 16: "i dont rlly wanna drop john collins"): a kept player is no stream's or plan's drop,
     # the next cheapest takes his place among the three, and a name that isn't a player is an error (the AI GM's input)
     kw0 = bm.this_week()
@@ -1694,6 +1708,9 @@ def test_all():
     o = mk(osn, {**iinj, "Twin G": {"status": "O", "note": "Ankle.", "return": "2026-10-30"}})
     k, st, un = o._week_side("Them")
     assert st == {a: "2026-10-27"} and un == {a: "2026-10-31"} and "twin g" in k  # his 2nd game from ESPN's date (B11)
+    # Nov 24: a team stuck (Twin G tagged GTD in its IL slot, not IL-eligible) can't add, so its open spot isn't streamed
+    o = mk({**osn, "teams": {**osn["teams"], "Them": [{**x, "status": "GTD"} if x["name"] == "Twin G" else x for x in osn["teams"]["Them"]]}}, iinj)
+    assert o._stuck("Them") == ["twin g"] and o._week_side("Them")[1] == {} and o._room("Them")
 
     # games under way (M18). Monday 9pm ET: BBB @ AAA tipped off at 7 (Twin A 30 points so far, Twin B sat it: DND),
     # XXX's game tips at 10. Twin A is locked: his game is no longer one left (games, starts), his live line is in the
@@ -1717,6 +1734,17 @@ def test_all():
     assert on.starts(mine)["twin a"] == pre.starts(mine)["twin a"] - 1
     assert on._so_far()["Me"] == {"PTS": 130.0, "FGM": 52.0, "FGA": 100.0, **{s: 0.0 for s in model.RAW if s not in ("PTS", "FGM", "FGA")}}
     assert on._so_far()["Them"]["PTS"] == 90
+    # a Yahoo API pull at 9pm (Nov 23): its totals already hold the tipped game (held), so Twin A is locked, even with
+    # no live scoreboard, and his 30 points aren't added again, tonight or from the box scores next morning; XXX's
+    # later game still plays. Without `held` the next morning banks the game on top of the totals
+    hd = {"held": {"day": "2026-10-26", "teams": ["AAA", "BBB"]}}
+    api = at(lv(2), **hd)
+    assert api._locked("twin a") and api.games_week["twin a"] == on.games_week["twin a"] and api._so_far()["Me"]["PTS"] == 100
+    assert at(None, **hd)._locked("twin a") and at(None, **hd).games_week["twin a"] == 3
+    box = pd.DataFrame([{"key": "twin a", "GAME_ID": 22600001, "GAME_DATE": pd.Timestamp("2026-10-26"), **z, "PTS": 30, "MIN": 34, "PLAYER_NAME": "Twin A", "TEAM_ABBREVIATION": "AAA",
+                         "FGM": 12, "FGA": 20}])
+    tue = dict(now="2026-10-27T15:00:00+00:00", today=model.date(2026, 10, 27), logs=box)
+    assert at(None, **tue, **hd)._so_far()["Me"]["PTS"] == 100 and at(None, **tue)._so_far()["Me"]["PTS"] == 130
     # Who to drop keeps a locked player as a row (Nov 22: hiding them left Ingram as the pick over Larsson), marked tomorrow
     dr = {r["name"]: r for r in on.drops()["rows"]}
     assert dr["Twin A"].get("tomorrow") and not any(r.get("tomorrow") for r in pre.drops()["rows"])
@@ -1737,6 +1765,14 @@ def test_all():
     assert n["lock"]["at"] and n["lock"]["next"]["tip"] == "2026-10-27T02:00:00Z" and [g["status"] for g in n["games"]] == [2, 1]
     assert "Twin A" not in [x["name"] for x in n["decide"]] and n["days"][-1]["win"] == w["win"] and n["days"][-1]["score"] == w["score"]
     assert on.game_night() == n  # computing This week itself gives the same
+    # Y5: another team's lineup habit (habits()) scales its rest of This week, so the odds, the score and the day table
+    # with it; yours never (This week plans it); a league with none is the shipped week (w)
+    hb = on._copy({}, on.fa)
+    hb.habit = {"Them": {"f": 0.9, "eff": 0.86, "league": 0.955, "days": 30}, "Me": {"f": 2.0, "eff": 1.0, "league": 0.955, "days": 30}}
+    assert np.allclose(hb._their_week("Them")[1], 0.9 * on._their_week("Them")[1]) and np.allclose(hb._rest("Me"), on._rest("Me"))
+    hw = hb.this_week()
+    assert hw["win"] > w["win"] and "habit" not in w and hw["habit"] == {"factor": 0.9, "banked": 86.0, "league": 95.5, "days": 30}
+    assert hb.game_night(week=hw)["days"][-1]["win"] == hw["win"] and hw["cats"]["PTS"]["them"][1] < w["cats"]["PTS"]["them"][1]
     e = at(lv(2))  # an empty starting slot is named: nobody of yours plays PG
     e.slots, e.lineup = ["PG", "Util"], 2
     for k in e.rosters["Me"] + e.fa:  # free agents too: today's plan would add one for the slot (its lineups follow the plan)
@@ -2065,12 +2101,17 @@ def test_all():
             assert model.whatif() == {} and model.whatif("A", pct=20, line="") == {"A": {"pct": 20.0}}
             assert model.whatif("B", health="out", until="2026-12-01") == {"A": {"pct": 20.0}, "B": {"health": "out", "until": "2026-12-01"}}
             assert model.whatif("A") == {"B": {"health": "out", "until": "2026-12-01"}} and model.whatif(clear=True) == {} == model.whatif()
-            # Q30: roster moves live in the same file under "moves"; neither kind touches the other
+            # Q30: plan picks live in the same file under "moves"; neither kind touches the other
             assert model.moves() == [] and len(m1 := model.moves(new={"me": "Me", "drop": ["A"], "plan": True})) == 1
             assert m1[0]["plan"] and m1[0]["id"] and m1[0]["at"] and model.whatif("A", pct=20) == {"A": {"pct": 20.0}} and model.moves() == m1
-            assert model.whatif(clear=True) == {} and model.moves() == m1 and "plan" not in model.moves(done=m1[0]["id"])[0]
-            assert len(model.moves(new={"me": "Me", "add": ["B"]})) == 2 and [m["add"] for m in model.moves(undo=[m1[0]["id"]])] == [["B"]]
+            assert model.whatif(clear=True) == {} and model.moves() == m1
+            assert len(model.moves(new={"me": "Me", "add": ["B"], "plan": True})) == 2 and [m["add"] for m in model.moves(undo=[m1[0]["id"]])] == [["B"]]
             assert model.moves(undo="all") == [] == model.moves() and model.whatif() == {}
+            # Y3: a move recorded as made on Yahoo (before Nov 24) is left out, and gone at the next write; what-ifs stay
+            model.WHATIF.write_text(model.json.dumps({"X": {"pct": 10}, "moves": [{"id": "old", "drop": ["A"]}, m1[0]]}))
+            assert model.moves() == m1 and model.whatif() == {"X": {"pct": 10}}
+            assert model.moves(undo="nope") == m1 and model.json.loads(model.WHATIF.read_text()) == {"X": {"pct": 10}, "moves": m1}
+            model.WHATIF.unlink()
             for bad in ({"line": "hot"}, {"pct": 900}, {"min": 60}, {"health": "out", "until": "soon"}, {"games": 3}):
                 try:
                     model.whatif("A", **bad)
@@ -2142,6 +2183,73 @@ def test_all():
     tb = max(sp["builds"], key=lambda b: b["title"])
     assert sp["title_edge"] == round(tb["title"] - next(b["title"] for b in sp["builds"] if b["punt"] == sp["pick"]), 1)
     assert sp["title_pick"] == (tb["punt"] if sp["title_edge"] >= 2 else None)
+    # M30, Aim for the title: the same builds, ranked on title odds; a punt is picked only TITLE_BAR points ahead of
+    # staying balanced, and season_pick names the win-% best when VERDICT ahead of it
+    sa = pl.strategy(size=1, aim="title")
+    assert sa["aim"] == "title" and [b["title"] for b in sa["builds"]] == sorted((b["title"] for b in sa["builds"]), reverse=True)
+    flat = next(b for b in sa["builds"] if not b["punt"])
+    assert sa["edge"] == round(sa["builds"][0]["title"] - flat["title"], 1)
+    assert sa["pick"] == (sa["builds"][0]["punt"] if sa["edge"] >= model.TITLE_BAR else [])
+    pk, wb = next(b for b in sa["builds"] if b["punt"] == sa["pick"]), max(sa["builds"], key=lambda b: b["win"])
+    assert sa["season_pick"] == (wb["punt"] if round(wb["win"] - pk["win"], 1) > model.VERDICT * pl.s else None)
+    try:
+        pl.strategy(size=1, aim="titel")
+        assert False, "a bad aim"
+    except KeyError:
+        pass
+    # ... a trade's verdict on the title (2 points either way), the win %'s kept as season_verdict; one seat has no
+    # playoff round, so no playoff-week score
+    tt = pl.trade(*deal, free=False, aim="title")
+    dt = tt["title"]["you"][1] - tt["title"]["you"][0]
+    assert tt["season_verdict"] == pl.trade(*deal, free=False)["verdict"] and tt["po_score"] is None
+    assert tt["verdict"] == ("decline" if dt <= -model.TITLE_BAR or tt["playoffs"]["you"][1] < min(tt["playoffs"]["you"][0], 90)
+                             else "accept" if dt >= model.TITLE_BAR else "toss-up")
+    # ... and a waiver move carries its playoff and title odds after it (the league after the move, real odds)
+    fa1 = pl.fa[0]
+    mv = pl.add_drop(pl.p.at[fa1, "PLAYER_NAME"], "Player 148", aim="title")
+    lm = pl._copy({"Me": [k for k in pl.rosters["Me"] if k != "player 148"] + [fa1]}, [k for k in pl.fa if k != fa1] + ["player 148"],
+                  {"Me": set(pl.il["Me"])})
+    assert mv["title"] == [round(100 * x["teams"]["Me"]["title"], 1) for x in (pl.playoffs, lm.playoffs)] and mv["aim"] == "title"
+    assert "season_verdict" in mv and "aim" not in pl.add_drop(pl.p.at[fa1, "PLAYER_NAME"], "Player 148")
+    # M30: two seats, so one playoff round (week 4) on the real NBA schedule. The playoff-week score is your chance to
+    # win it against who you'd meet (Them, every time); the title finder searches on it and its score is trade()'s
+    sch = {"AAA": [d for i in range(5) for d in gd(i, 3)], "BBB": [d for i in range(5) for d in gd(i, 3)]}
+    p2 = model.League(two, base, cur, today=model.date(2026, 11, 1), sched=sch)
+    assert np.allclose(p2._po_q, [[0, 1]] if list(p2.rosters).index("Me") == 0 else [[1, 0]])
+    b2 = p2._po_run[1]
+    assert np.isclose(p2._po_score(p2._po_vec(p2.rosters["Me"], team="Me")),
+                      model._match_indep(model.cat_probs(b2["weeks"][0][b2["teams"].index("Me")], b2["weeks"][0][b2["teams"].index("Them")], p2.cats)))
+    f2 = p2.search(goal="title", free=False, size=1, tier="hard")
+    assert f2 and all(x["po_score"] > 0 for x in f2)
+    for x in f2[:3]:
+        tr = p2.trade(x["give"], x["get"], free=False)
+        assert x["title"] == tr["title"]["you"] and x["net"] == tr["net"] and abs(x["po_score"] - (tr["po_score"][1] - tr["po_score"][0])) <= 0.11
+    # ... each player's games in each fantasy playoff week, from his return date (the card, every player table)
+    k0 = p2.rosters["Me"][0]
+    assert p2.player(k0)["playoff_games"] == [3] and p2.playoff_games(k0) == [len([d for d in sch["AAA"] if day(28) <= d <= day(34)])]
+    p3 = model.League(two, base, cur, today=model.date(2026, 11, 1), sched=sch, inj={p2.p.at[k0, "PLAYER_NAME"]: {"status": "O", "note": "", "return": day(29)}})
+    assert p3.playoff_games(k0) == [2] and "playoff_games" not in pl.player(k0)  # no NBA schedule, no count
+    # ... the Playoffs view: one round, Them the only opponent (100%), the round's odds are theirs, thin = under 50%
+    pv = p2.playoff_view()
+    r1 = pv["rounds"][0]
+    assert len(pv["rounds"]) == 1 and r1["week"] == 4 and [o["team"] for o in r1["opponents"]] == ["Them"] and r1["opponents"][0]["meet"] == 100
+    assert r1["cats"] == r1["opponents"][0]["cats"] and r1["thin"] == sorted((c for c in p2.cats if r1["cats"][c] < 50), key=lambda c: r1["cats"][c])
+    assert r1["reach"] == 100 and r1["games"] == sum(len(p2.game_days(k, day(34), day(28))) for k in p2._playing(p2.rosters["Me"]))
+    assert lg.playoff_view() is None
+    # ... season_sim's meet: off the same draws (the odds don't move), each round's pairs met once per sim
+    m0 = model.season_sim([30, 20, 10, 0], [], [(p * 0.9, tie)], 4)
+    m1 = model.season_sim([30, 20, 10, 0], [], [(p * 0.9, tie)], 4, meet=True)
+    assert all((a == b).all() for a, b in zip(m0, m1[:3])) and m1[3].shape == (2, 4, 4)
+    assert np.allclose(m1[3][0].sum(1), 1) and np.allclose(m1[3][1].sum(), 2) and (m1[3] == m1[3].transpose(0, 2, 1)).all()
+    # ... key dates: the deadline (kept once past: trade_closed), the long weeks, the last regular week, playoff rounds
+    kd = lambda today, extra={}: model.League({**sn, "settings": {**sn["settings"], "trade_end": day(10), **extra}}, base, cur, today=today).dates()
+    d1 = kd(model.date(2026, 11, 1))
+    assert d1["items"][0] == {"what": "Trade deadline", "start": day(10), "end": day(10), "days": 11} and not d1["trade_closed"]
+    assert [x["what"] for x in d1["items"]][-2:] == ["Last regular-season week (week 3)", "Playoffs round 1 (week 4)"]
+    d2 = kd(model.date(2026, 11, 20))
+    assert d2["trade_closed"] and d2["items"][0]["days"] == -8 and "Last regular-season week (week 3)" in [x["what"] for x in d2["items"]]
+    assert "trade_end" not in sn["settings"] and model.League(sn, base, cur).dates()["trade_end"] is None
+    assert pl.state()["dates"] == pl.dates()
 
     # league text import: a trimmed Instinct snapshot (settings, rosters with ranks and "Empty slot" rows, injured
     # list skipped, free agents across three lists, matchups, transactions, projections, adds, schedule), sections it
@@ -2157,6 +2265,7 @@ LEAGUE SETTINGS
 Scoring type:     Head-to-Head Categories, 9 cats (FG%, FT%, 3PTM, PTS, REB, AST, ST, BLK, TO)
 Roster slots:     PG, SG, G, SF, PF, F, C, C, Util, Util (10 starters) + 3 BN + 3 IL = 16
 Max adds/week:    4 (no season limit on adds or trades)
+Trade deadline:   March 4, 2027 (Yahoo "Trade End Date"). Trade review: league votes, 2-day reject time
 Playoffs:         8 teams, Weeks 21, 22 and 23 (Mon Mar 22 - Sun Apr 11, 2027). Reseeding: yes. Tiebreaker: higher seed wins
 =====
 PART 1 - ALL 12 TEAM ROSTERS
@@ -2225,7 +2334,7 @@ Sharks has an open SF slot.""")
     assert got["week"] == {"week": 2, "start": "2026-10-26", "end": "2026-11-01"}
     assert got["settings"] == {"roster": 13, "starters": 10, "il": 3, "scoring": "categories", "max_adds": 4,
                                "slots": ["PG", "SG", "G", "SF", "PF", "F", "C", "C", "Util", "Util"],
-                               "playoff_teams": 8, "playoff_weeks": [21, 22, 23]}
+                               "playoff_teams": 8, "playoff_weeks": [21, 22, 23], "trade_end": "2027-03-04"}  # M30's key dates
     fz = got["teams"]["fatty zhou"]
     assert fz[0] == {"name": "Nikola Jokić", "nba": "DEN", "pos": "C", "status": "", "slot": "C",
                      "rank": {"pre": 1, "cur": 8}, "owned": 100}
@@ -2621,10 +2730,349 @@ def test_notes():
         finally:
             model.NOTES = old
 
+def test_yahoo_api():
+    """yahoo.pull() on canned XML in the shape of Yahoo's docs (not a real response yet: access pending, Nov 23):
+    the same dict parse_text gives, so build() treats an API pull and a snapshot file alike."""
+    from xml.etree import ElementTree
+    ns = 'xmlns="http://fantasysports.yahooapis.com/fantasy/v2/base.rng"'
+    pl = lambda key, name, nba, pos, extra="": (f"<player><player_key>{key}</player_key><name><full>{name}</full></name>"
+                                                f"<editorial_team_abbr>{nba}</editorial_team_abbr><display_position>{pos}"
+                                                f"</display_position>{extra}</player>")
+    team = lambda name, me, adds, prio, players: (
+        f"<team><team_key>466.l.1.t.{2 - me}</team_key><name>{name}</name><is_owned_by_current_login>{me}</is_owned_by_current_login><waiver_priority>{prio}"
+        f"</waiver_priority><roster_adds><coverage_type>week</coverage_type><value>{adds}</value></roster_adds>"
+        f"<roster><players>{players}</players></roster></team>")
+    side = lambda name, fg, pts, done, left: (
+        f"<team><team_key>466.l.1.t.{1 + (name != 'Me')}</team_key><name>{name}</name><team_stats><stats><stat><stat_id>9004003</stat_id><value>{fg}</value></stat>"
+        f"<stat><stat_id>5</stat_id><value>.450</value></stat><stat><stat_id>12</stat_id><value>{pts}</value></stat>"
+        f"</stats></team_stats><team_remaining_games><total><remaining_games>{left}</remaining_games><live_games>1"
+        f"</live_games><completed_games>{done}</completed_games></total></team_remaining_games></team>")
+    win = lambda i, t: f"<stat_winner><stat_id>{i}</stat_id>" + ("<is_tied>1</is_tied>" if t is None else
+                                                                 f"<winner_team_key>466.l.1.t.{t}</winner_team_key>") + "</stat_winner>"
+    board = lambda w, a, b, status="midevent": (
+        f"<league><scoreboard><matchups><matchup><week>{w}</week><week_start>{a}</week_start><week_end>{b}</week_end>"
+        f"<status>{status}</status><stat_winners>{win(5, 1)}{win(12, 1)}{win(19, None)}{win(17, 2)}</stat_winners>"
+        f"<teams>{side('Me', '36/91', 120, 7, 30)}{side('Rival', '-/-', '', 0, 33)}</teams></matchup></matchups></scoreboard></league>")
+    tx = lambda ts, typ, status, players: (f"<transaction><type>{typ}</type><status>{status}</status><timestamp>{ts}"
+                                          f"</timestamp><players>{players}</players></transaction>")
+    td = lambda name, typ, **k: f"<player><name><full>{name}</full></name><transaction_data><type>{typ}</type>" + "".join(
+        f"<{a}>{v}</{a}>" for a, v in k.items()) + "</transaction_data></player>"
+    stat = lambda i, d, only="0": f"<stat><stat_id>{i}</stat_id><enabled>1</enabled><display_name>{d}</display_name>" \
+                                  f"<is_only_display_stat>{only}</is_only_display_stat></stat>"
+    rp = lambda p, c: f"<roster_position><position>{p}</position><count>{c}</count></roster_position>"
+    L = "league/466.l.1"
+    xml = {
+        "game/nba": "<game><game_key>466</game_key></game>",
+        f"{L}/settings": "<league><name>mchc fantasy</name><start_week>1</start_week><current_week>2</current_week><end_week>3</end_week><settings>"
+                         "<scoring_type>head</scoring_type><max_weekly_adds>4</max_weekly_adds><trade_end_date>2027-03-04</trade_end_date><uses_playoff>1</uses_playoff>"
+                         "<playoff_start_week>3</playoff_start_week><num_playoff_teams>2</num_playoff_teams><roster_positions>"
+                         + rp("PG", 1) + rp("C", 2) + rp("Util", 1) + rp("BN", 2) + rp("IL", 1) + rp("IL+", 1) + rp("NA", 1)
+                         + "</roster_positions><stat_categories><stats>" + stat(9004003, "FGM/A", "1") + stat(5, "FG%")
+                         + stat(12, "PTS") + stat(19, "ST") + stat(17, "TO") + "</stats></stat_categories></settings></league>",
+        f"{L}/players;sort=AR;sort_type=average_season;start=0;count=25;out=percent_owned,percent_started,ownership,ranks": "<league><players>"
+            + pl("466.p.1", "Ivica Zubac", "IND", "C", "<percent_owned><coverage_type>week</coverage_type><week>6</week>"
+                 "<value>94</value><delta>-3</delta></percent_owned><percent_started><coverage_type>date</coverage_type>"
+                 "<date>2026-11-23</date><value>89</value><delta>11</delta></percent_started>"
+                 "<ownership><ownership_type>team</ownership_type></ownership>")
+            + pl("466.p.2", "Kris Dunn", "LAC", "PG,SG", "<percent_owned><value>26</value></percent_owned>"
+                 "<player_ranks><player_rank><rank_type>OR</rank_type><rank_value>140</rank_value></player_rank>"
+                 "<player_rank><rank_type>S</rank_type><rank_value>9</rank_value></player_rank></player_ranks>"
+                 "<ownership><ownership_type>freeagents</ownership_type></ownership>")
+            + pl("466.p.3", "Sam Hauser", "BOS", "SF", "<percent_owned><value>12</value></percent_owned>"
+                 "<ownership><ownership_type>waivers</ownership_type><waiver_date>2026-11-25</waiver_date></ownership>")
+            + pl("466.p.4", "Cut Guy", "MIA", "SF,PF", "<percent_owned><value>30</value></percent_owned>"
+                 "<ownership><ownership_type>team</ownership_type></ownership>")  # dropped since the (hour-old) page
+            + "</players></league>",
+        f"{L}/teams/roster": "<league><teams>"
+            + team("Me", 1, 2, 3, pl("466.p.1", "Ivica Zubac", "IND", "C", "<status>O</status><selected_position>"
+                                     "<position>IL</position></selected_position><eligible_positions><position>C</position>"
+                                     "<position>Util</position><position>IL</position></eligible_positions>"))
+            + team("Rival", 0, 0, 1, pl("466.p.9", "Deep Bench", "GS", "PF", "<status>GTD</status><selected_position>"
+                                        "<position>BN</position></selected_position>"))
+            + "</teams></league>",
+        f"{L}/standings": "<league><standings><teams><team><name>Me</name><team_standings><rank>1</rank><outcome_totals>"
+                          "<wins>20</wins><losses>15</losses><ties>1</ties></outcome_totals></team_standings></team><team>"
+                          "<name>Rival</name><team_standings><rank/><outcome_totals><wins>0</wins><losses>0</losses><ties>0"
+                          "</ties></outcome_totals></team_standings></team></teams></standings></league>",
+        f"{L}/scoreboard": board(2, "2026-11-30", "2026-12-13"),
+        f"{L}/scoreboard;week=1": board(1, "2026-11-23", "2026-11-29", "postevent"),
+        f"{L}/scoreboard;week=2": board(2, "2026-11-30", "2026-12-13"),
+        "game/466/game_weeks": "<game><game_weeks><game_week><week>1</week><start>2026-11-23</start><end>2026-11-29</end>"
+                               "</game_week><game_week><week>3</week><start>2026-12-14</start><end>2026-12-20</end></game_week>"
+                               "</game_weeks></game>",
+        f"{L}/transactions;count=50": "<league><transactions>"
+            + tx(1763851800, "add/drop", "successful", td("Obi Toppin", "add", source_type="freeagents",
+                 destination_team_name="Rival") + td("Jordan Goodwin", "drop", source_team_name="Rival"))
+            + tx(1763851700, "add", "successful", td("Sam Hauser", "add", source_type="waivers", destination_team_name="Me"))
+            + tx(1763851600, "drop", "successful", td("Keegan Murray", "drop", source_team_name="Me"))
+            + tx(1763851500, "trade", "vetoed", td("A", "trade", source_team_name="Me", destination_team_name="Rival"))
+            + tx(1763851400, "trade", "successful", td("Chet Holmgren", "trade", source_team_name="Me", destination_team_name="Rival")
+                 + td("Paul Reed", "trade", source_team_name="Me", destination_team_name="Rival")
+                 + td("Jayson Tatum", "trade", source_team_name="Rival", destination_team_name="Me"))
+            + "</transactions></league>",
+        f"{L}/transactions;types=trade": "<league><transactions><transaction><transaction_key>466.l.1.tr.7</transaction_key>"
+            "<type>trade</type><status>vetoed</status><timestamp>1763851500</timestamp><trader_team_name>Me"
+            "</trader_team_name><tradee_team_name>Rival</tradee_team_name><players>"
+            + td("A", "trade", source_team_name="Me", destination_team_name="Rival")
+            + td("B", "trade", source_team_name="Rival", destination_team_name="Me") + "</players></transaction></transactions></league>",
+        f"{L}/transactions;types=pending_trade;team_key=466.l.1.t.1": "<league><transactions><transaction><transaction_key>"
+            "466.l.1.pt.9</transaction_key><type>pending_trade</type><status>proposed</status><trader_team_name>Rival"
+            "</trader_team_name><tradee_team_name>Me</tradee_team_name><trade_proposed_time>1763851900</trade_proposed_time>"
+            "<players>" + td("Deep Bench", "pending_trade", source_team_name="Rival", destination_team_name="Me")
+            + td("Ivica Zubac", "pending_trade", source_team_name="Me", destination_team_name="Rival")
+            + "</players></transaction></transactions></league>",
+        f"{L}/draftresults/players": "<league><draft_results><draft_result><pick>1</pick><round>1</round><players>"
+            "<player><name><full>Ivica Zubac</full></name></player></players></draft_result><draft_result><pick>2</pick>"
+            "</draft_result></draft_results></league>"}
+    calls = []
+
+    def get(path):  # called from pull()'s threads (Y2)
+        calls.append(path)
+        empty = "<league><players></players></league>" if ";sort=AR;" in path else None  # past the last ranked player
+        root = ElementTree.fromstring(f"<fantasy_content {ns}>{xml.get(path, empty) if empty else xml[path]}</fantasy_content>")
+        for e in root.iter():
+            e.tag = e.tag.rpartition("}")[2]
+        return root
+    import tempfile
+    old = yahoo._last_snapshot, yahoo._tipped, yahoo.OUT, yahoo.RANKS
+    yahoo._last_snapshot = lambda: {"players": [{"name": "Ivica Zubac", "rank": {"pre": 53, "cur": 189}}],
+                                    "projections": {"Ivica Zubac": {"PTS": 15.0}}}
+    tmp = tempfile.TemporaryDirectory()
+    yahoo._tipped, yahoo.OUT, yahoo.RANKS = lambda now: [], model.Path("/nonexistent/league.json"), model.Path(tmp.name) / "ranks.json"
+    ranks = lambda: sum(";sort=AR;" in c for c in calls)
+    try:
+        got = yahoo.pull("1", get=get)
+        assert ranks() == 20 and yahoo.TOOK[1] == len(calls) == len(set(calls)), calls  # each path once
+        assert f"{L}/scoreboard;week=1" in calls and f"{L}/scoreboard;week=3" not in calls  # playoffs: no pairs yet
+        # Y2: within the hour the rank pages come from RANKS (the same players), with last week's results and the
+        # season's pairings kept from league.json: 10 calls in place of 33; fresh (the Refresh button) asks Yahoo again
+        yahoo.OUT = model.Path(tmp.name) / "league.json"
+        yahoo.OUT.write_text(model.json.dumps({k: got[k] for k in ("schedule", "results")}))
+        calls.clear()
+        again = yahoo.pull("1", get=get)
+        assert ranks() == 0 and len(calls) == 10 and again["free_agents"] == got["free_agents"] and again["results"] == got["results"], calls
+        assert again["teams"] == got["teams"] and again["schedule"] == got["schedule"]
+        calls.clear()
+        yahoo.pull("1", get=get, fresh=True)
+        assert ranks() == 20 and f"{L}/scoreboard;week=1" not in calls
+        # Y4: a cache saved before percent_started was asked for is asked again, not read as missing it
+        c = model.json.loads(yahoo.RANKS.read_text())
+        yahoo.RANKS.write_text(model.json.dumps({**c, "out": "percent_owned,ownership,ranks"}))
+        calls.clear()
+        yahoo.pull("1", get=get)
+        assert ranks() == 20
+    finally:
+        yahoo._last_snapshot, yahoo._tipped, yahoo.OUT, yahoo.RANKS = old
+        tmp.cleanup()
+    # last week's final (Q33's results): categories each team won by Yahoo's stat_winners, a tie nobody's
+    assert got["results"] == [{"week": 1, "teams": ["Me", "Rival"], "score": [2, 1],
+                               "totals": {"Me": {"FGM": 36.0, "FGA": 91.0, "PTS": 120.0}, "Rival": {"FGM": 0.0, "FGA": 0.0, "PTS": 0.0}}}], got["results"]
+    assert got["settings"] == {"roster": 6, "starters": 4, "slots": ["PG", "C", "C", "Util"], "il": 2, "mode": "9cat",
+                               "cats": ["FG%", "PTS", "STL", "TOV"], "points": None, "scoring": "categories", "max_adds": 4,
+                               "playoff_teams": 2, "playoff_weeks": [3], "trade_end": "2027-03-04"}, got["settings"]
+    assert got["me"] == "Me" and got["name"] == "mchc fantasy" and got["waiver_order"] == ["Rival", "Me"]
+    assert got["teams"]["Me"] == [{"name": "Ivica Zubac", "nba": "IND", "pos": "C", "status": "O", "slot": "IL", "il": True,
+                                   "rank": {"pre": 53, "cur": 1}, "owned": 94, "owned_delta": -3, "started": 89,
+                                   "started_delta": 11}], got["teams"]["Me"]
+    assert got["teams"]["Rival"] == [{"name": "Deep Bench", "nba": "GS", "pos": "PF", "status": "GTD", "slot": "BN", "il": False}]
+    assert got["adds"] == {"Me": 2, "Rival": 0} and got["records"]["Me"] == {"w": 20, "l": 15, "t": 1, "rank": 1}
+    assert got["trades"] == [  # the season's trades, then the offers to or from you still waiting
+        {"key": "466.l.1.tr.7", "status": "vetoed", "from": "Me", "to": "Rival", "give": ["A"], "get": ["B"], "ts": 1763851500},
+        {"key": "466.l.1.pt.9", "status": "proposed", "from": "Rival", "to": "Me", "give": ["Deep Bench"],
+         "get": ["Ivica Zubac"], "ts": 1763851900}], got["trades"]
+    assert got["draft"] == {"Ivica Zubac": 1}, got["draft"]
+    # a close spelling keeps its first letter: Dane Goodwin isn't Jordan Goodwin (Nov 23), Jaylen still finds Jalen
+    assert model.match("Dane Goodwin", ["jordan goodwin"]) is None and model.match("Jaylen Brunson", ["jalen brunson"]) == "jalen brunson"  # a pick with no player (not made yet) is left out
+    # this week's matchup (week_of): the real opponent; one picked in the app stays all week with his own score, and a
+    # new week or another team (the dropdown) goes back to the real one
+    pair = lambda a, b, x, y: {"teams": [a, b], "totals": {a: {"PTS": x}, b: {"PTS": y}}, "games": {a: {"played": 1, "left": 2}, b: {"played": 3, "left": 4}}}
+    g = {"teams": {"Me": [], "Rival": [], "C": [], "D": []}, "week": {"week": 2, "start": "2026-11-30", "end": "2026-12-06"},
+         "matchups": [pair("Me", "Rival", 10, 20), pair("C", "D", 30, 40)], "from": "2026-12-01"}
+    sched = [{"week": 2, "start": "2026-11-30", "end": "2026-12-13", "matchups": []}]  # a 14-day week
+    w = yahoo.week_of(g, sched, "Me", {})
+    assert w == {"opponent": "Rival", "week_start": "2026-11-30", "week_end": "2026-12-13", "from": "2026-12-01",
+                 "totals": {"Me": {"PTS": 10}, "Rival": {"PTS": 20}},
+                 "games": {"Me": {"played": 1, "left": 2}, "Rival": {"played": 3, "left": 4}}}, w
+    picked = {"me": "Me", "matchup": {**w, "opponent": "D"}}
+    w = yahoo.week_of(g, sched, "Me", picked)
+    assert w["opponent"] == "D" and w["totals"] == {"Me": {"PTS": 10}, "D": {"PTS": 40}} and w["games"]["D"]["played"] == 3
+    assert yahoo.week_of(g, sched, "C", picked)["opponent"] == "D" and yahoo.week_of(g, [], "Me", picked)["opponent"] == "Rival"
+    # the history reads an API pull's day file (Nov 23: it read text snapshots only, so the record stopped): its week
+    # from the matchup's dates on the season schedule, `from` from the matchup
+    with tempfile.TemporaryDirectory() as d:
+        f = model.Path(d) / "yahoo-2026-12-01.json"
+        f.write_text(model.json.dumps({"pulled": "2026-12-01T09:00", "teams": {}, "schedule": sched,
+                                 "matchup": {**yahoo.week_of(g, sched, "Me", {})}}))
+        s = model.read_snap(f)
+        assert s["week"] == {"week": 2, "start": "2026-11-30", "end": "2026-12-13"} and s["from"] == "2026-12-01" and s["results"] == []
+    # app.live()'s 15-minute pulls rebuild only on news: roster % and rank move all day and aren't news, a slot is
+    moved = lambda **k: {**got, "teams": {**got["teams"], "Me": [{**got["teams"]["Me"][0], **k}]}}
+    assert yahoo.NEWS(moved(owned=60, started=5, started_delta=-80, rank={"pre": 53, "cur": 9})) == yahoo.NEWS(got) != yahoo.NEWS(moved(slot="C"))
+    # Y4: Yahoo-wide roster and start % reach every player row (Waivers, Hot & cold) as they came, nothing more
+    lg, _, _ = league()
+    k = lg.fa[0]
+    lg.meta.setdefault(k, {}).update(owned=40, owned_delta=12, started=30, started_delta=-5)
+    assert {f: lg.player(k).get(f) for f in model.YAHOO_PCT} == {"owned": 40, "owned_delta": 12, "started": 30, "started_delta": -5}
+    assert got["records"]["Rival"]["rank"] == 0  # no rank yet
+    # a player the last snapshot never listed still gets Yahoo's preseason rank: its OR rank, not the season's S
+    assert got["free_agents"][0]["rank"] == {"pre": 140, "cur": 2}, got["free_agents"][0]
+    assert [(p["name"], p.get("waiver"), p["owned"]) for p in got["free_agents"]] == [("Kris Dunn", None, 26),
+                                                                                      ("Sam Hauser", "Nov 25", 12), ("Cut Guy", None, 30)]
+    assert got["free_agents"][-1]["pos"] == "SF,PF"  # Y3: one dropped since the page keeps Yahoo's positions
+    assert got["week"] == {"week": 2, "start": "2026-11-30", "end": "2026-12-13"}
+    m = got["matchups"][0]
+    assert m["totals"]["Me"] == {"FGM": 36.0, "FGA": 91.0, "PTS": 120.0} and m["totals"]["Rival"] == {"FGM": 0.0, "FGA": 0.0, "PTS": 0.0}
+    assert m["games"]["Me"] == {"played": 8, "left": 30}
+    assert [(w["week"], w["start"], w["end"], w["matchups"]) for w in got["schedule"]] == [
+        (1, "2026-11-23", "2026-11-29", [["Me", "Rival"]]), (2, "2026-11-30", "2026-12-13", [["Me", "Rival"]]),
+        (3, "2026-12-14", "2026-12-20", [])]
+    assert yahoo.schedule_ok(got["schedule"], got["teams"])
+    assert [(t["team"], t["type"], t["player"], t.get("dropped")) for t in got["transactions"]] == [
+        ("Rival", "add", "Obi Toppin", "Jordan Goodwin"), ("Me", "waiver claim", "Sam Hauser", None),
+        ("Me", "drop", "Keegan Murray", None),
+        ("Me", "trade", "sent Chet Holmgren + Paul Reed to Rival (received Jayson Tatum)", None),
+        ("Rival", "trade", "sent Jayson Tatum to Me (received Chet Holmgren + Paul Reed)", None)]
+    assert model.re.fullmatch(r"[A-Z][a-z]{2} \d+ \d+:\d\d[ap]m", got["transactions"][0]["when"])  # what _txday reads
+    assert got["projections"] == {"Ivica Zubac": {"PTS": 15.0}}
+    today = model.date.today().isoformat()  # today still counts, its tipped games held (none tipped here)
+    assert got["from"] == today and got["held"] == {"day": today, "teams": []}, (got["from"], got.get("held"))
+    assert set(got) >= set(yahoo.parse_text("")) - {"rules"}  # every key a snapshot file gives, but its settings lines
+
+
+def test_recap():
+    """Q33: recap() and the season record on a synthetic two-week history: week 1 won 6-3 at a 70% call (Yahoo's score
+    listed, the same), week 2 lost 4-5 at 40% against the same team renamed, with an add and box scores; and
+    parse_text() reading the snapshot's final scores."""
+    lg, _, _ = league()
+    tot = lambda **k: {**dict(FGM=100, FGA=200, FTM=40, FTA=50, FG3M=30, PTS=300, REB=150, AST=80, STL=20, BLK=10, TOV=40), **k}
+    me, them = [f"Player {i}" for i in range(150, 200, 4)], [f"Player {i}" for i in range(151, 200, 4)]
+    proj = {"Player 150": {"g": 3, **{c: 10.0 for c in model.RAW}}, "Player 154": {"g": 3, **{c: 10.0 for c in model.RAW}}}
+    row = lambda day, wk, start, end, teams, rosters, win, **k: {
+        "day": day, "file": f"s-{day}.txt", "pulled": day + "T09:30:00-07:00", "from": day, "week": wk, "start": start, "end": end,
+        "me": "Me", "opponent": teams[0], "season": 55.0 + wk, "rank": 2, "playoffs": 80.0 + wk, "title": 10.0 + wk, "adds": 0,
+        "pairs": [{"teams": teams, "win": win, "odds": {c: 60.0 for c in model.CATS}}],
+        "players": proj, "rosters": rosters, "results": [], "moves": [], **k}
+    rows = [row("2026-11-02", 1, "2026-11-02", "2026-11-08", ["Me", "Them"], {"Me": me, "Them": them}, 70.0),
+            {"final": 1, "start": "2026-11-02", "end": "2026-11-08", "file": "s-2026-11-02.txt",
+             "totals": {"Me": tot(), "Them": tot(FGM=90, FTM=35, FG3M=25, PTS=280, REB=160, AST=70, STL=25, BLK=15, TOV=50)}},
+            row("2026-11-09", 2, "2026-11-09", "2026-11-15", ["Rivals", "Me"], {"Me": me, "Rivals": them}, 60.0,
+                results=[{"week": 1, "teams": ["Me", "Rivals"], "score": [6, 3]}],
+                moves=[{"day": "2026-11-10", "late": False, "team": "Me", "type": "add", "player": "Player 120", "dropped": "Player 154"}]),
+            {"final": 2, "start": "2026-11-09", "end": "2026-11-15", "file": "s-2026-11-09.txt",
+             "totals": {"Me": tot(), "Rivals": tot(FGM=110, FTM=45, FG3M=35, PTS=320, REB=140, AST=90, STL=15, BLK=5, TOV=45)}}]
+    box = lambda n, d, pts: {"key": model.norm(n), "GAME_DATE": model.pd.Timestamp(d), **{c: 10.0 for c in model.RAW}, "PTS": pts}
+    lg.logs = model.pd.DataFrame([box("Player 150", d, 20.0) for d in ("2026-11-03", "2026-11-05", "2026-11-07")]
+                                 + [box("Player 154", "2026-11-04", 0.0)]
+                                 + [box("Player 154", "2026-11-09", 10.0), box("Player 154", "2026-11-11", 10.0)]  # after his drop
+                                 + [box("Player 120", d, 15.0) for d in ("2026-11-10", "2026-11-12")])
+    r = lg.recap(1, rows)
+    assert r["text"] == "Called 70%, won 6–3" and r["score"] == [6, 3, 0] and r["yahoo"] and r["checked"]
+    assert r["call"] == {"day": "2026-11-02", "from": "2026-11-02", "win": 70.0, "score": [5.4, 3.6]}
+    assert [x["cat"] for x in r["cats"] if x["result"] == "lost"] == r["upsets"] == ["REB", "STL", "BLK"]  # all called 60%
+    assert next(x for x in r["cats"] if x["cat"] == "FG%")["you"] == 50.0 and r["opponent"] == "Them"
+    # his three 20-point games against 10 called: +10 of the team's 20 PTS, the rest as called; the other one 1 game of 3
+    p150, p154 = r["players"]
+    assert p150["name"] == "Player 150" and p150["games"] == [3, 3.0] and p150["line"]["PTS"] == [60.0, 10.0]
+    assert p150["net"] > 0 > p154["net"] and r["carried"] == ["Player 150"] and r["let_down"] == ["Player 154"]
+    # week 2 (the last one): the same team under its new name, no Yahoo score, the add's games while he was yours
+    w = lg.recap(rows=rows)
+    assert w["week"] == 2 and w["opponent"] == "Rivals" and w["text"] == "Called 40%, lost 4–5" and not w["yahoo"]
+    assert w["adds"] == [{"name": "Player 120", "day": "2026-11-10", "dropped": "Player 154", "until": None, "games": 2,
+                          "line": {"FG3M": 20.0, "PTS": 30.0, "REB": 20.0, "AST": 20.0, "STL": 20.0, "BLK": 20.0, "TOV": 20.0},
+                          "FG%": 100.0, "FT%": 100.0}]
+    assert next(x for x in w["players"] if x["name"] == "Player 154")["games"][0] == 1  # dropped the 10th: his 9th only
+    assert [x["text"] for x in w["weeks"]] == ["Called 70%, won 6–3", "Called 40%, lost 4–5"]
+    # the record: both favourites won (Me at 70%, Rivals at 60%); 18 category calls, each 60% for the first team
+    m, c = w["record"]["matchups"], w["record"]["cats"]
+    assert (m["n"], m["won"], [b["bin"] for b in m["bins"]]) == (2, 2.0, ["60–70%", "70–80%"])
+    assert (c["n"], c["won"], c["expected"]) == (18, 11.0, 10.8)
+    assert [t["playoffs"] for t in w["trend"]] == [81.0, 82.0]
+    for bad in (3, 0):
+        try:
+            lg.recap(bad, rows)
+            assert False, bad
+        except KeyError:
+            pass
+    assert lg.recap(rows=[])["week"] is None
+    # the snapshot's "WEEK N FINAL RESULTS" block (Part 6)
+    txt = ("PART 1 - ALL 12 TEAM ROSTERS\n1. Me  (6-3-0, 1st place)\n2. Them  (3-6-0, 2nd place)\n"
+           "PART 6 - THIS WEEK'S MATCHUPS (week 2, Nov 9 - Nov 15)\nWEEK 1 FINAL RESULTS (Nov 2 - Nov 8, all games complete):\n"
+           "  Me 6 - them 3\n\nMe vs Them\n")
+    assert yahoo.parse_text(txt)["results"] == [{"week": 1, "teams": ["Me", "them"], "score": [6, 3]}]
+
+
+def test_habits():
+    """Y5: model.habits() on two days of lineups and box scores (a team's banked / best lineup starts, shrunk toward
+    the league's, over it; an unset day left out; the league's names by roster), and yahoo.lineups() on canned XML
+    (one call a day for every team, only days not in the file asked again, the add / drop log)."""
+    days = {"2026-11-01": {"Lazy": [["A B", "X", "PG", "BN"], ["C D", "X", "C", "C"], ["G H", "X", "PG", "PG"], ["I J", "X", "SF", "IL"]],
+                           "Sharp": [["E F", "Y", "PG", "PG"], ["K L", "Y", "C", "BN"]]},
+            "2026-11-02": {"Lazy": [["A B", "X", "PG", "BN"], ["C D", "X", "C", "BN"]],  # unset: nobody starts
+                           "Sharp": [["E F", "Y", "PG", "PG"], ["K L", "Y", "C", "C"]]},
+            "2026-11-03": {"Lazy": [["A B", "X", "PG", "PG"]], "Sharp": [["E F", "Y", "PG", "PG"]]}}  # no games: out
+    logs = pd.DataFrame({"GAME_DATE": pd.to_datetime(["2026-11-01"] * 4 + ["2026-11-02"] * 4),
+                         "key": ["a b", "c d", "e f", "i j", "a b", "c d", "e f", "k l"]})
+    slots = ["PG", "C"]
+    h = model.habits(days, logs, slots, k=0)
+    # Lazy, Nov 1: A B played on the bench while G H (who didn't) held PG: 1 banked of 2 (I J is in an IL slot);
+    # Nov 2 unset. Sharp: 1 of 1, then 2 of 2. League 4 of 5
+    assert h["Lazy"] == {"f": 0.5 / 0.8, "eff": 0.5, "league": 0.8, "days": 1} and h["Sharp"]["f"] == 1 / 0.8 and h["Sharp"]["days"] == 2
+    s = model.habits(days, logs, slots, k=5)["Lazy"]["f"]
+    assert abs(s - (1 + 5 * 0.8) / (2 + 5) / 0.8) < 1e-12 and 0.5 / 0.8 < s < 1  # shrunk toward the league
+    assert model.habits(days, logs, slots, until="2026-11-01", k=0)["Sharp"]["days"] == 1  # until: the last day counted
+    assert model.habits(days, logs, slots, {"My lazy": ["a b", "g h"], "Other": ["e f"]}, k=0) == {"My lazy": h["Lazy"], "Other": h["Sharp"]}
+    assert model.habits({}, logs, slots) == {} and model.habits(days, None, slots) == {}
+    # yahoo.lineups() on canned XML
+    from xml.etree import ElementTree
+    import tempfile
+    L = "league/466.l.1"
+    pl = lambda n, slot: (f"<player><name><full>{n}</full></name><editorial_team_abbr>bos</editorial_team_abbr>"
+                          f"<display_position>PG,SG</display_position><selected_position><position>{slot}</position>"
+                          "</selected_position></player>")
+    td = lambda n, typ, **k: f"<player><name><full>{n}</full></name><transaction_data><type>{typ}</type>" + "".join(
+        f"<{a}>{v}</{a}>" for a, v in k.items()) + "</transaction_data></player>"
+    tx = lambda ts, status, ps: f"<transaction><status>{status}</status><timestamp>{ts}</timestamp><players>{ps}</players></transaction>"
+    xml = {"game/nba": "<game><game_key>466</game_key></game>",
+           "league/466.l.1": "<league><league_key>466.l.1</league_key><start_date>2026-11-01</start_date></league>",
+           f"{L}/transactions;types=add,drop;start=0;count=100": "<league><transactions>"
+           + tx(1793000000, "successful", td("Obi Toppin", "add", source_type="waivers", destination_team_name="Me")
+                + td("Al Horford", "drop", source_team_name="Me"))
+           + tx(1792900000, "successful", td("Cut Guy", "drop", source_team_name="Rival"))
+           + tx(1792800000, "failed", td("Nope", "add", destination_team_name="Me")) + "</transactions></league>"}
+    for d in ("2026-11-01", "2026-11-02", "2026-11-03"):
+        xml[f"{L}/teams/roster;date={d}"] = (f"<league><teams><team><name>Me</name><roster><players>{pl('A B', 'PG')}{pl('C D', 'BN')}"
+                                             f"</players></roster></team><team><name>Rival</name><roster><players>{pl('E F', 'IL')}"
+                                             "</players></roster></team></teams></league>")
+    calls = []
+
+    def get(path):
+        calls.append(path)
+        root = ElementTree.fromstring(f"<fantasy_content>{xml[path]}</fantasy_content>")
+        return root
+    old, tmp = yahoo.LINEUPS, tempfile.TemporaryDirectory()
+    yahoo.LINEUPS = model.Path(tmp.name) / "lineups.json"
+    try:
+        c = yahoo.lineups("1", get=get, until=model.date(2026, 11, 2))
+        assert sorted(c["days"]) == ["2026-11-01", "2026-11-02"] and sum("teams/roster" in x for x in calls) == 2
+        assert c["days"]["2026-11-01"] == {"Me": [["A B", "BOS", "PG,SG", "PG"], ["C D", "BOS", "PG,SG", "BN"]],
+                                           "Rival": [["E F", "BOS", "PG,SG", "IL"]]}
+        assert c["moves"] == [{"ts": 1793000000, "add": "Obi Toppin", "drop": "Al Horford", "team": "Me", "waiver": True},
+                              {"ts": 1792900000, "add": None, "drop": "Cut Guy", "team": "Rival", "waiver": False}], c["moves"]
+        calls.clear()
+        c = yahoo.lineups("1", get=get, until=model.date(2026, 11, 3))  # a day later: only the new day
+        assert [x for x in calls if "teams/roster" in x] == [f"{L}/teams/roster;date=2026-11-03"] and len(c["days"]) == 3
+        assert model.json.loads(yahoo.LINEUPS.read_text())["days"] == c["days"]
+    finally:
+        yahoo.LINEUPS = old
+        tmp.cleanup()
+
 
 if __name__ == "__main__":
     test_all()
+    test_habits()
     test_live()
     test_json()
     test_notes()
+    test_yahoo_api()
+    test_recap()
     print("ok")

@@ -4,18 +4,6 @@
  "teams": {
   "Toronto blue jays": [
    {
-    "name": "Bones Hyland",
-    "nba": "MIN",
-    "pos": "PG,SG",
-    "status": "",
-    "slot": "PG",
-    "rank": {
-     "pre": 234,
-     "cur": 187
-    },
-    "owned": 10
-   },
-   {
     "name": "Stephon Castle",
     "nba": "SAS",
     "pos": "PG,SG",
@@ -23,9 +11,12 @@
     "slot": "SG",
     "rank": {
      "pre": 76,
-     "cur": 99
+     "cur": 68
     },
-    "owned": 96
+    "owned": 96,
+    "owned_delta": 0,
+    "started": 73,
+    "started_delta": -17
    },
    {
     "name": "De'Aaron Fox",
@@ -35,9 +26,12 @@
     "slot": "G",
     "rank": {
      "pre": 82,
-     "cur": 104
+     "cur": 103
     },
-    "owned": 91
+    "owned": 90,
+    "owned_delta": -1,
+    "started": 53,
+    "started_delta": -11
    },
    {
     "name": "Ausar Thompson",
@@ -47,21 +41,27 @@
     "slot": "SF",
     "rank": {
      "pre": 92,
-     "cur": 64
+     "cur": 49
     },
-    "owned": 94
+    "owned": 94,
+    "owned_delta": 1,
+    "started": 85,
+    "started_delta": 38
    },
    {
-    "name": "Sam Hauser",
-    "nba": "BOS",
+    "name": "Zaccharie Risacher",
+    "nba": "DAL",
     "pos": "SF,PF",
     "status": "",
     "slot": "PF",
     "rank": {
-     "pre": 215,
-     "cur": 150
+     "pre": 203,
+     "cur": 160
     },
-    "owned": 17
+    "owned": 22,
+    "owned_delta": 5,
+    "started": 21,
+    "started_delta": 15
    },
    {
     "name": "Jaden McDaniels",
@@ -71,45 +71,42 @@
     "slot": "F",
     "rank": {
      "pre": 51,
-     "cur": 30
+     "cur": 23
     },
-    "owned": 93
+    "owned": 93,
+    "owned_delta": 0,
+    "started": 70,
+    "started_delta": -14
    },
    {
-    "name": "Ivica Zubac",
-    "nba": "IND",
+    "name": "Moussa Diabaté",
+    "nba": "CHA",
     "pos": "C",
     "status": "",
     "slot": "C",
     "rank": {
-     "pre": 65,
-     "cur": 155
+     "pre": 110,
+     "cur": 57
     },
-    "owned": 92
-   },
-   {
-    "name": "Bam Adebayo",
-    "nba": "MIA",
-    "pos": "PF,C",
-    "status": "",
-    "slot": "C",
-    "rank": {
-     "pre": 38,
-     "cur": 20
-    },
-    "owned": 100
+    "owned": 65,
+    "owned_delta": 4,
+    "started": 49,
+    "started_delta": -8
    },
    {
     "name": "Aaron Gordon",
     "nba": "DEN",
     "pos": "PF,C",
     "status": "",
-    "slot": "Util",
+    "slot": "C",
     "rank": {
      "pre": 154,
-     "cur": 199
+     "cur": 197
     },
-    "owned": 66
+    "owned": 70,
+    "owned_delta": 5,
+    "started": 63,
+    "started_delta": 31
    },
    {
     "name": "Ayo Dosunmu",
@@ -119,21 +116,41 @@
     "slot": "Util",
     "rank": {
      "pre": 69,
-     "cur": 46
+     "cur": 44
     },
-    "owned": 86
+    "owned": 86,
+    "owned_delta": 0,
+    "started": 54,
+    "started_delta": -16
    },
    {
-    "name": "Moussa Diabaté",
-    "nba": "CHA",
-    "pos": "C",
+    "name": "Amen Thompson",
+    "nba": "HOU",
+    "pos": "PG,SG",
     "status": "",
+    "slot": "Util",
+    "rank": {
+     "pre": 30,
+     "cur": 84
+    },
+    "owned": 99,
+    "owned_delta": 0,
+    "started": 79,
+    "started_delta": -13
+   },
+   {
+    "name": "Giannis Antetokounmpo",
+    "nba": "MIA",
+    "pos": "PF,C",
+    "status": "GTD",
     "slot": "BN",
     "rank": {
-     "pre": 110,
-     "cur": 75
+     "pre": 5,
+     "cur": 16
     },
-    "owned": 61
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 53
    },
    {
     "name": "Tari Eason",
@@ -143,33 +160,42 @@
     "slot": "BN",
     "rank": {
      "pre": 121,
-     "cur": 117
+     "cur": 114
     },
-    "owned": 37
+    "owned": 36,
+    "owned_delta": -2,
+    "started": 25,
+    "started_delta": -7
    },
    {
-    "name": "Amen Thompson",
-    "nba": "HOU",
-    "pos": "PG,SG",
+    "name": "Ivica Zubac",
+    "nba": "IND",
+    "pos": "C",
     "status": "",
     "slot": "BN",
     "rank": {
-     "pre": 30,
-     "cur": 81
+     "pre": 65,
+     "cur": 156
     },
-    "owned": 99
+    "owned": 92,
+    "owned_delta": 0,
+    "started": 75,
+    "started_delta": -9
    },
    {
-    "name": "Giannis Antetokounmpo",
+    "name": "Bam Adebayo",
     "nba": "MIA",
     "pos": "PF,C",
-    "status": "O",
-    "slot": "IL",
+    "status": "",
+    "slot": "BN",
     "rank": {
-     "pre": 5,
-     "cur": 16
+     "pre": 38,
+     "cur": 14
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 57,
+    "started_delta": -2
    },
    {
     "name": "Kawhi Leonard",
@@ -179,21 +205,19 @@
     "slot": "IL",
     "rank": {
      "pre": 52,
-     "cur": 9
+     "cur": 8
     },
-    "owned": 99
+    "owned": 99,
+    "owned_delta": 0,
+    "started": 22,
+    "started_delta": -1
    },
    {
     "name": "Jimmy Butler III",
     "nba": "GSW",
     "pos": "SF,PF",
     "status": "O",
-    "slot": "IL",
-    "rank": {
-     "pre": 161,
-     "cur": 125
-    },
-    "owned": 48
+    "slot": "IL"
    }
   ],
   "Shanghai Sharks": [
@@ -205,21 +229,27 @@
     "slot": "PG",
     "rank": {
      "pre": 86,
-     "cur": 86
+     "cur": 112
     },
-    "owned": 88
+    "owned": 87,
+    "owned_delta": 0,
+    "started": 64,
+    "started_delta": -13
    },
    {
-    "name": "Jaime Jaquez Jr.",
-    "nba": "MIL",
-    "pos": "SG,SF,PF",
+    "name": "James Harden",
+    "nba": "CLE",
+    "pos": "PG,SG",
     "status": "",
     "slot": "SG",
     "rank": {
-     "pre": 120,
-     "cur": 179
+     "pre": 46,
+     "cur": 46
     },
-    "owned": 69
+    "owned": 99,
+    "owned_delta": 0,
+    "started": 79,
+    "started_delta": -13
    },
    {
     "name": "Immanuel Quickley",
@@ -229,9 +259,12 @@
     "slot": "G",
     "rank": {
      "pre": 93,
-     "cur": 63
+     "cur": 85
     },
-    "owned": 88
+    "owned": 88,
+    "owned_delta": 0,
+    "started": 60,
+    "started_delta": -13
    },
    {
     "name": "Jayson Tatum",
@@ -241,9 +274,12 @@
     "slot": "SF",
     "rank": {
      "pre": 7,
-     "cur": 18
+     "cur": 19
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 97,
+    "started_delta": 37
    },
    {
     "name": "Jalen Johnson",
@@ -253,21 +289,41 @@
     "slot": "PF",
     "rank": {
      "pre": 16,
-     "cur": 48
+     "cur": 59
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 57
    },
    {
-    "name": "Dyson Daniels",
-    "nba": "ATL",
+    "name": "Buddy Hield",
+    "nba": "CHI",
     "pos": "SG,SF",
     "status": "",
     "slot": "F",
     "rank": {
-     "pre": 48,
-     "cur": 24
+     "pre": 284,
+     "cur": 179
     },
-    "owned": 95
+    "owned": 23,
+    "owned_delta": 20,
+    "started": 16,
+    "started_delta": -4
+   },
+   {
+    "name": "Zach Edey",
+    "nba": "MEM",
+    "pos": "C",
+    "status": "",
+    "slot": "C",
+    "rank": {
+     "pre": 85,
+     "cur": 123
+    },
+    "owned": 81,
+    "owned_delta": -2,
+    "started": 60,
+    "started_delta": -8
    },
    {
     "name": "Alex Sarr",
@@ -277,21 +333,12 @@
     "slot": "C",
     "rank": {
      "pre": 59,
-     "cur": 88
+     "cur": 89
     },
-    "owned": 92
-   },
-   {
-    "name": "Daniel Gafford",
-    "nba": "DAL",
-    "pos": "C",
-    "status": "",
-    "slot": "C",
-    "rank": {
-     "pre": 149,
-     "cur": 108
-    },
-    "owned": 47
+    "owned": 92,
+    "owned_delta": 0,
+    "started": 84,
+    "started_delta": 31
    },
    {
     "name": "Derik Queen",
@@ -301,57 +348,70 @@
     "slot": "Util",
     "rank": {
      "pre": 113,
-     "cur": 142
+     "cur": 169
     },
-    "owned": 83
-   },
-   {
-    "name": "Onyeka Okongwu",
-    "nba": "ATL",
-    "pos": "C",
-    "status": "",
-    "slot": "Util",
-    "rank": {
-     "pre": 47,
-     "cur": 43
-    },
-    "owned": 97
+    "owned": 83,
+    "owned_delta": 0,
+    "started": 65,
+    "started_delta": -10
    },
    {
     "name": "Tyrese Maxey",
     "nba": "PHI",
     "pos": "PG",
     "status": "",
-    "slot": "BN",
+    "slot": "Util",
     "rank": {
      "pre": 6,
-     "cur": 8
+     "cur": 9
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 84,
+    "started_delta": -11
    },
    {
-    "name": "Zach Edey",
-    "nba": "MEM",
+    "name": "Jaime Jaquez Jr.",
+    "nba": "MIL",
+    "pos": "SG,SF,PF",
+    "status": "",
+    "slot": "BN",
+    "rank": {
+     "pre": 120,
+     "cur": 199
+    },
+    "owned": 65,
+    "owned_delta": -6,
+    "started": 46,
+    "started_delta": -11
+   },
+   {
+    "name": "Dyson Daniels",
+    "nba": "ATL",
+    "pos": "SG,SF",
+    "status": "",
+    "slot": "BN",
+    "rank": {
+     "pre": 48,
+     "cur": 22
+    },
+    "owned": 95,
+    "owned_delta": 0,
+    "started": 49
+   },
+   {
+    "name": "Onyeka Okongwu",
+    "nba": "ATL",
     "pos": "C",
     "status": "",
     "slot": "BN",
     "rank": {
-     "pre": 85,
-     "cur": 136
+     "pre": 47,
+     "cur": 64
     },
-    "owned": 82
-   },
-   {
-    "name": "James Harden",
-    "nba": "CLE",
-    "pos": "PG,SG",
-    "status": "",
-    "slot": "BN",
-    "rank": {
-     "pre": 46,
-     "cur": 44
-    },
-    "owned": 99
+    "owned": 97,
+    "owned_delta": 0,
+    "started": 58
    },
    {
     "name": "Dejounte Murray",
@@ -361,9 +421,12 @@
     "slot": "IL",
     "rank": {
      "pre": 77,
-     "cur": 71
+     "cur": 75
     },
-    "owned": 89
+    "owned": 88,
+    "owned_delta": -1,
+    "started": 30,
+    "started_delta": -2
    }
   ],
   "Langangsters": [
@@ -371,37 +434,46 @@
     "name": "Cade Cunningham",
     "nba": "DET",
     "pos": "PG,SG",
-    "status": "",
+    "status": "O",
     "slot": "PG",
     "rank": {
      "pre": 9,
-     "cur": 11
+     "cur": 17
     },
-    "owned": 100
-   },
-   {
-    "name": "Naji Marshall",
-    "nba": "DAL",
-    "pos": "SG,SF,PF",
-    "status": "",
-    "slot": "SG",
-    "rank": {
-     "pre": 155,
-     "cur": 222
-    },
-    "owned": 30
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 95,
+    "started_delta": 41
    },
    {
     "name": "Daniss Jenkins",
     "nba": "DET",
     "pos": "PG,SG",
     "status": "",
-    "slot": "G",
+    "slot": "SG",
     "rank": {
      "pre": 107,
-     "cur": 87
+     "cur": 88
     },
-    "owned": 66
+    "owned": 64,
+    "owned_delta": -1,
+    "started": 61,
+    "started_delta": 43
+   },
+   {
+    "name": "Jaylen Brown",
+    "nba": "PHI",
+    "pos": "SG,SF,PF",
+    "status": "",
+    "slot": "G",
+    "rank": {
+     "pre": 36,
+     "cur": 72
+    },
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 71,
+    "started_delta": -14
    },
    {
     "name": "Zach LaVine",
@@ -411,9 +483,12 @@
     "slot": "SF",
     "rank": {
      "pre": 104,
-     "cur": 65
+     "cur": 70
     },
-    "owned": 87
+    "owned": 87,
+    "owned_delta": 0,
+    "started": 61,
+    "started_delta": -14
    },
    {
     "name": "Taylor Hendricks",
@@ -422,10 +497,13 @@
     "status": "",
     "slot": "PF",
     "rank": {
-     "pre": 312,
-     "cur": 225
+     "pre": 314,
+     "cur": 251
     },
-    "owned": 9
+    "owned": 8,
+    "owned_delta": -3,
+    "started": 6,
+    "started_delta": -2
    },
    {
     "name": "Quentin Grimes",
@@ -435,9 +513,12 @@
     "slot": "F",
     "rank": {
      "pre": 144,
-     "cur": 162
+     "cur": 176
     },
-    "owned": 49
+    "owned": 48,
+    "owned_delta": -3,
+    "started": 35,
+    "started_delta": -11
    },
    {
     "name": "Brook Lopez",
@@ -447,9 +528,12 @@
     "slot": "C",
     "rank": {
      "pre": 142,
-     "cur": 91
+     "cur": 98
     },
-    "owned": 52
+    "owned": 52,
+    "owned_delta": -1,
+    "started": 41,
+    "started_delta": -10
    },
    {
     "name": "Neemias Queta",
@@ -461,19 +545,10 @@
      "pre": 127,
      "cur": 201
     },
-    "owned": 68
-   },
-   {
-    "name": "Day'Ron Sharpe",
-    "nba": "BKN",
-    "pos": "C",
-    "status": "",
-    "slot": "Util",
-    "rank": {
-     "pre": 119,
-     "cur": 109
-    },
-    "owned": 82
+    "owned": 67,
+    "owned_delta": 1,
+    "started": 56,
+    "started_delta": 26
    },
    {
     "name": "Tyrese Proctor",
@@ -483,21 +558,27 @@
     "slot": "Util",
     "rank": {
      "pre": 344,
-     "cur": 171
+     "cur": 189
     },
-    "owned": 18
+    "owned": 12,
+    "owned_delta": -9,
+    "started": 9,
+    "started_delta": -3
    },
    {
-    "name": "Tyler Herro",
-    "nba": "MIL",
-    "pos": "PG,SG",
+    "name": "Trey Murphy III",
+    "nba": "NOP",
+    "pos": "SG,SF",
     "status": "",
-    "slot": "BN",
+    "slot": "Util",
     "rank": {
-     "pre": 57,
-     "cur": 72
+     "pre": 26,
+     "cur": 67
     },
-    "owned": 96
+    "owned": 96,
+    "owned_delta": 0,
+    "started": 66,
+    "started_delta": -12
    },
    {
     "name": "Cam Spencer",
@@ -507,33 +588,42 @@
     "slot": "BN",
     "rank": {
      "pre": 220,
-     "cur": 76
+     "cur": 61
     },
-    "owned": 45
+    "owned": 46,
+    "owned_delta": -1,
+    "started": 32,
+    "started_delta": -9
    },
    {
-    "name": "Jaylen Brown",
-    "nba": "PHI",
-    "pos": "SG,SF,PF",
+    "name": "Day'Ron Sharpe",
+    "nba": "BKN",
+    "pos": "C",
     "status": "",
     "slot": "BN",
     "rank": {
-     "pre": 36,
-     "cur": 67
+     "pre": 119,
+     "cur": 99
     },
-    "owned": 100
+    "owned": 83,
+    "owned_delta": 1,
+    "started": 65,
+    "started_delta": -8
    },
    {
-    "name": "Trey Murphy III",
-    "nba": "NOP",
-    "pos": "SG,SF",
+    "name": "Tyler Herro",
+    "nba": "MIL",
+    "pos": "PG,SG",
     "status": "",
-    "slot": "IL",
+    "slot": "BN",
     "rank": {
-     "pre": 26,
-     "cur": 56
+     "pre": 57,
+     "cur": 50
     },
-    "owned": 96
+    "owned": 96,
+    "owned_delta": 0,
+    "started": 73,
+    "started_delta": -14
    },
    {
     "name": "Duncan Robinson",
@@ -543,9 +633,12 @@
     "slot": "IL",
     "rank": {
      "pre": 194,
-     "cur": 47
+     "cur": 48
     },
-    "owned": 47
+    "owned": 46,
+    "owned_delta": -2,
+    "started": 14,
+    "started_delta": 8
    },
    {
     "name": "Lauri Markkanen",
@@ -555,47 +648,59 @@
     "slot": "IL",
     "rank": {
      "pre": 60,
-     "cur": 58
+     "cur": 56
     },
-    "owned": 96
+    "owned": 96,
+    "owned_delta": 0,
+    "started": 34,
+    "started_delta": -1
    }
   ],
   "Wesburn incident": [
    {
-    "name": "S. Gilgeous-Alexander",
+    "name": "Shai Gilgeous-Alexander",
     "nba": "OKC",
     "pos": "PG",
-    "status": "O",
+    "status": "",
     "slot": "PG",
     "rank": {
      "pre": 4,
-     "cur": 17
+     "cur": 15
     },
-    "owned": 100
-   },
-   {
-    "name": "Andrew Wiggins",
-    "nba": "MIA",
-    "pos": "SG,SF,PF",
-    "status": "",
-    "slot": "SG",
-    "rank": {
-     "pre": 126,
-     "cur": 198
-    },
-    "owned": 60
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 84,
+    "started_delta": -10
    },
    {
     "name": "Desmond Bane",
     "nba": "ORL",
     "pos": "SG,SF",
     "status": "",
-    "slot": "G",
+    "slot": "SG",
     "rank": {
      "pre": 56,
-     "cur": 39
+     "cur": 40
     },
-    "owned": 97
+    "owned": 97,
+    "owned_delta": 0,
+    "started": 90,
+    "started_delta": 37
+   },
+   {
+    "name": "Darius Garland",
+    "nba": "LAC",
+    "pos": "PG",
+    "status": "",
+    "slot": "G",
+    "rank": {
+     "pre": 54,
+     "cur": 113
+    },
+    "owned": 96,
+    "owned_delta": 0,
+    "started": 72,
+    "started_delta": -15
    },
    {
     "name": "Rui Hachimura",
@@ -605,9 +710,12 @@
     "slot": "SF",
     "rank": {
      "pre": 140,
-     "cur": 191
+     "cur": 165
     },
-    "owned": 60
+    "owned": 61,
+    "owned_delta": 0,
+    "started": 41,
+    "started_delta": -10
    },
    {
     "name": "DeMar DeRozan",
@@ -617,9 +725,12 @@
     "slot": "PF",
     "rank": {
      "pre": 162,
-     "cur": 277
+     "cur": 319
     },
-    "owned": 32
+    "owned": 30,
+    "owned_delta": 0,
+    "started": 25,
+    "started_delta": 13
    },
    {
     "name": "Scottie Barnes",
@@ -629,9 +740,12 @@
     "slot": "F",
     "rank": {
      "pre": 12,
-     "cur": 60
+     "cur": 36
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 79,
+    "started_delta": -14
    },
    {
     "name": "Jarrett Allen",
@@ -641,9 +755,12 @@
     "slot": "C",
     "rank": {
      "pre": 83,
-     "cur": 62
+     "cur": 71
     },
-    "owned": 92
+    "owned": 92,
+    "owned_delta": 0,
+    "started": 73,
+    "started_delta": -9
    },
    {
     "name": "Jakob Poeltl",
@@ -653,9 +770,12 @@
     "slot": "C",
     "rank": {
      "pre": 146,
-     "cur": 149
+     "cur": 141
     },
-    "owned": 43
+    "owned": 45,
+    "owned_delta": 2,
+    "started": 31,
+    "started_delta": -4
    },
    {
     "name": "Deni Avdija",
@@ -665,9 +785,12 @@
     "slot": "Util",
     "rank": {
      "pre": 34,
-     "cur": 74
+     "cur": 76
     },
-    "owned": 99
+    "owned": 99,
+    "owned_delta": 0,
+    "started": 76,
+    "started_delta": -16
    },
    {
     "name": "Cason Wallace",
@@ -677,21 +800,12 @@
     "slot": "Util",
     "rank": {
      "pre": 261,
-     "cur": 167
+     "cur": 162
     },
-    "owned": 19
-   },
-   {
-    "name": "Darius Garland",
-    "nba": "LAC",
-    "pos": "PG",
-    "status": "",
-    "slot": "BN",
-    "rank": {
-     "pre": 54,
-     "cur": 130
-    },
-    "owned": 96
+    "owned": 19,
+    "owned_delta": 0,
+    "started": 3,
+    "started_delta": -1
    },
    {
     "name": "Reed Sheppard",
@@ -701,9 +815,12 @@
     "slot": "BN",
     "rank": {
      "pre": 141,
-     "cur": 181
+     "cur": 173
     },
-    "owned": 18
+    "owned": 17,
+    "owned_delta": -1,
+    "started": 10,
+    "started_delta": -2
    },
    {
     "name": "Julius Randle",
@@ -713,9 +830,26 @@
     "slot": "BN",
     "rank": {
      "pre": 64,
-     "cur": 114
+     "cur": 105
     },
-    "owned": 95
+    "owned": 95,
+    "owned_delta": 0,
+    "started": 78,
+    "started_delta": -9
+   },
+   {
+    "name": "Andrew Wiggins",
+    "nba": "MIA",
+    "pos": "SG,SF,PF",
+    "status": "",
+    "slot": "BN",
+    "rank": {
+     "pre": 126,
+     "cur": 192
+    },
+    "owned": 57,
+    "owned_delta": -2,
+    "started": 26
    }
   ],
   "fatty zhou": [
@@ -727,45 +861,57 @@
     "slot": "PG",
     "rank": {
      "pre": 105,
-     "cur": 202
+     "cur": 223
     },
-    "owned": 75
+    "owned": 73,
+    "owned_delta": -1,
+    "started": 52,
+    "started_delta": 31
    },
    {
-    "name": "Pelle Larsson",
-    "nba": "MIA",
-    "pos": "SG,SF",
+    "name": "Anthony Black",
+    "nba": "ORL",
+    "pos": "PG,SG,SF",
     "status": "",
     "slot": "SG",
     "rank": {
-     "pre": 138,
-     "cur": 131
+     "pre": 99,
+     "cur": 73
     },
-    "owned": 21
+    "owned": 84,
+    "owned_delta": 1,
+    "started": 78,
+    "started_delta": 47
    },
    {
-    "name": "Kevin Huerter",
-    "nba": "DET",
+    "name": "Bilal Coulibaly",
+    "nba": "WAS",
     "pos": "SG,SF",
     "status": "",
     "slot": "G",
     "rank": {
-     "pre": 216,
-     "cur": 140
+     "pre": 233,
+     "cur": 159
     },
-    "owned": 28
+    "owned": 10,
+    "owned_delta": 3,
+    "started": 10,
+    "started_delta": 8
    },
    {
     "name": "Paul George",
     "nba": "BOS",
     "pos": "SF,PF",
-    "status": "O",
+    "status": "",
     "slot": "SF",
     "rank": {
      "pre": 50,
      "cur": 21
     },
-    "owned": 95
+    "owned": 95,
+    "owned_delta": 0,
+    "started": 85,
+    "started_delta": 37
    },
    {
     "name": "John Collins",
@@ -775,21 +921,27 @@
     "slot": "PF",
     "rank": {
      "pre": 124,
-     "cur": 143
+     "cur": 127
     },
-    "owned": 70
+    "owned": 71,
+    "owned_delta": 1,
+    "started": 63,
+    "started_delta": 27
    },
    {
-    "name": "Anthony Black",
-    "nba": "ORL",
-    "pos": "PG,SG,SF",
+    "name": "Brandon Ingram",
+    "nba": "LAC",
+    "pos": "SG,SF,PF",
     "status": "",
     "slot": "F",
     "rank": {
-     "pre": 99,
-     "cur": 70
+     "pre": 114,
+     "cur": 312
     },
-    "owned": 84
+    "owned": 88,
+    "owned_delta": 1,
+    "started": 42,
+    "started_delta": -13
    },
    {
     "name": "Nikola Jokić",
@@ -799,9 +951,12 @@
     "slot": "C",
     "rank": {
      "pre": 3,
-     "cur": 3
+     "cur": 2
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 97,
+    "started_delta": 34
    },
    {
     "name": "Walker Kessler",
@@ -813,7 +968,10 @@
      "pre": 21,
      "cur": 29
     },
-    "owned": 99
+    "owned": 99,
+    "owned_delta": 0,
+    "started": 85,
+    "started_delta": -9
    },
    {
     "name": "Brandin Podziemski",
@@ -823,9 +981,11 @@
     "slot": "Util",
     "rank": {
      "pre": 80,
-     "cur": 84
+     "cur": 90
     },
-    "owned": 82
+    "owned": 81,
+    "owned_delta": -1,
+    "started": 28
    },
    {
     "name": "LaMelo Ball",
@@ -835,9 +995,27 @@
     "slot": "Util",
     "rank": {
      "pre": 24,
-     "cur": 95
+     "cur": 81
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 81,
+    "started_delta": -13
+   },
+   {
+    "name": "Devin Booker",
+    "nba": "PHX",
+    "pos": "PG,SG",
+    "status": "",
+    "slot": "BN",
+    "rank": {
+     "pre": 20,
+     "cur": 25
+    },
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 81,
+    "started_delta": -12
    },
    {
     "name": "Damian Lillard",
@@ -847,9 +1025,12 @@
     "slot": "BN",
     "rank": {
      "pre": 41,
-     "cur": 100
+     "cur": 94
     },
-    "owned": 96
+    "owned": 96,
+    "owned_delta": 0,
+    "started": 71,
+    "started_delta": -15
    },
    {
     "name": "VJ Edgecombe",
@@ -861,19 +1042,10 @@
      "pre": 89,
      "cur": 37
     },
-    "owned": 91
-   },
-   {
-    "name": "Devin Booker",
-    "nba": "PHX",
-    "pos": "PG,SG",
-    "status": "",
-    "slot": "BN",
-    "rank": {
-     "pre": 20,
-     "cur": 26
-    },
-    "owned": 100
+    "owned": 91,
+    "owned_delta": 0,
+    "started": 68,
+    "started_delta": -13
    },
    {
     "name": "Cameron Boozer",
@@ -883,71 +1055,73 @@
     "slot": "IL",
     "rank": {
      "pre": 35,
-     "cur": 42
+     "cur": 43
     },
-    "owned": 98
-   },
-   {
-    "name": "Brandon Ingram",
-    "nba": "LAC",
-    "pos": "SG,SF,PF",
-    "status": "",
-    "slot": "IL",
-    "rank": {
-     "pre": 114,
-     "cur": 107
-    },
-    "owned": 87
+    "owned": 97,
+    "owned_delta": -1,
+    "started": 43,
+    "started_delta": -7
    }
   ],
   "Mathmagicians": [
-   {
-    "name": "Pat Spencer",
-    "nba": "PHX",
-    "pos": "PG,SG",
-    "status": "",
-    "slot": "PG",
-    "rank": {
-     "pre": 347,
-     "cur": 386
-    },
-    "owned": 0
-   },
-   {
-    "name": "Alex Caruso",
-    "nba": "OKC",
-    "pos": "SG,SF",
-    "status": "O",
-    "slot": "SG",
-    "rank": {
-     "pre": 214,
-     "cur": 123
-    },
-    "owned": 21
-   },
    {
     "name": "Jared McCain",
     "nba": "OKC",
     "pos": "PG,SG",
     "status": "",
-    "slot": "G",
+    "slot": "PG",
     "rank": {
      "pre": 133,
-     "cur": 172
+     "cur": 190
     },
-    "owned": 53
+    "owned": 53,
+    "owned_delta": 2,
+    "started": 41,
+    "started_delta": -8
+   },
+   {
+    "name": "Miles McBride",
+    "nba": "NYK",
+    "pos": "PG,SG",
+    "status": "GTD",
+    "slot": "SG",
+    "rank": {
+     "pre": 213,
+     "cur": 244
+    },
+    "owned": 4,
+    "owned_delta": -1,
+    "started": 1
    },
    {
     "name": "Josh Hart",
     "nba": "NYK",
     "pos": "SG,SF",
+    "status": "GTD",
+    "slot": "G",
+    "rank": {
+     "pre": 102,
+     "cur": 148
+    },
+    "owned": 79,
+    "owned_delta": 1,
+    "started": 31,
+    "started_delta": -1
+   },
+   {
+    "name": "Julian Champagnie",
+    "nba": "SAS",
+    "pos": "SF,PF",
     "status": "",
     "slot": "SF",
     "rank": {
-     "pre": 102,
-     "cur": 165
+     "pre": 177,
+     "cur": 97
     },
-    "owned": 79
+    "owned": 34,
+    "owned_delta": -1,
+    "started": 24,
+    "started_delta": -7
    },
    {
     "name": "Mikal Bridges",
@@ -957,21 +1131,27 @@
     "slot": "PF",
     "rank": {
      "pre": 112,
-     "cur": 192
+     "cur": 209
     },
-    "owned": 78
+    "owned": 75,
+    "owned_delta": -3,
+    "started": 36,
+    "started_delta": -1
    },
    {
-    "name": "Julian Champagnie",
-    "nba": "SAS",
+    "name": "Tristan da Silva",
+    "nba": "ORL",
     "pos": "SF,PF",
     "status": "",
     "slot": "F",
     "rank": {
-     "pre": 177,
-     "cur": 110
+     "pre": 150,
+     "cur": 145
     },
-    "owned": 33
+    "owned": 23,
+    "owned_delta": 3,
+    "started": 22,
+    "started_delta": 16
    },
    {
     "name": "Pascal Siakam",
@@ -981,95 +1161,119 @@
     "slot": "C",
     "rank": {
      "pre": 39,
-     "cur": 73
+     "cur": 69
     },
-    "owned": 98
+    "owned": 98,
+    "owned_delta": 0,
+    "started": 84,
+    "started_delta": -10
    },
    {
-    "name": "Karl-Anthony Towns",
-    "nba": "NYK",
-    "pos": "PF,C",
+    "name": "Mo Bamba",
+    "nba": "UTA",
+    "pos": "C",
     "status": "",
     "slot": "C",
     "rank": {
-     "pre": 13,
-     "cur": 13
+     "pre": 372,
+     "cur": 101
     },
-    "owned": 100
-   },
-   {
-    "name": "Jalen Brunson",
-    "nba": "NYK",
-    "pos": "PG",
-    "status": "",
-    "slot": "Util",
-    "rank": {
-     "pre": 22,
-     "cur": 41
-    },
-    "owned": 100
-   },
-   {
-    "name": "Miles McBride",
-    "nba": "NYK",
-    "pos": "PG,SG",
-    "status": "O",
-    "slot": "Util",
-    "rank": {
-     "pre": 213,
-     "cur": 247
-    },
-    "owned": 5
+    "owned": 28,
+    "owned_delta": -4,
+    "started": 23,
+    "started_delta": -6
    },
    {
     "name": "Collin Gillespie",
     "nba": "PHX",
     "pos": "PG,SG",
     "status": "",
-    "slot": "BN",
+    "slot": "Util",
     "rank": {
      "pre": 163,
-     "cur": 141
+     "cur": 138
     },
-    "owned": 42
-   },
-   {
-    "name": "Precious Achiuwa",
-    "nba": "SAC",
-    "pos": "PF,C",
-    "status": "",
-    "slot": "BN",
-    "rank": {
-     "pre": 229,
-     "cur": 184
-    },
-    "owned": 14
+    "owned": 43,
+    "owned_delta": 0,
+    "started": 27,
+    "started_delta": -6
    },
    {
     "name": "Ryan Rollins",
     "nba": "MIL",
     "pos": "PG,SG",
     "status": "",
-    "slot": "BN",
+    "slot": "Util",
     "rank": {
      "pre": 106,
-     "cur": 226
+     "cur": 229
     },
-    "owned": 79
+    "owned": 77,
+    "owned_delta": -3,
+    "started": 51,
+    "started_delta": -11
+   },
+   {
+    "name": "Karl-Anthony Towns",
+    "nba": "NYK",
+    "pos": "PF,C",
+    "status": "GTD",
+    "slot": "BN",
+    "rank": {
+     "pre": 13,
+     "cur": 11
+    },
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 57,
+    "started_delta": -1
+   },
+   {
+    "name": "Jalen Brunson",
+    "nba": "NYK",
+    "pos": "PG",
+    "status": "",
+    "slot": "BN",
+    "rank": {
+     "pre": 22,
+     "cur": 47
+    },
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 52,
+    "started_delta": 1
+   },
+   {
+    "name": "Matisse Thybulle",
+    "nba": "LAL",
+    "pos": "SG,SF",
+    "status": "",
+    "slot": "BN",
+    "rank": {
+     "pre": 281,
+     "cur": 60
+    },
+    "owned": 30,
+    "owned_delta": 3,
+    "started": 22,
+    "started_delta": -6
    }
   ],
   "Mumbai Meteors": [
    {
-    "name": "Andrew Nembhard",
-    "nba": "IND",
-    "pos": "PG,SG",
+    "name": "Jamal Murray",
+    "nba": "DEN",
+    "pos": "PG",
     "status": "",
     "slot": "PG",
     "rank": {
-     "pre": 70,
-     "cur": 102
+     "pre": 14,
+     "cur": 5
     },
-    "owned": 77
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 95,
+    "started_delta": 38
    },
    {
     "name": "Jeremiah Fears",
@@ -1079,9 +1283,12 @@
     "slot": "SG",
     "rank": {
      "pre": 88,
-     "cur": 126
+     "cur": 130
     },
-    "owned": 82
+    "owned": 83,
+    "owned_delta": 1,
+    "started": 61,
+    "started_delta": -15
    },
    {
     "name": "Fred VanVleet",
@@ -1091,9 +1298,12 @@
     "slot": "G",
     "rank": {
      "pre": 97,
-     "cur": 57
+     "cur": 65
     },
-    "owned": 73
+    "owned": 74,
+    "owned_delta": 1,
+    "started": 52,
+    "started_delta": -11
    },
    {
     "name": "Ace Bailey",
@@ -1103,9 +1313,12 @@
     "slot": "SF",
     "rank": {
      "pre": 132,
-     "cur": 115
+     "cur": 110
     },
-    "owned": 71
+    "owned": 71,
+    "owned_delta": 0,
+    "started": 54,
+    "started_delta": -13
    },
    {
     "name": "Domantas Sabonis",
@@ -1115,9 +1328,12 @@
     "slot": "PF",
     "rank": {
      "pre": 37,
-     "cur": 49
+     "cur": 51
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 86,
+    "started_delta": -10
    },
    {
     "name": "Michael Porter Jr.",
@@ -1127,9 +1343,12 @@
     "slot": "F",
     "rank": {
      "pre": 43,
-     "cur": 55
+     "cur": 79
     },
-    "owned": 96
+    "owned": 96,
+    "owned_delta": 0,
+    "started": 75,
+    "started_delta": -13
    },
    {
     "name": "Isaiah Hartenstein",
@@ -1139,9 +1358,12 @@
     "slot": "C",
     "rank": {
      "pre": 125,
-     "cur": 83
+     "cur": 93
     },
-    "owned": 85
+    "owned": 85,
+    "owned_delta": 0,
+    "started": 68,
+    "started_delta": -9
    },
    {
     "name": "Jabari Smith Jr.",
@@ -1151,21 +1373,12 @@
     "slot": "C",
     "rank": {
      "pre": 81,
-     "cur": 40
+     "cur": 39
     },
-    "owned": 88
-   },
-   {
-    "name": "Jamal Murray",
-    "nba": "DEN",
-    "pos": "PG",
-    "status": "",
-    "slot": "Util",
-    "rank": {
-     "pre": 14,
-     "cur": 6
-    },
-    "owned": 100
+    "owned": 88,
+    "owned_delta": 0,
+    "started": 70,
+    "started_delta": -10
    },
    {
     "name": "Kelly Oubre Jr.",
@@ -1175,21 +1388,42 @@
     "slot": "Util",
     "rank": {
      "pre": 195,
-     "cur": 160
+     "cur": 147
     },
-    "owned": 35
+    "owned": 36,
+    "owned_delta": 5,
+    "started": 28,
+    "started_delta": -6
    },
    {
     "name": "Miles Bridges",
     "nba": "PHX",
     "pos": "PF",
     "status": "",
-    "slot": "BN",
+    "slot": "Util",
     "rank": {
      "pre": 98,
-     "cur": 28
+     "cur": 34
     },
-    "owned": 88
+    "owned": 89,
+    "owned_delta": 1,
+    "started": 67,
+    "started_delta": -9
+   },
+   {
+    "name": "Andrew Nembhard",
+    "nba": "IND",
+    "pos": "PG,SG",
+    "status": "",
+    "slot": "BN",
+    "rank": {
+     "pre": 70,
+     "cur": 128
+    },
+    "owned": 77,
+    "owned_delta": 1,
+    "started": 51,
+    "started_delta": -10
    },
    {
     "name": "Anfernee Simons",
@@ -1199,9 +1433,12 @@
     "slot": "BN",
     "rank": {
      "pre": 205,
-     "cur": 197
+     "cur": 205
     },
-    "owned": 11
+    "owned": 11,
+    "owned_delta": 0,
+    "started": 8,
+    "started_delta": -2
    },
    {
     "name": "Alperen Şengün",
@@ -1211,9 +1448,12 @@
     "slot": "BN",
     "rank": {
      "pre": 18,
-     "cur": 15
+     "cur": 20
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 84,
+    "started_delta": -12
    },
    {
     "name": "Kon Knueppel",
@@ -1223,9 +1463,12 @@
     "slot": "IL",
     "rank": {
      "pre": 91,
-     "cur": 470
+     "cur": 476
     },
-    "owned": 90
+    "owned": 90,
+    "owned_delta": 0,
+    "started": 14,
+    "started_delta": -1
    },
    {
     "name": "Tyrese Haliburton",
@@ -1235,23 +1478,29 @@
     "slot": "IL",
     "rank": {
      "pre": 15,
-     "cur": 5
+     "cur": 6
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 31,
+    "started_delta": -1
    }
   ],
   "kobe colorado": [
    {
-    "name": "Davion Mitchell",
-    "nba": "MIA",
-    "pos": "PG",
+    "name": "Coby White",
+    "nba": "CHA",
+    "pos": "PG,SG",
     "status": "",
     "slot": "PG",
     "rank": {
-     "pre": 68,
-     "cur": 22
+     "pre": 103,
+     "cur": 289
     },
-    "owned": 88
+    "owned": 79,
+    "owned_delta": 1,
+    "started": 47,
+    "started_delta": -11
    },
    {
     "name": "Cooper Flagg",
@@ -1263,7 +1512,10 @@
      "pre": 8,
      "cur": 10
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 97,
+    "started_delta": 41
    },
    {
     "name": "Donovan Mitchell",
@@ -1273,9 +1525,12 @@
     "slot": "G",
     "rank": {
      "pre": 10,
-     "cur": 31
+     "cur": 30
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 81,
+    "started_delta": -12
    },
    {
     "name": "Brandon Miller",
@@ -1285,45 +1540,42 @@
     "slot": "SF",
     "rank": {
      "pre": 25,
-     "cur": 138
+     "cur": 122
     },
-    "owned": 98
+    "owned": 98,
+    "owned_delta": 0,
+    "started": 75,
+    "started_delta": -12
    },
    {
-    "name": "Jonathan Kuminga",
-    "nba": "MIN",
-    "pos": "SF,PF",
+    "name": "Collin Murray-Boyles",
+    "nba": "TOR",
+    "pos": "PF,C",
     "status": "",
     "slot": "PF",
     "rank": {
-     "pre": 174,
-     "cur": 137
+     "pre": 111,
+     "cur": 154
     },
-    "owned": 69
-   },
-   {
-    "name": "Terrence Shannon Jr.",
-    "nba": "MIN",
-    "pos": "SG,SF",
-    "status": "",
-    "slot": "F",
-    "rank": {
-     "pre": 153,
-     "cur": 219
-    },
-    "owned": 20
+    "owned": 66,
+    "owned_delta": -1,
+    "started": 43,
+    "started_delta": -8
    },
    {
     "name": "Jalen Smith",
     "nba": "CHI",
     "pos": "PF,C",
-    "status": "",
-    "slot": "C",
+    "status": "GTD",
+    "slot": "F",
     "rank": {
      "pre": 117,
-     "cur": 36
+     "cur": 28
     },
-    "owned": 65
+    "owned": 69,
+    "owned_delta": 4,
+    "started": 53,
+    "started_delta": -11
    },
    {
     "name": "Naz Reid",
@@ -1333,9 +1585,27 @@
     "slot": "C",
     "rank": {
      "pre": 62,
-     "cur": 158
+     "cur": 168
     },
-    "owned": 94
+    "owned": 94,
+    "owned_delta": 0,
+    "started": 73,
+    "started_delta": -11
+   },
+   {
+    "name": "Kel'el Ware",
+    "nba": "MIL",
+    "pos": "C",
+    "status": "",
+    "slot": "C",
+    "rank": {
+     "pre": 84,
+     "cur": 177
+    },
+    "owned": 77,
+    "owned_delta": -2,
+    "started": 59,
+    "started_delta": -7
    },
    {
     "name": "Jamal Shead",
@@ -1345,45 +1615,72 @@
     "slot": "Util",
     "rank": {
      "pre": 135,
-     "cur": 235
+     "cur": 219
     },
-    "owned": 14
+    "owned": 12,
+    "owned_delta": -3,
+    "started": 9,
+    "started_delta": -1
+   },
+   {
+    "name": "Nic Claxton",
+    "nba": "CHI",
+    "pos": "C",
+    "status": "",
+    "slot": "Util",
+    "rank": {
+     "pre": 129,
+     "cur": 142
+    },
+    "owned": 62,
+    "owned_delta": -4,
+    "started": 36,
+    "started_delta": -5
+   },
+   {
+    "name": "Terrence Shannon Jr.",
+    "nba": "MIN",
+    "pos": "SG,SF",
+    "status": "",
+    "slot": "BN",
+    "rank": {
+     "pre": 153,
+     "cur": 208
+    },
+    "owned": 20,
+    "owned_delta": -1,
+    "started": 13,
+    "started_delta": -5
    },
    {
     "name": "Nickeil Alexander-Walker",
     "nba": "ATL",
     "pos": "PG,SG",
     "status": "",
-    "slot": "Util",
+    "slot": "BN",
     "rank": {
      "pre": 40,
-     "cur": 45
+     "cur": 42
     },
-    "owned": 96
+    "owned": 95,
+    "owned_delta": 0,
+    "started": 46,
+    "started_delta": 1
    },
    {
-    "name": "Coby White",
-    "nba": "CHA",
-    "pos": "PG,SG",
-    "status": "",
+    "name": "Norman Powell",
+    "nba": "CHI",
+    "pos": "SG,SF",
+    "status": "O",
     "slot": "BN",
     "rank": {
-     "pre": 103,
-     "cur": 302
+     "pre": 109,
+     "cur": 125
     },
-    "owned": 78
-   },
-   {
-    "name": "Kel'el Ware",
-    "nba": "MIL",
-    "pos": "C",
-    "status": "",
-    "slot": "BN",
-    "rank": {
-     "pre": 84,
-     "cur": 180
-    },
-    "owned": 77
+    "owned": 85,
+    "owned_delta": -3,
+    "started": 38,
+    "started_delta": -4
    },
    {
     "name": "Dylan Harper",
@@ -1395,7 +1692,10 @@
      "pre": 71,
      "cur": 52
     },
-    "owned": 92
+    "owned": 92,
+    "owned_delta": 0,
+    "started": 29,
+    "started_delta": -4
    },
    {
     "name": "CJ McCollum",
@@ -1405,9 +1705,11 @@
     "slot": "IL",
     "rank": {
      "pre": 115,
-     "cur": 112
+     "cur": 107
     },
-    "owned": 68
+    "owned": 66,
+    "owned_delta": -2,
+    "started": 12
    },
    {
     "name": "Evan Mobley",
@@ -1417,23 +1719,29 @@
     "slot": "IL",
     "rank": {
      "pre": 27,
-     "cur": 53
+     "cur": 54
     },
-    "owned": 99
+    "owned": 98,
+    "owned_delta": -1,
+    "started": 36,
+    "started_delta": -2
    }
   ],
   "John Ball": [
    {
-    "name": "Keyonte George",
-    "nba": "UTA",
-    "pos": "PG,SG",
+    "name": "Payton Pritchard",
+    "nba": "BOS",
+    "pos": "PG",
     "status": "",
     "slot": "PG",
     "rank": {
-     "pre": 33,
-     "cur": 111
+     "pre": 74,
+     "cur": 144
     },
-    "owned": 98
+    "owned": 85,
+    "owned_delta": -1,
+    "started": 74,
+    "started_delta": 36
    },
    {
     "name": "Josh Giddey",
@@ -1443,57 +1751,72 @@
     "slot": "SG",
     "rank": {
      "pre": 63,
-     "cur": 214
+     "cur": 182
     },
-    "owned": 98
+    "owned": 98,
+    "owned_delta": 0,
+    "started": 81,
+    "started_delta": -13
    },
    {
-    "name": "Payton Pritchard",
-    "nba": "BOS",
+    "name": "Darius Acuff Jr.",
+    "nba": "SAC",
     "pos": "PG",
     "status": "",
     "slot": "G",
     "rank": {
-     "pre": 74,
-     "cur": 152
+     "pre": 67,
+     "cur": 106
     },
-    "owned": 86
+    "owned": 94,
+    "owned_delta": 0,
+    "started": 72,
+    "started_delta": -14
    },
    {
-    "name": "Norman Powell",
-    "nba": "CHI",
-    "pos": "SG,SF",
-    "status": "O",
-    "slot": "SF",
-    "rank": {
-     "pre": 109,
-     "cur": 124
-    },
-    "owned": 87
-   },
-   {
-    "name": "Matas Buzelis",
-    "nba": "CHI",
+    "name": "Saddiq Bey",
+    "nba": "NOP",
     "pos": "SF,PF",
     "status": "",
-    "slot": "PF",
+    "slot": "SF",
     "rank": {
-     "pre": 87,
-     "cur": 134
+     "pre": 123,
+     "cur": 86
     },
-    "owned": 90
+    "owned": 67,
+    "owned_delta": -2,
+    "started": 50,
+    "started_delta": -12
    },
    {
-    "name": "Anthony Davis",
-    "nba": "WAS",
+    "name": "P.J. Washington",
+    "nba": "DAL",
     "pos": "PF,C",
+    "status": "GTD",
+    "slot": "PF",
+    "rank": {
+     "pre": 160,
+     "cur": 116
+    },
+    "owned": 63,
+    "owned_delta": -4,
+    "started": 49,
+    "started_delta": 27
+   },
+   {
+    "name": "Cedric Coward",
+    "nba": "MEM",
+    "pos": "SG,SF",
     "status": "",
     "slot": "F",
     "rank": {
-     "pre": 23,
-     "cur": 14
+     "pre": 66,
+     "cur": 26
     },
-    "owned": 100
+    "owned": 93,
+    "owned_delta": 1,
+    "started": 70,
+    "started_delta": -13
    },
    {
     "name": "Wendell Carter Jr.",
@@ -1503,21 +1826,27 @@
     "slot": "C",
     "rank": {
      "pre": 94,
-     "cur": 66
+     "cur": 63
     },
-    "owned": 76
+    "owned": 76,
+    "owned_delta": 0,
+    "started": 68,
+    "started_delta": 34
    },
    {
-    "name": "Nic Claxton",
-    "nba": "CHI",
-    "pos": "C",
-    "status": "O",
+    "name": "Anthony Davis",
+    "nba": "WAS",
+    "pos": "PF,C",
+    "status": "",
     "slot": "C",
     "rank": {
-     "pre": 129,
-     "cur": 146
+     "pre": 23,
+     "cur": 12
     },
-    "owned": 65
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 96,
+    "started_delta": 36
    },
    {
     "name": "Kyshawn George",
@@ -1527,81 +1856,94 @@
     "slot": "Util",
     "rank": {
      "pre": 95,
-     "cur": 68
+     "cur": 66
     },
-    "owned": 86
+    "owned": 86,
+    "owned_delta": 0,
+    "started": 77,
+    "started_delta": 42
    },
    {
-    "name": "Saddiq Bey",
-    "nba": "NOP",
+    "name": "De'Andre Hunter",
+    "nba": "SAC",
     "pos": "SF,PF",
     "status": "",
     "slot": "Util",
     "rank": {
-     "pre": 123,
-     "cur": 85
+     "pre": 227,
+     "cur": 155
     },
-    "owned": 67
+    "owned": 36,
+    "owned_delta": 12,
+    "started": 24,
+    "started_delta": -7
    },
    {
-    "name": "Darius Acuff Jr.",
-    "nba": "SAC",
+    "name": "Keyonte George",
+    "nba": "UTA",
+    "pos": "PG,SG",
+    "status": "",
+    "slot": "BN",
+    "rank": {
+     "pre": 33,
+     "cur": 111
+    },
+    "owned": 98,
+    "owned_delta": 0,
+    "started": 79,
+    "started_delta": -14
+   },
+   {
+    "name": "Matas Buzelis",
+    "nba": "CHI",
+    "pos": "SF,PF",
+    "status": "",
+    "slot": "BN",
+    "rank": {
+     "pre": 87,
+     "cur": 124
+    },
+    "owned": 90,
+    "owned_delta": 0,
+    "started": 73,
+    "started_delta": -11
+   },
+   {
+    "name": "Davion Mitchell",
+    "nba": "MIA",
     "pos": "PG",
     "status": "",
     "slot": "BN",
     "rank": {
-     "pre": 67,
-     "cur": 101
+     "pre": 68,
+     "cur": 33
     },
-    "owned": 94
-   },
-   {
-    "name": "Cedric Coward",
-    "nba": "MEM",
-    "pos": "SG,SF",
-    "status": "",
-    "slot": "BN",
-    "rank": {
-     "pre": 66,
-     "cur": 27
-    },
-    "owned": 92
+    "owned": 89,
+    "owned_delta": 1,
+    "started": 32,
+    "started_delta": 1
    },
    {
     "name": "Victor Wembanyama",
     "nba": "SAS",
     "pos": "C",
-    "status": "",
-    "slot": "BN",
+    "status": "GTD",
+    "slot": "IL",
     "rank": {
      "pre": 1,
      "cur": 1
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 80,
+    "started_delta": -8
    },
    {
     "name": "Jusuf Nurkić",
     "nba": "UTA",
     "pos": "C",
     "status": "O",
-    "slot": "IL",
-    "rank": {
-     "pre": 172,
-     "cur": 520
-    },
-    "owned": 41
-   },
-   {
-    "name": "P.J. Washington",
-    "nba": "DAL",
-    "pos": "PF,C",
-    "status": "O",
-    "slot": "IL",
-    "rank": {
-     "pre": 160,
-     "cur": 116
-    },
-    "owned": 66
+    "slot": "IL"
    }
   ],
   "Umbrella Corp": [
@@ -1613,9 +1955,12 @@
     "slot": "PG",
     "rank": {
      "pre": 29,
-     "cur": 19
+     "cur": 18
     },
-    "owned": 99
+    "owned": 99,
+    "owned_delta": 0,
+    "started": 91,
+    "started_delta": 39
    },
    {
     "name": "Derrick White",
@@ -1625,9 +1970,12 @@
     "slot": "SG",
     "rank": {
      "pre": 44,
-     "cur": 82
+     "cur": 92
     },
-    "owned": 96
+    "owned": 96,
+    "owned_delta": 0,
+    "started": 87,
+    "started_delta": 38
    },
    {
     "name": "Aaron Wiggins",
@@ -1637,33 +1985,41 @@
     "slot": "G",
     "rank": {
      "pre": 200,
-     "cur": 118
+     "cur": 131
     },
-    "owned": 40
+    "owned": 35,
+    "owned_delta": -4,
+    "started": 12
+   },
+   {
+    "name": "Dillon Brooks",
+    "nba": "PHX",
+    "pos": "SF,PF",
+    "status": "",
+    "slot": "SF",
+    "rank": {
+     "pre": 173,
+     "cur": 215
+    },
+    "owned": 47,
+    "owned_delta": 2,
+    "started": 33,
+    "started_delta": -8
    },
    {
     "name": "Christian Braun",
     "nba": "DEN",
     "pos": "SG,SF,PF",
     "status": "",
-    "slot": "SF",
+    "slot": "PF",
     "rank": {
      "pre": 122,
      "cur": 35
     },
-    "owned": 69
-   },
-   {
-    "name": "Yaxel Lendeborg",
-    "nba": "GSW",
-    "pos": "SF,PF",
-    "status": "",
-    "slot": "PF",
-    "rank": {
-     "pre": 49,
-     "cur": 77
-    },
-    "owned": 95
+    "owned": 73,
+    "owned_delta": 8,
+    "started": 69,
+    "started_delta": 42
    },
    {
     "name": "Kevin Durant",
@@ -1673,9 +2029,12 @@
     "slot": "F",
     "rank": {
      "pre": 11,
-     "cur": 51
+     "cur": 45
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 83,
+    "started_delta": -12
    },
    {
     "name": "Rudy Gobert",
@@ -1685,9 +2044,12 @@
     "slot": "C",
     "rank": {
      "pre": 90,
-     "cur": 306
+     "cur": 285
     },
-    "owned": 88
+    "owned": 89,
+    "owned_delta": 0,
+    "started": 68,
+    "started_delta": -11
    },
    {
     "name": "Myles Turner",
@@ -1697,9 +2059,12 @@
     "slot": "C",
     "rank": {
      "pre": 131,
-     "cur": 105
+     "cur": 78
     },
-    "owned": 68
+    "owned": 69,
+    "owned_delta": 1,
+    "started": 50,
+    "started_delta": -7
    },
    {
     "name": "AJ Dybantsa",
@@ -1709,9 +2074,12 @@
     "slot": "Util",
     "rank": {
      "pre": 108,
-     "cur": 173
+     "cur": 181
     },
-    "owned": 90
+    "owned": 91,
+    "owned_delta": 1,
+    "started": 80,
+    "started_delta": 38
    },
    {
     "name": "Caleb Wilson",
@@ -1721,21 +2089,12 @@
     "slot": "Util",
     "rank": {
      "pre": 72,
-     "cur": 89
+     "cur": 82
     },
-    "owned": 89
-   },
-   {
-    "name": "Dillon Brooks",
-    "nba": "PHX",
-    "pos": "SF,PF",
-    "status": "",
-    "slot": "BN",
-    "rank": {
-     "pre": 173,
-     "cur": 232
-    },
-    "owned": 45
+    "owned": 89,
+    "owned_delta": 0,
+    "started": 21,
+    "started_delta": -1
    },
    {
     "name": "Jalen Green",
@@ -1745,21 +2104,42 @@
     "slot": "BN",
     "rank": {
      "pre": 134,
-     "cur": 253
+     "cur": 239
     },
-    "owned": 68
+    "owned": 69,
+    "owned_delta": 1,
+    "started": 48,
+    "started_delta": -9
    },
    {
-    "name": "Collin Murray-Boyles",
-    "nba": "TOR",
-    "pos": "PF,C",
+    "name": "Jonathan Kuminga",
+    "nba": "MIN",
+    "pos": "SF,PF",
     "status": "",
     "slot": "BN",
     "rank": {
-     "pre": 111,
-     "cur": 147
+     "pre": 174,
+     "cur": 143
     },
-    "owned": 66
+    "owned": 69,
+    "owned_delta": 0,
+    "started": 47,
+    "started_delta": -14
+   },
+   {
+    "name": "Yaxel Lendeborg",
+    "nba": "GSW",
+    "pos": "SF,PF",
+    "status": "GTD",
+    "slot": "BN",
+    "rank": {
+     "pre": 49,
+     "cur": 96
+    },
+    "owned": 95,
+    "owned_delta": 0,
+    "started": 43,
+    "started_delta": -1
    },
    {
     "name": "Anthony Edwards",
@@ -1771,7 +2151,9 @@
      "pre": 79,
      "cur": 7
     },
-    "owned": 99
+    "owned": 99,
+    "owned_delta": 0,
+    "started": 19
    },
    {
     "name": "Paolo Banchero",
@@ -1781,9 +2163,12 @@
     "slot": "IL",
     "rank": {
      "pre": 73,
-     "cur": 50
+     "cur": 55
     },
-    "owned": 97
+    "owned": 97,
+    "owned_delta": 0,
+    "started": 15,
+    "started_delta": 3
    }
   ],
   "Birds that I hate": [
@@ -1795,9 +2180,12 @@
     "slot": "PG",
     "rank": {
      "pre": 42,
-     "cur": 90
+     "cur": 83
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 95,
+    "started_delta": 37
    },
    {
     "name": "Tre Jones",
@@ -1807,21 +2195,27 @@
     "slot": "SG",
     "rank": {
      "pre": 151,
-     "cur": 164
+     "cur": 170
     },
-    "owned": 33
+    "owned": 34,
+    "owned_delta": 6,
+    "started": 25,
+    "started_delta": -5
    },
    {
-    "name": "Stephen Curry",
-    "nba": "GSW",
-    "pos": "PG",
-    "status": "O",
+    "name": "Devin Vassell",
+    "nba": "SAS",
+    "pos": "SG,SF",
+    "status": "",
     "slot": "G",
     "rank": {
-     "pre": 19,
-     "cur": 4
+     "pre": 179,
+     "cur": 77
     },
-    "owned": 100
+    "owned": 53,
+    "owned_delta": -1,
+    "started": 38,
+    "started_delta": -10
    },
    {
     "name": "Cameron Johnson",
@@ -1831,9 +2225,12 @@
     "slot": "SF",
     "rank": {
      "pre": 167,
-     "cur": 163
+     "cur": 133
     },
-    "owned": 32
+    "owned": 39,
+    "owned_delta": 10,
+    "started": 36,
+    "started_delta": 25
    },
    {
     "name": "Zion Williamson",
@@ -1843,9 +2240,12 @@
     "slot": "PF",
     "rank": {
      "pre": 53,
-     "cur": 32
+     "cur": 38
     },
-    "owned": 95
+    "owned": 95,
+    "owned_delta": 0,
+    "started": 76,
+    "started_delta": -11
    },
    {
     "name": "OG Anunoby",
@@ -1855,9 +2255,12 @@
     "slot": "F",
     "rank": {
      "pre": 58,
-     "cur": 79
+     "cur": 80
     },
-    "owned": 94
+    "owned": 94,
+    "owned_delta": 0,
+    "started": 39,
+    "started_delta": -2
    },
    {
     "name": "Noah Clowney",
@@ -1867,9 +2270,11 @@
     "slot": "C",
     "rank": {
      "pre": 258,
-     "cur": 261
+     "cur": 246
     },
-    "owned": 3
+    "owned": 3,
+    "owned_delta": 0,
+    "started": 2
    },
    {
     "name": "Paul Reed",
@@ -1879,9 +2284,12 @@
     "slot": "C",
     "rank": {
      "pre": 118,
-     "cur": 98
+     "cur": 91
     },
-    "owned": 58
+    "owned": 60,
+    "owned_delta": 3,
+    "started": 58,
+    "started_delta": 35
    },
    {
     "name": "Draymond Green",
@@ -1891,9 +2299,11 @@
     "slot": "Util",
     "rank": {
      "pre": 181,
-     "cur": 209
+     "cur": 195
     },
-    "owned": 30
+    "owned": 28,
+    "owned_delta": -1,
+    "started": 12
    },
    {
     "name": "Khaman Maluach",
@@ -1903,9 +2313,12 @@
     "slot": "Util",
     "rank": {
      "pre": 148,
-     "cur": 189
+     "cur": 200
     },
-    "owned": 35
+    "owned": 35,
+    "owned_delta": -1,
+    "started": 21,
+    "started_delta": -2
    },
    {
     "name": "Jrue Holiday",
@@ -1915,21 +2328,12 @@
     "slot": "BN",
     "rank": {
      "pre": 137,
-     "cur": 69
+     "cur": 74
     },
-    "owned": 68
-   },
-   {
-    "name": "Devin Vassell",
-    "nba": "SAS",
-    "pos": "SG,SF",
-    "status": "",
-    "slot": "BN",
-    "rank": {
-     "pre": 179,
-     "cur": 80
-    },
-    "owned": 52
+    "owned": 71,
+    "owned_delta": 3,
+    "started": 48,
+    "started_delta": -14
    },
    {
     "name": "Toumani Camara",
@@ -1939,9 +2343,26 @@
     "slot": "BN",
     "rank": {
      "pre": 128,
-     "cur": 122
+     "cur": 119
     },
-    "owned": 66
+    "owned": 65,
+    "owned_delta": -3,
+    "started": 40,
+    "started_delta": -11
+   },
+   {
+    "name": "Stephen Curry",
+    "nba": "GSW",
+    "pos": "PG",
+    "status": "O",
+    "slot": "BN",
+    "rank": {
+     "pre": 19,
+     "cur": 4
+    },
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 28
    },
    {
     "name": "Chet Holmgren",
@@ -1951,9 +2372,12 @@
     "slot": "IL",
     "rank": {
      "pre": 101,
-     "cur": 12
+     "cur": 13
     },
-    "owned": 98
+    "owned": 98,
+    "owned_delta": 0,
+    "started": 24,
+    "started_delta": -1
    },
    {
     "name": "Ja Morant",
@@ -1963,9 +2387,11 @@
     "slot": "IL",
     "rank": {
      "pre": 78,
-     "cur": 61
+     "cur": 62
     },
-    "owned": 85
+    "owned": 85,
+    "owned_delta": 0,
+    "started": 13
    },
    {
     "name": "Jalen Duren",
@@ -1975,9 +2401,12 @@
     "slot": "IL",
     "rank": {
      "pre": 32,
-     "cur": 38
+     "cur": 41
     },
-    "owned": 97
+    "owned": 97,
+    "owned_delta": -1,
+    "started": 28,
+    "started_delta": 5
    }
   ],
   "Kerala blasters": [
@@ -1989,45 +2418,57 @@
     "slot": "PG",
     "rank": {
      "pre": 2,
-     "cur": 2
+     "cur": 3
     },
-    "owned": 100
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 82,
+    "started_delta": -14
    },
    {
-    "name": "Landry Shamet",
-    "nba": "NYK",
+    "name": "Isaiah Joe",
+    "nba": "DET",
     "pos": "SG,SF",
     "status": "",
     "slot": "SG",
     "rank": {
-     "pre": 308,
-     "cur": 182
+     "pre": 270,
+     "cur": 238
     },
-    "owned": 15
+    "owned": 14,
+    "owned_delta": 11,
+    "started": 14,
+    "started_delta": 13
    },
    {
-    "name": "RJ Barrett",
-    "nba": "TOR",
-    "pos": "SG,SF,PF",
-    "status": "O",
+    "name": "Ty Jerome",
+    "nba": "MEM",
+    "pos": "PG,SG",
+    "status": "",
     "slot": "G",
     "rank": {
-     "pre": 130,
-     "cur": 177
+     "pre": 28,
+     "cur": 32
     },
-    "owned": 86
+    "owned": 94,
+    "owned_delta": 1,
+    "started": 60,
+    "started_delta": -15
    },
    {
-    "name": "Austin Reaves",
-    "nba": "LAL",
-    "pos": "PG,SG,SF",
-    "status": "O",
+    "name": "LeBron James",
+    "nba": "PHI",
+    "pos": "SF,PF",
+    "status": "",
     "slot": "SF",
     "rank": {
-     "pre": 17,
-     "cur": 23
+     "pre": 55,
+     "cur": 53
     },
-    "owned": 100
+    "owned": 99,
+    "owned_delta": 0,
+    "started": 80,
+    "started_delta": -12
    },
    {
     "name": "Franz Wagner",
@@ -2037,45 +2478,57 @@
     "slot": "PF",
     "rank": {
      "pre": 31,
-     "cur": 33
+     "cur": 31
     },
-    "owned": 99
+    "owned": 99,
+    "owned_delta": 0,
+    "started": 93,
+    "started_delta": 37
    },
    {
-    "name": "Klay Thompson",
-    "nba": "MIA",
-    "pos": "SG,SF",
-    "status": "",
+    "name": "RJ Barrett",
+    "nba": "TOR",
+    "pos": "SG,SF,PF",
+    "status": "O",
     "slot": "F",
     "rank": {
-     "pre": 217,
-     "cur": 94
+     "pre": 130,
+     "cur": 187
     },
-    "owned": 47
+    "owned": 85,
+    "owned_delta": -2,
+    "started": 22,
+    "started_delta": -4
    },
    {
     "name": "Joel Embiid",
     "nba": "PHI",
     "pos": "C",
-    "status": "",
+    "status": "DTD",
     "slot": "C",
     "rank": {
      "pre": 61,
-     "cur": 59
+     "cur": 58
     },
-    "owned": 98
+    "owned": 98,
+    "owned_delta": 0,
+    "started": 70,
+    "started_delta": -9
    },
    {
-    "name": "Aday Mara",
-    "nba": "OKC",
+    "name": "Donovan Clingan",
+    "nba": "POR",
     "pos": "C",
-    "status": "O",
+    "status": "",
     "slot": "C",
     "rank": {
-     "pre": 188,
-     "cur": 128
+     "pre": 45,
+     "cur": 27
     },
-    "owned": 58
+    "owned": 98,
+    "owned_delta": 0,
+    "started": 82,
+    "started_delta": -10
    },
    {
     "name": "Ajay Mitchell",
@@ -2085,9 +2538,12 @@
     "slot": "Util",
     "rank": {
      "pre": 75,
-     "cur": 92
+     "cur": 104
     },
-    "owned": 84
+    "owned": 83,
+    "owned_delta": -1,
+    "started": 62,
+    "started_delta": -13
    },
    {
     "name": "Obi Toppin",
@@ -2097,45 +2553,56 @@
     "slot": "Util",
     "rank": {
      "pre": 238,
-     "cur": 207
+     "cur": 221
     },
-    "owned": 10
+    "owned": 10,
+    "owned_delta": 1,
+    "started": 7,
+    "started_delta": -2
    },
    {
-    "name": "LeBron James",
-    "nba": "PHI",
-    "pos": "SF,PF",
+    "name": "Klay Thompson",
+    "nba": "MIA",
+    "pos": "SG,SF",
     "status": "",
     "slot": "BN",
     "rank": {
-     "pre": 55,
-     "cur": 54
+     "pre": 217,
+     "cur": 87
     },
-    "owned": 99
+    "owned": 46,
+    "owned_delta": 0,
+    "started": 15
    },
    {
-    "name": "Ty Jerome",
-    "nba": "MEM",
-    "pos": "PG,SG",
-    "status": "",
-    "slot": "BN",
-    "rank": {
-     "pre": 28,
-     "cur": 34
-    },
-    "owned": 93
-   },
-   {
-    "name": "Donovan Clingan",
-    "nba": "POR",
+    "name": "Aday Mara",
+    "nba": "OKC",
     "pos": "C",
-    "status": "",
+    "status": "O",
     "slot": "BN",
     "rank": {
-     "pre": 45,
-     "cur": 25
+     "pre": 188,
+     "cur": 137
     },
-    "owned": 98
+    "owned": 56,
+    "owned_delta": 1,
+    "started": 28,
+    "started_delta": -3
+   },
+   {
+    "name": "Austin Reaves",
+    "nba": "LAL",
+    "pos": "PG,SG,SF",
+    "status": "O",
+    "slot": "BN",
+    "rank": {
+     "pre": 17,
+     "cur": 24
+    },
+    "owned": 100,
+    "owned_delta": 0,
+    "started": 40,
+    "started_delta": -4
    },
    {
     "name": "Jaren Jackson Jr.",
@@ -2145,24 +2612,28 @@
     "slot": "IL",
     "rank": {
      "pre": 100,
-     "cur": 186
+     "cur": 198
     },
-    "owned": 91
+    "owned": 91,
+    "owned_delta": 0,
+    "started": 24,
+    "started_delta": -1
    }
   ]
  },
- "text": "/Users/martin/Code/nba-fantasy-trader/snapshots/mchc-fantasy-snapshot-2026-11-23.txt",
+ "source": "yahoo",
  "free_agents": [
   {
-   "name": "Kris Dunn",
-   "nba": "LAC",
-   "pos": "PG,SG",
-   "status": "",
+   "name": "Justin Champagnie",
+   "nba": "WAS",
+   "pos": "SF,PF",
+   "status": "O",
    "rank": {
-    "pre": 96,
-    "cur": 97
+    "pre": 269,
+    "cur": 95
    },
-   "owned": 26
+   "owned": 2,
+   "owned_delta": 0
   },
   {
    "name": "Grayson Allen",
@@ -2171,108 +2642,157 @@
    "status": "O",
    "rank": {
     "pre": 116,
-    "cur": 103
+    "cur": 100
    },
-   "owned": 36
+   "owned": 35,
+   "owned_delta": -2,
+   "started": 9,
+   "started_delta": -2
   },
   {
-   "name": "Yves Missi",
-   "nba": "NOP",
-   "pos": "C",
-   "status": "",
-   "rank": {
-    "pre": 143,
-    "cur": 125
-   },
-   "owned": 48
-  },
-  {
-   "name": "Ja'Kobe Walter",
-   "nba": "TOR",
+   "name": "Kris Dunn",
+   "nba": "LAC",
    "pos": "PG,SG",
    "status": "",
    "rank": {
-    "pre": 147,
-    "cur": 132
+    "pre": 96,
+    "cur": 102
    },
-   "owned": 26
+   "owned": 24,
+   "owned_delta": -4,
+   "started": 15,
+   "started_delta": -4
   },
   {
-   "name": "Tristan da Silva",
-   "nba": "ORL",
-   "pos": "SF,PF",
+   "name": "Jordan Goodwin",
+   "nba": "PHX",
+   "pos": "PG,SG",
    "status": "",
    "rank": {
-    "pre": 150,
-    "cur": 139
+    "pre": 266,
+    "cur": 108
    },
-   "owned": 21
+   "owned": 6,
+   "owned_delta": 1,
+   "started": 4,
+   "started_delta": -1,
+   "waiver": "Nov 25"
   },
   {
-   "name": "Sandro Mamukelashvili",
-   "nba": "LAL",
-   "pos": "PF,C",
-   "status": "",
-   "rank": {
-    "pre": 145,
-    "cur": 169
-   },
-   "owned": 32
-  },
-  {
-   "name": "Isaiah Jackson",
-   "nba": "LAC",
+   "name": "Daniel Gafford",
+   "nba": "DAL",
    "pos": "C",
    "status": "",
    "rank": {
-    "pre": 164,
-    "cur": 157
+    "pre": 149,
+    "cur": 109
    },
-   "owned": 10
+   "owned": 47,
+   "owned_delta": 2,
+   "started": 43,
+   "started_delta": 23,
+   "waiver": "Nov 26"
   },
   {
-   "name": "Derrick Jones Jr.",
-   "nba": "LAC",
+   "name": "Jalen Williams",
+   "nba": "OKC",
    "pos": "SF,PF",
+   "status": "O",
+   "rank": {
+    "pre": 283,
+    "cur": 115
+   },
+   "owned": 44,
+   "owned_delta": -1,
+   "started": 17
+  },
+  {
+   "name": "Pelle Larsson",
+   "nba": "MIA",
+   "pos": "SG,SF",
    "status": "",
    "rank": {
-    "pre": 183,
-    "cur": 156
+    "pre": 138,
+    "cur": 117
    },
-   "owned": 18
+   "owned": 22,
+   "owned_delta": 2,
+   "started": 7,
+   "started_delta": 1,
+   "waiver": "Nov 26"
   },
   {
-   "name": "Brayden Burries",
-   "nba": "MIL",
+   "name": "Meleek Thomas",
+   "nba": "CLE",
    "pos": "SG",
    "status": "",
    "rank": {
-    "pre": 136,
-    "cur": 205
+    "pre": 403,
+    "cur": 118
    },
-   "owned": 30
+   "owned": 14,
+   "owned_delta": -2,
+   "started": 11,
+   "started_delta": -2
   },
   {
-   "name": "Peyton Watson",
-   "nba": "CLE",
-   "pos": "SF,PF",
+   "name": "Jordan Poole",
+   "nba": "NOP",
+   "pos": "PG,SG",
    "status": "",
    "rank": {
-    "pre": 157,
-    "cur": 185
+    "pre": 191,
+    "cur": 120
    },
-   "owned": 48
+   "owned": 22,
+   "owned_delta": -1,
+   "started": 15,
+   "started_delta": -3,
+   "waiver": "Nov 25"
+  },
+  {
+   "name": "Robert Williams III",
+   "nba": "POR",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 210,
+    "cur": 121
+   },
+   "owned": 8,
+   "owned_delta": -2,
+   "started": 6,
+   "started_delta": -1,
+   "waiver": "Nov 25"
+  },
+  {
+   "name": "Alex Caruso",
+   "nba": "OKC",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 214,
+    "cur": 126
+   },
+   "owned": 19,
+   "owned_delta": -2,
+   "started": 8,
+   "started_delta": -1,
+   "waiver": "Nov 27"
   },
   {
    "name": "Jaxson Hayes",
    "nba": "UTA",
    "pos": "C",
-   "status": "O",
+   "status": "GTD",
    "rank": {
     "pre": 236,
-    "cur": 106
+    "cur": 129
    },
-   "owned": 29
+   "owned": 19,
+   "owned_delta": -3,
+   "started": 8,
+   "started_delta": -1
   },
   {
    "name": "Ziaire Williams",
@@ -2281,75 +2801,12 @@
    "status": "",
    "rank": {
     "pre": 239,
-    "cur": 113
+    "cur": 132
    },
-   "owned": 6
-  },
-  {
-   "name": "Zaccharie Risacher",
-   "nba": "DAL",
-   "pos": "SF,PF",
-   "status": "",
-   "rank": {
-    "pre": 203,
-    "cur": 154
-   },
-   "owned": 18
-  },
-  {
-   "name": "Isaiah Stewart",
-   "nba": "MEM",
-   "pos": "PF,C",
-   "status": "",
-   "rank": {
-    "pre": 211,
-    "cur": 148
-   },
-   "owned": 8
-  },
-  {
-   "name": "Max Strus",
-   "nba": "LAC",
-   "pos": "SF,PF",
-   "status": "",
-   "rank": {
-    "pre": 221,
-    "cur": 145
-   },
-   "owned": 13
-  },
-  {
-   "name": "Justin Champagnie",
-   "nba": "WAS",
-   "pos": "SF,PF",
-   "status": "O",
-   "rank": {
-    "pre": 269,
-    "cur": 96
-   },
-   "owned": 2
-  },
-  {
-   "name": "Jake LaRavia",
-   "nba": "LAL",
-   "pos": "SF,PF",
-   "status": "",
-   "rank": {
-    "pre": 182,
-    "cur": 190
-   },
-   "owned": 6
-  },
-  {
-   "name": "Jerami Grant",
-   "nba": "MEM",
-   "pos": "SF,PF",
-   "status": "GTD",
-   "rank": {
-    "pre": 180,
-    "cur": 196
-   },
-   "owned": 10
+   "owned": 5,
+   "owned_delta": -1,
+   "started": 3,
+   "started_delta": -1
   },
   {
    "name": "Dean Wade",
@@ -2358,9 +2815,54 @@
    "status": "",
    "rank": {
     "pre": 242,
-    "cur": 133
+    "cur": 134
    },
-   "owned": 2
+   "owned": 2,
+   "owned_delta": 0,
+   "started": 1,
+   "started_delta": -1
+  },
+  {
+   "name": "Yves Missi",
+   "nba": "NOP",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 143,
+    "cur": 135
+   },
+   "owned": 45,
+   "owned_delta": -4,
+   "started": 33,
+   "started_delta": -7
+  },
+  {
+   "name": "Ja'Kobe Walter",
+   "nba": "TOR",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 147,
+    "cur": 136
+   },
+   "owned": 27,
+   "owned_delta": 0,
+   "started": 19,
+   "started_delta": -5
+  },
+  {
+   "name": "Dominick Barlow",
+   "nba": "PHI",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 291,
+    "cur": 139
+   },
+   "owned": 2,
+   "owned_delta": 1,
+   "started": 1,
+   "started_delta": -1
   },
   {
    "name": "De'Anthony Melton",
@@ -2369,130 +2871,11 @@
    "status": "",
    "rank": {
     "pre": 250,
-    "cur": 129
+    "cur": 140
    },
-   "owned": 24
-  },
-  {
-   "name": "Kingston Flemings",
-   "nba": "ATL",
-   "pos": "PG",
-   "status": "",
-   "rank": {
-    "pre": 139,
-    "cur": 248
-   },
-   "owned": 11
-  },
-  {
-   "name": "Bilal Coulibaly",
-   "nba": "WAS",
-   "pos": "SG,SF",
-   "status": "",
-   "rank": {
-    "pre": 233,
-    "cur": 159
-   },
-   "owned": 8
-  },
-  {
-   "name": "De'Andre Hunter",
-   "nba": "SAC",
-   "pos": "SF,PF",
-   "status": "",
-   "rank": {
-    "pre": 227,
-    "cur": 168
-   },
-   "owned": 25
-  },
-  {
-   "name": "Aaron Nesmith",
-   "nba": "IND",
-   "pos": "SG,SF",
-   "status": "",
-   "rank": {
-    "pre": 158,
-    "cur": 254
-   },
-   "owned": 16
-  },
-  {
-   "name": "Bobby Portis Jr.",
-   "nba": "MIA",
-   "pos": "PF,C",
-   "status": "",
-   "rank": {
-    "pre": 204,
-    "cur": 210
-   },
-   "owned": 17
-  },
-  {
-   "name": "Dominick Barlow",
-   "nba": "PHI",
-   "pos": "PF,C",
-   "status": "",
-   "rank": {
-    "pre": 289,
-    "cur": 127
-   },
-   "owned": 1
-  },
-  {
-   "name": "Keon Ellis",
-   "nba": "BKN",
-   "pos": "SG,SF",
-   "status": "",
-   "rank": {
-    "pre": 192,
-    "cur": 228
-   },
-   "owned": 1
-  },
-  {
-   "name": "Jaylon Tyson",
-   "nba": "CLE",
-   "pos": "SG,SF,PF",
-   "status": "O",
-   "rank": {
-    "pre": 207,
-    "cur": 218
-   },
-   "owned": 5
-  },
-  {
-   "name": "Egor Dëmin",
-   "nba": "BKN",
-   "pos": "PG,SG",
-   "status": "",
-   "rank": {
-    "pre": 166,
-    "cur": 265
-   },
-   "owned": 21
-  },
-  {
-   "name": "Joan Beringer",
-   "nba": "MIN",
-   "pos": "PF,C",
-   "status": "",
-   "rank": {
-    "pre": 187,
-    "cur": 244
-   },
-   "owned": 8
-  },
-  {
-   "name": "Baylor Scheierman",
-   "nba": "BOS",
-   "pos": "SG,SF",
-   "status": "",
-   "rank": {
-    "pre": 209,
-    "cur": 227
-   },
-   "owned": 3
+   "owned": 19,
+   "owned_delta": -3,
+   "started": 6
   },
   {
    "name": "Quenton Jackson",
@@ -2500,65 +2883,263 @@
    "pos": "PG,SG",
    "status": "",
    "rank": {
-    "pre": 300,
-    "cur": 135
+    "pre": 296,
+    "cur": 146
    },
-   "owned": 10
+   "owned": 7,
+   "owned_delta": -3,
+   "started": 6,
+   "started_delta": -1
   },
   {
-   "name": "Collin Sexton",
-   "nba": "LAL",
-   "pos": "PG,SG",
+   "name": "Derrick Jones Jr.",
+   "nba": "LAC",
+   "pos": "SF,PF",
    "status": "",
    "rank": {
-    "pre": 159,
-    "cur": 286
+    "pre": 183,
+    "cur": 149
    },
-   "owned": 9
+   "owned": 15,
+   "owned_delta": -6,
+   "started": 10,
+   "started_delta": -4
   },
   {
-   "name": "Mitchell Robinson",
-   "nba": "BOS",
-   "pos": "C",
+   "name": "Jaylen Wells",
+   "nba": "MEM",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 152,
+    "cur": 150
+   },
+   "owned": 21,
+   "owned_delta": -3,
+   "started": 15,
+   "started_delta": -4
+  },
+  {
+   "name": "Max Strus",
+   "nba": "LAC",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 221,
+    "cur": 151
+   },
+   "owned": 10,
+   "owned_delta": -5,
+   "started": 8,
+   "started_delta": -3
+  },
+  {
+   "name": "Nolan Traore",
+   "nba": "BKN",
+   "pos": "PG",
    "status": "O",
    "rank": {
-    "pre": 178,
-    "cur": 267
+    "pre": 338,
+    "cur": 152
    },
-   "owned": 13
+   "owned": 10,
+   "owned_delta": -7,
+   "started": 3
   },
   {
-   "name": "Al Horford",
-   "nba": "GSW",
+   "name": "Mike Conley",
+   "nba": "BOS",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 313,
+    "cur": 153
+   },
+   "owned": 2,
+   "owned_delta": 2,
+   "started": 1,
+   "started_delta": 1
+  },
+  {
+   "name": "Leaky Black",
+   "nba": "SAC",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 370,
+    "cur": 157
+   },
+   "owned": 1,
+   "owned_delta": -1,
+   "started": 1
+  },
+  {
+   "name": "Caleb Martin",
+   "nba": "DAL",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 334,
+    "cur": 158
+   },
+   "owned": 11,
+   "owned_delta": 0,
+   "started": 11,
+   "started_delta": 8
+  },
+  {
+   "name": "Kevin Huerter",
+   "nba": "DET",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 216,
+    "cur": 161
+   },
+   "owned": 22,
+   "owned_delta": -4,
+   "started": 22,
+   "started_delta": 16,
+   "waiver": "Nov 26"
+  },
+  {
+   "name": "Isaiah Jackson",
+   "nba": "LAC",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 164,
+    "cur": 163
+   },
+   "owned": 8,
+   "owned_delta": -4,
+   "started": 6,
+   "started_delta": -1
+  },
+  {
+   "name": "Sam Merrill",
+   "nba": "CLE",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 273,
+    "cur": 164
+   },
+   "owned": 2,
+   "owned_delta": 0,
+   "started": 1
+  },
+  {
+   "name": "Kenrich Williams",
+   "nba": "OKC",
    "pos": "PF,C",
    "status": "",
    "rank": {
-    "pre": 198,
-    "cur": 251
+    "pre": 300,
+    "cur": 166
    },
-   "owned": 3
+   "owned": 10,
+   "owned_delta": 5,
+   "started": 7,
+   "started_delta": -1
   },
   {
-   "name": "Ryan Kalkbrenner",
-   "nba": "CHA",
+   "name": "Charles Bassey",
+   "nba": "GSW",
    "pos": "C",
    "status": "",
    "rank": {
-    "pre": 268,
-    "cur": 183
+    "pre": 363,
+    "cur": 167
    },
-   "owned": 5
+   "owned": 24,
+   "owned_delta": 15,
+   "started": 8,
+   "started_delta": 1
   },
   {
-   "name": "Keaton Wagler",
-   "nba": "LAC",
+   "name": "Peyton Watson",
+   "nba": "CLE",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 157,
+    "cur": 171
+   },
+   "owned": 51,
+   "owned_delta": 2,
+   "started": 31,
+   "started_delta": -8,
+   "waiver": "Nov 27"
+  },
+  {
+   "name": "Isaiah Stewart",
+   "nba": "MEM",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 211,
+    "cur": 172
+   },
+   "owned": 9,
+   "owned_delta": 0,
+   "started": 5,
+   "started_delta": -2
+  },
+  {
+   "name": "Keegan Murray",
+   "nba": "SAC",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 156,
+    "cur": 174
+   },
+   "owned": 62,
+   "owned_delta": 0,
+   "started": 39,
+   "started_delta": -9,
+   "waiver": "Nov 25"
+  },
+  {
+   "name": "Grant Williams",
+   "nba": "CHA",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 364,
+    "cur": 175
+   },
+   "owned": 1,
+   "owned_delta": -1
+  },
+  {
+   "name": "Jake LaRavia",
+   "nba": "LAL",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 182,
+    "cur": 178
+   },
+   "owned": 6,
+   "owned_delta": -1,
+   "started": 4,
+   "started_delta": -1
+  },
+  {
+   "name": "Brayden Burries",
+   "nba": "MIL",
    "pos": "SG",
    "status": "",
    "rank": {
-    "pre": 232,
-    "cur": 221
+    "pre": 136,
+    "cur": 180
    },
-   "owned": 25
+   "owned": 41,
+   "owned_delta": 11,
+   "started": 28,
+   "started_delta": -5
   },
   {
    "name": "Kentavious Caldwell-Pope",
@@ -2567,31 +3148,82 @@
    "status": "",
    "rank": {
     "pre": 277,
-    "cur": 176
+    "cur": 183
    },
-   "owned": 2
+   "owned": 2,
+   "owned_delta": 0,
+   "started": 1,
+   "started_delta": -1
   },
   {
-   "name": "Mo Bamba",
-   "nba": "UTA",
-   "pos": "C",
+   "name": "Sam Hauser",
+   "nba": "BOS",
+   "pos": "SF,PF",
    "status": "",
    "rank": {
-    "pre": 375,
-    "cur": 78
+    "pre": 215,
+    "cur": 184
    },
-   "owned": 31
+   "owned": 11,
+   "owned_delta": -1,
+   "started": 11,
+   "started_delta": 7,
+   "waiver": "Nov 27"
   },
   {
-   "name": "Javonte Green",
-   "nba": "DET",
+   "name": "Landry Shamet",
+   "nba": "NYK",
    "pos": "SG,SF",
    "status": "",
    "rank": {
-    "pre": 263,
-    "cur": 193
+    "pre": 305,
+    "cur": 185
    },
-   "owned": 1
+   "owned": 14,
+   "owned_delta": 2,
+   "started": 4,
+   "waiver": "Nov 26"
+  },
+  {
+   "name": "Corey Kispert",
+   "nba": "ATL",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 311,
+    "cur": 186
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Bones Hyland",
+   "nba": "MIN",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 234,
+    "cur": 188
+   },
+   "owned": 8,
+   "owned_delta": -3,
+   "started": 5,
+   "started_delta": -2,
+   "waiver": "Nov 27"
+  },
+  {
+   "name": "Sandro Mamukelashvili",
+   "nba": "LAL",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 145,
+    "cur": 191
+   },
+   "owned": 31,
+   "owned_delta": -2,
+   "started": 21,
+   "started_delta": -4
   },
   {
    "name": "Bennett Stirtz",
@@ -2600,75 +3232,124 @@
    "status": "",
    "rank": {
     "pre": 246,
-    "cur": 211
+    "cur": 193
    },
-   "owned": 4
+   "owned": 7,
+   "owned_delta": 5,
+   "started": 5,
+   "started_delta": -1
   },
   {
-   "name": "Mikel Brown Jr.",
-   "nba": "BKN",
-   "pos": "PG",
-   "status": "",
+   "name": "Ryan Kalkbrenner",
+   "nba": "CHA",
+   "pos": "C",
+   "status": "DTD",
    "rank": {
-    "pre": 168,
-    "cur": 291
+    "pre": 268,
+    "cur": 194
    },
-   "owned": 11
+   "owned": 4,
+   "owned_delta": -1,
+   "started": 3,
+   "started_delta": -1
   },
   {
-   "name": "Herbert Jones",
-   "nba": "NOP",
+   "name": "Javonte Green",
+   "nba": "DET",
    "pos": "SG,SF",
    "status": "",
    "rank": {
-    "pre": 184,
-    "cur": 275
+    "pre": 264,
+    "cur": 196
    },
-   "owned": 10
+   "owned": 2,
+   "owned_delta": 1,
+   "started": 2,
+   "started_delta": 2
   },
   {
-   "name": "Brice Sensabaugh",
-   "nba": "UTA",
+   "name": "Naji Marshall",
+   "nba": "DAL",
    "pos": "SG,SF,PF",
    "status": "",
    "rank": {
-    "pre": 225,
-    "cur": 236
+    "pre": 155,
+    "cur": 202
    },
-   "owned": 24
+   "owned": 23,
+   "owned_delta": -6,
+   "started": 22,
+   "started_delta": 15,
+   "waiver": "Nov 26"
   },
   {
-   "name": "T.J. McConnell",
-   "nba": "IND",
-   "pos": "PG",
-   "status": "O",
-   "rank": {
-    "pre": 223,
-    "cur": 240
-   },
-   "owned": 4
-  },
-  {
-   "name": "Kobe Sanders",
-   "nba": "LAC",
-   "pos": "SG,SF",
+   "name": "Mario Hezonja",
+   "nba": "CLE",
+   "pos": "SF,PF",
    "status": "",
    "rank": {
-    "pre": 240,
-    "cur": 223
+    "pre": 418,
+    "cur": 203
    },
-   "owned": 1
+   "owned": 10,
+   "owned_delta": 0,
+   "started": 7,
+   "started_delta": -3
   },
   {
-   "name": "Dennis Schröder",
-   "nba": "CHA",
-   "pos": "PG,SG",
+   "name": "Jerami Grant",
+   "nba": "MEM",
+   "pos": "SF,PF",
    "status": "O",
    "rank": {
-    "pre": 170,
-    "cur": 299
+    "pre": 180,
+    "cur": 204
    },
-   "owned": 5
+   "owned": 9,
+   "owned_delta": -2,
+   "started": 3,
+   "started_delta": -1
+  },
+  {
+   "name": "Precious Achiuwa",
+   "nba": "SAC",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 229,
+    "cur": 206
+   },
+   "owned": 14,
+   "owned_delta": -1,
+   "started": 9,
+   "started_delta": -2,
+   "waiver": "Nov 27"
+  },
+  {
+   "name": "Clint Capela",
+   "nba": "HOU",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 308,
+    "cur": 207
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Moritz Wagner",
+   "nba": "BKN",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 348,
+    "cur": 210
+   },
+   "owned": 6,
+   "owned_delta": 0,
+   "started": 4,
+   "started_delta": -1
   },
   {
    "name": "Luguentz Dort",
@@ -2677,86 +3358,313 @@
    "status": "",
    "rank": {
     "pre": 251,
+    "cur": 211
+   },
+   "owned": 4,
+   "owned_delta": 0,
+   "started": 1
+  },
+  {
+   "name": "Danny Wolf",
+   "nba": "BKN",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 320,
+    "cur": 212
+   },
+   "owned": 13,
+   "owned_delta": 6,
+   "started": 9,
+   "started_delta": -2
+  },
+  {
+   "name": "Joan Beringer",
+   "nba": "MIN",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 187,
+    "cur": 213
+   },
+   "owned": 8,
+   "owned_delta": -1,
+   "started": 5,
+   "started_delta": -1
+  },
+  {
+   "name": "Jalen Slawson",
+   "nba": "IND",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 361,
+    "cur": 214
+   },
+   "owned": 1,
+   "owned_delta": 1,
+   "started": 1,
+   "started_delta": 1
+  },
+  {
+   "name": "Javon Small",
+   "nba": "MEM",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 331,
+    "cur": 216
+   },
+   "owned": 4,
+   "owned_delta": -3,
+   "started": 3,
+   "started_delta": -1
+  },
+  {
+   "name": "Sidy Cissoko",
+   "nba": "POR",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 328,
+    "cur": 217
+   },
+   "owned": 4,
+   "owned_delta": -1,
+   "started": 3,
+   "started_delta": -1
+  },
+  {
+   "name": "Bobby Portis Jr.",
+   "nba": "MIA",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 204,
+    "cur": 218
+   },
+   "owned": 16,
+   "owned_delta": 0,
+   "started": 6,
+   "started_delta": -1
+  },
+  {
+   "name": "Kyle Kuzma",
+   "nba": "MIL",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 193,
     "cur": 220
    },
-   "owned": 4
+   "owned": 24,
+   "owned_delta": -2,
+   "started": 17,
+   "started_delta": -4
   },
   {
-   "name": "Mike Conley",
-   "nba": "BOS",
-   "pos": "PG",
-   "status": "",
-   "rank": {
-    "pre": 311,
-    "cur": 161
-   },
-   "owned": 1
-  },
-  {
-   "name": "Jay Huff",
-   "nba": "IND",
-   "pos": "C",
-   "status": "",
-   "rank": {
-    "pre": 228,
-    "cur": 246
-   },
-   "owned": 2
-  },
-  {
-   "name": "Allen Graves",
+   "name": "Jamison Battle",
    "nba": "TOR",
-   "pos": "PF",
+   "pos": "SF,PF",
    "status": "",
    "rank": {
-    "pre": 235,
-    "cur": 241
+    "pre": 345,
+    "cur": 222
    },
-   "owned": 4
+   "owned": 1,
+   "owned_delta": -1,
+   "started": 1
   },
   {
-   "name": "Sam Merrill",
-   "nba": "CLE",
+   "name": "Baylor Scheierman",
+   "nba": "BOS",
    "pos": "SG,SF",
    "status": "",
    "rank": {
-    "pre": 275,
-    "cur": 200
+    "pre": 209,
+    "cur": 224
    },
-   "owned": 2
+   "owned": 2,
+   "owned_delta": -1,
+   "started": 2,
+   "started_delta": 1
   },
   {
-   "name": "Kasparas Jakučionis",
-   "nba": "MIL",
-   "pos": "PG,SG",
+   "name": "Patrick Williams",
+   "nba": "CHI",
+   "pos": "SF,PF",
    "status": "",
    "rank": {
-    "pre": 249,
-    "cur": 229
+    "pre": 310,
+    "cur": 225
    },
-   "owned": 20
+   "owned": 2,
+   "owned_delta": -1,
+   "started": 1,
+   "started_delta": -1
   },
   {
-   "name": "Deandre Ayton",
-   "nba": "WAS",
+   "name": "Norchad Omier",
+   "nba": "CLE",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 488,
+    "cur": 226
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Aaron Nesmith",
+   "nba": "IND",
+   "pos": "SG,SF",
+   "status": "GTD",
+   "rank": {
+    "pre": 158,
+    "cur": 227
+   },
+   "owned": 14,
+   "owned_delta": 0,
+   "started": 8,
+   "started_delta": -1
+  },
+  {
+   "name": "RayJ Dennis",
+   "nba": "ATL",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 493,
+    "cur": 228
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Isaac Okoro",
+   "nba": "CHI",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 279,
+    "cur": 230
+   },
+   "owned": 9,
+   "owned_delta": 1,
+   "started": 7,
+   "started_delta": -2
+  },
+  {
+   "name": "Thomas Bryant",
+   "nba": "CLE",
    "pos": "C",
    "status": "",
    "rank": {
-    "pre": 186,
-    "cur": 296
+    "pre": 304,
+    "cur": 231
    },
-   "owned": 4
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1
   },
   {
-   "name": "Marcus Smart",
-   "nba": "HOU",
-   "pos": "PG,SG",
+   "name": "Keaton Wagler",
+   "nba": "LAC",
+   "pos": "SG",
    "status": "",
    "rank": {
-    "pre": 243,
-    "cur": 239
+    "pre": 232,
+    "cur": 232
    },
-   "owned": 2
+   "owned": 22,
+   "owned_delta": -5,
+   "started": 15,
+   "started_delta": -4
+  },
+  {
+   "name": "Keon Ellis",
+   "nba": "BKN",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 192,
+    "cur": 233
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1
+  },
+  {
+   "name": "Al Horford",
+   "nba": "GSW",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 198,
+    "cur": 234
+   },
+   "owned": 3,
+   "owned_delta": 0,
+   "started": 1
+  },
+  {
+   "name": "DeAndre Jordan",
+   "nba": "NOP",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 439,
+    "cur": 235
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Kobe Sanders",
+   "nba": "LAC",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 240,
+    "cur": 236
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1
+  },
+  {
+   "name": "Brandon Williams",
+   "nba": "GSW",
+   "pos": "PG",
+   "status": "O",
+   "rank": {
+    "pre": 288,
+    "cur": 237
+   },
+   "owned": 2,
+   "owned_delta": 0
+  },
+  {
+   "name": "T.J. McConnell",
+   "nba": "IND",
+   "pos": "PG",
+   "status": "GTD",
+   "rank": {
+    "pre": 223,
+    "cur": 240
+   },
+   "owned": 3,
+   "owned_delta": -1,
+   "started": 1
+  },
+  {
+   "name": "Trendon Watford",
+   "nba": "NOP",
+   "pos": "PF",
+   "status": "O",
+   "rank": {
+    "pre": 351,
+    "cur": 241
+   },
+   "owned_delta": 0
   },
   {
    "name": "Keldon Johnson",
@@ -2767,73 +3675,130 @@
     "pre": 245,
     "cur": 242
    },
-   "owned": 14
+   "owned": 14,
+   "owned_delta": -2,
+   "started": 10,
+   "started_delta": -3
   },
   {
-   "name": "Thomas Bryant",
-   "nba": "CLE",
-   "pos": "C",
-   "status": "",
-   "rank": {
-    "pre": 302,
-    "cur": 188
-   },
-   "owned": 1
-  },
-  {
-   "name": "Nolan Traore",
-   "nba": "BKN",
-   "pos": "PG",
-   "status": "O",
-   "rank": {
-    "pre": 338,
-    "cur": 153
-   },
-   "owned": 16
-  },
-  {
-   "name": "Jase Richardson",
-   "nba": "ORL",
+   "name": "Kasparas Jakučionis",
+   "nba": "MIL",
    "pos": "PG,SG",
    "status": "",
    "rank": {
-    "pre": 222,
-    "cur": 272
+    "pre": 249,
+    "cur": 243
    },
-   "owned": 1
+   "owned": 11,
+   "owned_delta": -17,
+   "started": 9,
+   "started_delta": -4
   },
   {
-   "name": "Oso Ighodaro",
-   "nba": "PHX",
-   "pos": "C",
+   "name": "Brice Sensabaugh",
+   "nba": "UTA",
+   "pos": "SG,SF,PF",
    "status": "",
    "rank": {
-    "pre": 185,
-    "cur": 314
+    "pre": 225,
+    "cur": 245
    },
-   "owned": 5
+   "owned": 18,
+   "owned_delta": -4,
+   "started": 16,
+   "started_delta": -5
   },
   {
-   "name": "Clint Capela",
+   "name": "Will Richard",
+   "nba": "GSW",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 287,
+    "cur": 247
+   },
+   "owned": 2,
+   "owned_delta": -2,
+   "started": 1
+  },
+  {
+   "name": "Allen Graves",
+   "nba": "TOR",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 235,
+    "cur": 248
+   },
+   "owned": 8,
+   "owned_delta": 4,
+   "started": 6,
+   "started_delta": -2
+  },
+  {
+   "name": "Marcus Smart",
    "nba": "HOU",
-   "pos": "C",
+   "pos": "PG,SG",
    "status": "",
    "rank": {
-    "pre": 305,
-    "cur": 195
+    "pre": 243,
+    "cur": 249
    },
-   "owned": 1
+   "owned": 2,
+   "owned_delta": 0,
+   "started": 1
   },
   {
-   "name": "Scotty Pippen Jr.",
-   "nba": "MEM",
-   "pos": "PG",
-   "status": "O",
+   "name": "Walter Clayton Jr.",
+   "nba": "DAL",
+   "pos": "PG,SG",
+   "status": "",
    "rank": {
-    "pre": 190,
-    "cur": 312
+    "pre": 307,
+    "cur": 250
    },
-   "owned": 4
+   "owned": 5,
+   "owned_delta": 2,
+   "started": 4,
+   "started_delta": 3
+  },
+  {
+   "name": "Ryan Conwell",
+   "nba": "MIA",
+   "pos": "SG",
+   "status": "",
+   "rank": {
+    "pre": 457,
+    "cur": 252
+   },
+   "owned": 3,
+   "owned_delta": 1,
+   "started": 1
+  },
+  {
+   "name": "Tyler Kolek",
+   "nba": "NYK",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 352,
+    "cur": 253
+   },
+   "owned": 1,
+   "owned_delta": -1
+  },
+  {
+   "name": "Luke Kennard",
+   "nba": "PHX",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 267,
+    "cur": 254
+   },
+   "owned": 2,
+   "owned_delta": 0,
+   "started": 1
   },
   {
    "name": "Trevon Brazile",
@@ -2844,106 +3809,50 @@
     "pre": 247,
     "cur": 255
    },
-   "owned": 3
+   "owned": 2,
+   "owned_delta": -1,
+   "started": 2,
+   "started_delta": 1
   },
   {
-   "name": "Gradey Dick",
-   "nba": "LAC",
-   "pos": "SG,SF",
-   "status": "",
-   "rank": {
-    "pre": 226,
-    "cur": 278
-   },
-   "owned": 1
-  },
-  {
-   "name": "Royce O'Neale",
-   "nba": "CHA",
-   "pos": "SF,PF",
-   "status": "",
-   "rank": {
-    "pre": 241,
-    "cur": 263
-   },
-   "owned": 1
-  },
-  {
-   "name": "Patrick Williams",
-   "nba": "CHI",
-   "pos": "SF,PF",
-   "status": "",
-   "rank": {
-    "pre": 310,
-    "cur": 194
-   },
-   "owned": 3
-  },
-  {
-   "name": "Leonard Miller",
-   "nba": "CHI",
-   "pos": "SF,PF",
-   "status": "",
-   "rank": {
-    "pre": 237,
-    "cur": 269
-   },
-   "owned": 1
-  },
-  {
-   "name": "Gui Santos",
-   "nba": "GSW",
-   "pos": "SF,PF",
-   "status": "",
-   "rank": {
-    "pre": 165,
-    "cur": 350
-   },
-   "owned": 8
-  },
-  {
-   "name": "Luke Kennard",
-   "nba": "PHX",
-   "pos": "SG,SF",
-   "status": "",
-   "rank": {
-    "pre": 266,
-    "cur": 250
-   },
-   "owned": 2
-  },
-  {
-   "name": "Kenrich Williams",
-   "nba": "OKC",
-   "pos": "PF,C",
-   "status": "",
-   "rank": {
-    "pre": 309,
-    "cur": 208
-   },
-   "owned": 7
-  },
-  {
-   "name": "Nikola Vučević",
-   "nba": "ORL",
+   "name": "Jay Huff",
+   "nba": "IND",
    "pos": "C",
    "status": "",
    "rank": {
-    "pre": 197,
-    "cur": 322
+    "pre": 228,
+    "cur": 256
    },
-   "owned": 6
+   "owned": 2,
+   "owned_delta": 0,
+   "started": 2
   },
   {
-   "name": "Dylan Cardwell",
-   "nba": "SAC",
+   "name": "Egor Dëmin",
+   "nba": "BKN",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 166,
+    "cur": 257
+   },
+   "owned": 20,
+   "owned_delta": -1,
+   "started": 12,
+   "started_delta": -3
+  },
+  {
+   "name": "Karlo Matković",
+   "nba": "NOP",
    "pos": "PF,C",
    "status": "",
    "rank": {
-    "pre": 212,
-    "cur": 307
+    "pre": 280,
+    "cur": 258
    },
-   "owned": 3
+   "owned": 3,
+   "owned_delta": 0,
+   "started": 2
   },
   {
    "name": "Andre Drummond",
@@ -2952,130 +3861,182 @@
    "status": "",
    "rank": {
     "pre": 256,
+    "cur": 259
+   },
+   "owned": 11,
+   "owned_delta": -1,
+   "started": 4,
+   "started_delta": -1
+  },
+  {
+   "name": "Mikel Brown Jr.",
+   "nba": "BKN",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 168,
+    "cur": 260
+   },
+   "owned": 20,
+   "owned_delta": 8,
+   "started": 10
+  },
+  {
+   "name": "Kingston Flemings",
+   "nba": "ATL",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 139,
+    "cur": 261
+   },
+   "owned": 11,
+   "owned_delta": 1,
+   "started": 3,
+   "started_delta": 1
+  },
+  {
+   "name": "Trayce Jackson-Davis",
+   "nba": "TOR",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 369,
+    "cur": 262
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jaylon Tyson",
+   "nba": "CLE",
+   "pos": "SG,SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 207,
+    "cur": 263
+   },
+   "owned": 5,
+   "owned_delta": 0,
+   "started": 2,
+   "started_delta": -1
+  },
+  {
+   "name": "Braden Smith",
+   "nba": "IND",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 482,
     "cur": 264
    },
-   "owned": 14
+   "owned": 1,
+   "owned_delta": 1
   },
   {
-   "name": "Isaac Okoro",
-   "nba": "CHI",
-   "pos": "SG,SF",
+   "name": "Luke Kornet",
+   "nba": "SAS",
+   "pos": "C",
    "status": "",
    "rank": {
-    "pre": 281,
-    "cur": 243
+    "pre": 263,
+    "cur": 265
    },
-   "owned": 10
+   "owned": 2,
+   "owned_delta": 1,
+   "started": 2
   },
   {
-   "name": "Brandon Williams",
-   "nba": "GSW",
-   "pos": "PG",
-   "status": "O",
-   "rank": {
-    "pre": 287,
-    "cur": 237
-   },
-   "owned": 2
-  },
-  {
-   "name": "Bub Carrington",
-   "nba": "WAS",
-   "pos": "PG,SG",
-   "status": "",
-   "rank": {
-    "pre": 255,
-    "cur": 273
-   },
-   "owned": 1
-  },
-  {
-   "name": "Buddy Hield",
-   "nba": "CHI",
-   "pos": "SG,SF",
-   "status": "",
-   "rank": {
-    "pre": 298,
-    "cur": 230
-   },
-   "owned": 5
-  },
-  {
-   "name": "Hugo González",
-   "nba": "BOS",
-   "pos": "SG,SF",
-   "status": "",
-   "rank": {
-    "pre": 189,
-    "cur": 340
-   },
-   "owned": 2
-  },
-  {
-   "name": "Morez Johnson Jr.",
-   "nba": "DAL",
+   "name": "Grant Nelson",
+   "nba": "BKN",
    "pos": "PF",
    "status": "",
    "rank": {
-    "pre": 206,
-    "cur": 324
+    "pre": 580,
+    "cur": 266
    },
-   "owned": 6
+   "owned_delta": 0
   },
   {
-   "name": "Malik Monk",
-   "nba": "SAC",
-   "pos": "PG,SG",
-   "status": "",
-   "rank": {
-    "pre": 218,
-    "cur": 311
-   },
-   "owned": 4
-  },
-  {
-   "name": "Corey Kispert",
-   "nba": "ATL",
-   "pos": "SG,SF",
-   "status": "",
-   "rank": {
-    "pre": 317,
-    "cur": 213
-   },
-   "owned": 1
-  },
-  {
-   "name": "Grant Williams",
-   "nba": "CHA",
-   "pos": "PF,C",
-   "status": "O",
-   "rank": {
-    "pre": 361,
-    "cur": 170
-   },
-   "owned": 1
-  },
-  {
-   "name": "Marvin Bagley III",
-   "nba": "DEN",
-   "pos": "PF,C",
-   "status": "",
-   "rank": {
-    "pre": 252,
-    "cur": 281
-   },
-   "owned": 1
-  },
-  {
-   "name": "Bennedict Mathurin",
+   "name": "Herbert Jones",
    "nba": "NOP",
    "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 184,
+    "cur": 267
+   },
+   "owned": 9,
+   "owned_delta": -3,
+   "started": 6,
+   "started_delta": -2
+  },
+  {
+   "name": "Yanic Konan Niederhäuser",
+   "nba": "LAC",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 425,
+    "cur": 268
+   },
+   "owned": 7,
+   "owned_delta": 0,
+   "started": 5,
+   "started_delta": -1
+  },
+  {
+   "name": "Jabari Walker",
+   "nba": "PHI",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 346,
+    "cur": 269
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1
+  },
+  {
+   "name": "Mitchell Robinson",
+   "nba": "BOS",
+   "pos": "C",
    "status": "O",
    "rank": {
-    "pre": 176,
-    "cur": 360
+    "pre": 178,
+    "cur": 270
    },
-   "owned": 4
+   "owned": 12,
+   "owned_delta": -2,
+   "started": 7,
+   "started_delta": 2
+  },
+  {
+   "name": "Leonard Miller",
+   "nba": "CHI",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 237,
+    "cur": 271
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started_delta": -1
+  },
+  {
+   "name": "Goga Bitadze",
+   "nba": "ORL",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 274,
+    "cur": 272
+   },
+   "owned": 2,
+   "owned_delta": 0,
+   "started": 2,
+   "started_delta": 1
   },
   {
    "name": "Ronald Holland II",
@@ -3084,64 +4045,98 @@
    "status": "",
    "rank": {
     "pre": 276,
-    "cur": 260
+    "cur": 273
    },
-   "owned": 1
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1,
+   "started_delta": 1
   },
   {
-   "name": "Will Richard",
-   "nba": "GSW",
-   "pos": "SG,SF",
-   "status": "",
-   "rank": {
-    "pre": 286,
-    "cur": 249
-   },
-   "owned": 4
-  },
-  {
-   "name": "Meleek Thomas",
-   "nba": "CLE",
-   "pos": "SG",
-   "status": "",
-   "rank": {
-    "pre": 414,
-    "cur": 121
-   },
-   "owned": 15
-  },
-  {
-   "name": "Javon Small",
-   "nba": "MEM",
+   "name": "Jordan McLaughlin",
+   "nba": "SAS",
    "pos": "PG,SG",
    "status": "",
    "rank": {
-    "pre": 334,
-    "cur": 203
+    "pre": 412,
+    "cur": 274
    },
-   "owned": 6
+   "owned_delta": 0
   },
   {
-   "name": "Leaky Black",
-   "nba": "SAC",
+   "name": "Ryan Dunn",
+   "nba": "PHX",
    "pos": "SF,PF",
    "status": "",
    "rank": {
-    "pre": 372,
-    "cur": 166
+    "pre": 286,
+    "cur": 275
    },
-   "owned": 1
+   "owned": 1,
+   "owned_delta": 0,
+   "started_delta": -1
   },
   {
-   "name": "Jarace Walker",
-   "nba": "IND",
+   "name": "Trey Lyles",
+   "nba": "MIN",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 408,
+    "cur": 276
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1
+  },
+  {
+   "name": "Jase Richardson",
+   "nba": "ORL",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 222,
+    "cur": 277
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Bryce McGowens",
+   "nba": "NOP",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 367,
+    "cur": 278
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Sion James",
+   "nba": "CHA",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 301,
+    "cur": 279
+   },
+   "owned": 1,
+   "owned_delta": -1,
+   "started": 1
+  },
+  {
+   "name": "Royce O'Neale",
+   "nba": "CHA",
    "pos": "SF,PF",
    "status": "",
    "rank": {
-    "pre": 224,
-    "cur": 316
+    "pre": 241,
+    "cur": 280
    },
-   "owned": 2
+   "owned": 1,
+   "owned_delta": -1,
+   "started": 1
   },
   {
    "name": "Max Christie",
@@ -3150,20 +4145,93 @@
    "status": "",
    "rank": {
     "pre": 265,
-    "cur": 274
+    "cur": 281
    },
-   "owned": 3
+   "owned": 2,
+   "owned_delta": 0,
+   "started": 2,
+   "started_delta": 1
   },
   {
-   "name": "Ryan Dunn",
-   "nba": "PHX",
-   "pos": "SF,PF",
-   "status": "GTD",
+   "name": "Svi Mykhailiuk",
+   "nba": "UTA",
+   "pos": "SG,SF",
+   "status": "",
    "rank": {
-    "pre": 283,
-    "cur": 256
+    "pre": 312,
+    "cur": 282
    },
-   "owned": 1
+   "owned": 11,
+   "owned_delta": 8,
+   "started": 10,
+   "started_delta": -4
+  },
+  {
+   "name": "Gradey Dick",
+   "nba": "LAC",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 226,
+    "cur": 283
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1
+  },
+  {
+   "name": "Collin Sexton",
+   "nba": "LAL",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 159,
+    "cur": 284
+   },
+   "owned": 9,
+   "owned_delta": -1,
+   "started": 6,
+   "started_delta": -1
+  },
+  {
+   "name": "Kris Murray",
+   "nba": "MEM",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 321,
+    "cur": 286
+   },
+   "owned": 1,
+   "owned_delta": 1
+  },
+  {
+   "name": "Bub Carrington",
+   "nba": "WAS",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 255,
+    "cur": 287
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1,
+   "started_delta": 1
+  },
+  {
+   "name": "Malik Monk",
+   "nba": "SAC",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 218,
+    "cur": 288
+   },
+   "owned": 3,
+   "owned_delta": -1,
+   "started": 2,
+   "started_delta": -1
   },
   {
    "name": "Tre Johnson",
@@ -3172,42 +4240,420 @@
    "status": "",
    "rank": {
     "pre": 248,
-    "cur": 294
+    "cur": 290
    },
-   "owned": 3
+   "owned": 3,
+   "owned_delta": 0,
+   "started": 2,
+   "started_delta": 1
   },
   {
-   "name": "Luke Kornet",
-   "nba": "SAS",
+   "name": "Graham Ike",
+   "nba": "GSW",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 490,
+    "cur": 291
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jaylen Clark",
+   "nba": "MIN",
+   "pos": "SG,SF",
+   "status": "O",
+   "rank": {
+    "pre": 354,
+    "cur": 292
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Larry Nance Jr.",
+   "nba": "IND",
+   "pos": "PF,C",
+   "status": "GTD",
+   "rank": {
+    "pre": 373,
+    "cur": 293
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jevon Carter",
+   "nba": "ORL",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 341,
+    "cur": 294
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Deandre Ayton",
+   "nba": "WAS",
    "pos": "C",
    "status": "",
    "rank": {
-    "pre": 264,
-    "cur": 280
+    "pre": 186,
+    "cur": 295
    },
-   "owned": 1
+   "owned": 4,
+   "owned_delta": 0,
+   "started": 3,
+   "started_delta": 1
   },
   {
-   "name": "Sidy Cissoko",
-   "nba": "POR",
-   "pos": "SF,PF",
+   "name": "AJ Green",
+   "nba": "MIL",
+   "pos": "PG,SG,SF",
    "status": "",
    "rank": {
-    "pre": 327,
-    "cur": 216
+    "pre": 271,
+    "cur": 296
    },
-   "owned": 5
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1
   },
   {
-   "name": "Karlo Matković",
-   "nba": "NOP",
+   "name": "Dennis Schröder",
+   "nba": "CHA",
+   "pos": "PG,SG",
+   "status": "O",
+   "rank": {
+    "pre": 170,
+    "cur": 297
+   },
+   "owned": 5,
+   "owned_delta": 0,
+   "started": 1
+  },
+  {
+   "name": "Tidjane Salaün",
+   "nba": "CHA",
    "pos": "PF,C",
    "status": "",
    "rank": {
-    "pre": 279,
-    "cur": 266
+    "pre": 360,
+    "cur": 298
    },
-   "owned": 3
+   "owned_delta": 0
+  },
+  {
+   "name": "Christian Anderson",
+   "nba": "CHA",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 484,
+    "cur": 299
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1
+  },
+  {
+   "name": "Nate Ament",
+   "nba": "MIL",
+   "pos": "SF",
+   "status": "",
+   "rank": {
+    "pre": 478,
+    "cur": 300
+   },
+   "owned": 2,
+   "owned_delta": -1,
+   "started": 1
+  },
+  {
+   "name": "Marvin Bagley III",
+   "nba": "DEN",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 252,
+    "cur": 301
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1,
+   "started_delta": 1
+  },
+  {
+   "name": "Emanuel Sharp",
+   "nba": "SAC",
+   "pos": "SG",
+   "status": "",
+   "rank": {
+    "pre": 479,
+    "cur": 302
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Gary Payton II",
+   "nba": "GSW",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 275,
+    "cur": 303
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Craig Porter Jr.",
+   "nba": "CLE",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 303,
+    "cur": 304
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Luka Garza",
+   "nba": "BOS",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 298,
+    "cur": 305
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1,
+   "started_delta": 1
+  },
+  {
+   "name": "Zuby Ejiofor",
+   "nba": "ATL",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 518,
+    "cur": 306
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jonathan Mogbo",
+   "nba": "SAC",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 417,
+    "cur": 307
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jaylin Sellers",
+   "nba": "CHI",
+   "pos": "SG",
+   "status": "",
+   "rank": {
+    "pre": 534,
+    "cur": 308
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Oso Ighodaro",
+   "nba": "PHX",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 185,
+    "cur": 309
+   },
+   "owned": 6,
+   "owned_delta": 0,
+   "started": 4
+  },
+  {
+   "name": "Jordan Walsh",
+   "nba": "BOS",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 293,
+    "cur": 310
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1,
+   "started_delta": 1
+  },
+  {
+   "name": "Josh Okogie",
+   "nba": "UTA",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 317,
+    "cur": 311
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started_delta": -1
+  },
+  {
+   "name": "Nikola Jović",
+   "nba": "MIA",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 253,
+    "cur": 313
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Micah Peavy",
+   "nba": "OKC",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 368,
+    "cur": 314
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Morez Johnson Jr.",
+   "nba": "DAL",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 206,
+    "cur": 315
+   },
+   "owned": 8,
+   "owned_delta": 3,
+   "started": 7,
+   "started_delta": 5
+  },
+  {
+   "name": "Nikola Vučević",
+   "nba": "ORL",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 197,
+    "cur": 316
+   },
+   "owned": 6,
+   "owned_delta": 1,
+   "started": 5,
+   "started_delta": 3
+  },
+  {
+   "name": "Josh Green",
+   "nba": "UTA",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 325,
+    "cur": 317
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started_delta": -1
+  },
+  {
+   "name": "Georges Niang",
+   "nba": "GSW",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 416,
+    "cur": 318
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Scotty Pippen Jr.",
+   "nba": "MEM",
+   "pos": "PG",
+   "status": "O",
+   "rank": {
+    "pre": 190,
+    "cur": 320
+   },
+   "owned": 4,
+   "owned_delta": 0,
+   "started": 1
+  },
+  {
+   "name": "Jock Landale",
+   "nba": "ATL",
+   "pos": "C",
+   "status": "O",
+   "rank": {
+    "pre": 292,
+    "cur": 321
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Dalton Knecht",
+   "nba": "NYK",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 390,
+    "cur": 322
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "LJ Cryer",
+   "nba": "GSW",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 443,
+    "cur": 323
+   },
+   "owned_delta": -1
+  },
+  {
+   "name": "Dylan Cardwell",
+   "nba": "SAC",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 212,
+    "cur": 324
+   },
+   "owned": 2,
+   "owned_delta": -1,
+   "started": 1,
+   "started_delta": -1
+  },
+  {
+   "name": "Jarace Walker",
+   "nba": "IND",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 224,
+    "cur": 325
+   },
+   "owned": 2,
+   "owned_delta": 0,
+   "started": 1,
+   "started_delta": -1
   },
   {
    "name": "GG Jackson",
@@ -3216,738 +4662,1968 @@
    "status": "O",
    "rank": {
     "pre": 230,
-    "cur": 317
+    "cur": 326
    },
-   "owned": 1
+   "owned": 1,
+   "owned_delta": 0
   },
   {
-   "name": "Charles Bassey",
-   "nba": "GSW",
+   "name": "Steven Adams",
+   "nba": "HOU",
    "pos": "C",
    "status": "",
    "rank": {
-    "pre": 370,
-    "cur": 178
+    "pre": 399,
+    "cur": 327
    },
-   "owned": 15
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1
   },
   {
-   "name": "AJ Green",
-   "nba": "MIL",
+   "name": "Chris Youngblood",
+   "nba": "POR",
+   "pos": "SG",
+   "status": "O",
+   "rank": {
+    "pre": 486,
+    "cur": 328
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jordan Clarkson",
+   "nba": "NYK",
+   "pos": "SG,SF",
+   "status": "O",
+   "rank": {
+    "pre": 337,
+    "cur": 329
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Chaney Johnson",
+   "nba": "BKN",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 411,
+    "cur": 330
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Gui Santos",
+   "nba": "GSW",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 165,
+    "cur": 331
+   },
+   "owned": 7,
+   "owned_delta": -1,
+   "started": 3
+  },
+  {
+   "name": "Jordan Hawkins",
+   "nba": "CHI",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 393,
+    "cur": 332
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Zeke Nnaji",
+   "nba": "DEN",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 391,
+    "cur": 333
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Bogdan Bogdanović",
+   "nba": "HOU",
    "pos": "PG,SG,SF",
    "status": "",
    "rank": {
-    "pre": 270,
-    "cur": 282
+    "pre": 377,
+    "cur": 334
    },
-   "owned": 1
+   "owned": 1,
+   "owned_delta": 0,
+   "started_delta": -1
   },
   {
-   "name": "Goga Bitadze",
-   "nba": "ORL",
-   "pos": "C",
-   "status": "",
-   "rank": {
-    "pre": 273,
-    "cur": 279
-   },
-   "owned": 2
-  },
-  {
-   "name": "Keegan Murray",
-   "nba": "SAC",
+   "name": "Spencer Jones",
+   "nba": "DEN",
    "pos": "SF,PF",
    "status": "",
-   "owned": 62,
-   "waiver": "Nov 25",
    "rank": {
-    "pre": 156,
-    "cur": 174
-   }
+    "pre": 326,
+    "cur": 335
+   },
+   "owned": 1,
+   "owned_delta": 0
   },
   {
-   "name": "Jalen Williams",
-   "nba": "OKC",
-   "pos": "SF,PF",
-   "status": "O",
-   "owned": 45,
-   "waiver": "Nov 24",
-   "rank": {
-    "pre": 282,
-    "cur": 120
-   }
-  },
-  {
-   "name": "Matisse Thybulle",
-   "nba": "LAL",
-   "pos": "SG,SF",
+   "name": "Baba Miller",
+   "nba": "LAC",
+   "pos": "PF",
    "status": "",
-   "owned": 27,
-   "waiver": "Nov 24",
    "rank": {
-    "pre": 284,
-    "cur": 93
-   }
+    "pre": 503,
+    "cur": 336
+   },
+   "owned_delta": 0
   },
   {
-   "name": "Kyle Kuzma",
+   "name": "Tobe Awaka",
+   "nba": "CHI",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 602,
+    "cur": 337
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Pete Nance",
    "nba": "MIL",
    "pos": "SF,PF",
    "status": "",
-   "owned": 24,
-   "waiver": "Nov 23",
    "rank": {
-    "pre": 193,
-    "cur": 224
-   }
+    "pre": 401,
+    "cur": 338
+   },
+   "owned_delta": 0
   },
   {
-   "name": "Jaylen Wells",
-   "nba": "MEM",
+   "name": "Hugo González",
+   "nba": "BOS",
    "pos": "SG,SF",
    "status": "",
-   "owned": 22,
-   "waiver": "Nov 24",
    "rank": {
-    "pre": 152,
-    "cur": 144
-   }
+    "pre": 189,
+    "cur": 339
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1,
+   "started_delta": 1
   },
   {
-   "name": "Jordan Poole",
-   "nba": "NOP",
+   "name": "Santi Aldama",
+   "nba": "DAL",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 290,
+    "cur": 340
+   },
+   "owned": 4,
+   "owned_delta": -1,
+   "started": 3,
+   "started_delta": 2
+  },
+  {
+   "name": "Adem Bona",
+   "nba": "PHI",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 254,
+    "cur": 341
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Alijah Martin",
+   "nba": "TOR",
    "pos": "PG,SG",
    "status": "",
-   "owned": 21,
-   "waiver": "Nov 25",
    "rank": {
-    "pre": 191,
-    "cur": 151
-   }
+    "pre": 459,
+    "cur": 342
+   },
+   "owned_delta": 0
   },
   {
-   "name": "Robert Williams III",
+   "name": "Zach Collins",
+   "nba": "CHI",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 260,
+    "cur": 343
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Ja'Kobi Gillespie",
+   "nba": "SAS",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 601,
+    "cur": 344
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "James Wiseman",
+   "nba": "NYK",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 546,
+    "cur": 345
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Caris LeVert",
+   "nba": "MIL",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 322,
+    "cur": 346
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Oscar Tshiebwe",
+   "nba": "HOU",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 407,
+    "cur": 347
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jamaree Bouyea",
+   "nba": "PHX",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 392,
+    "cur": 348
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Olivier-Maxence Prosper",
+   "nba": "MEM",
+   "pos": "SF,PF,C",
+   "status": "",
+   "rank": {
+    "pre": 324,
+    "cur": 349
+   },
+   "owned": 1,
+   "owned_delta": -1,
+   "started": 1
+  },
+  {
+   "name": "Jamal Cain",
+   "nba": "ORL",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 396,
+    "cur": 350
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jarred Vanderbilt",
+   "nba": "LAL",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 335,
+    "cur": 351
+   },
+   "owned_delta": -1
+  },
+  {
+   "name": "Myron Gardner",
+   "nba": "MIA",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 398,
+    "cur": 352
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Branden Carlson",
    "nba": "POR",
    "pos": "C",
    "status": "",
    "rank": {
-    "pre": 210,
-    "cur": 119
+    "pre": 374,
+    "cur": 353
    },
-   "owned": 9,
-   "waiver": "Nov 25"
+   "owned_delta": 0
   },
   {
-   "name": "Jordan Goodwin",
+   "name": "Adou Thiero",
+   "nba": "LAL",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 529,
+    "cur": 354
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Josh Minott",
+   "nba": "BKN",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 329,
+    "cur": 355
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Khris Middleton",
+   "nba": "WAS",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 316,
+    "cur": 356
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1,
+   "started_delta": 1
+  },
+  {
+   "name": "Isaiah Crawford",
+   "nba": "HOU",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 505,
+    "cur": 357
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Marcus Sasser",
+   "nba": "DAL",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 384,
+    "cur": 358
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Quinten Post",
+   "nba": "MEM",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 306,
+    "cur": 359
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jose Alvarado",
+   "nba": "NYK",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 289,
+    "cur": 360
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Sergio De Larrea",
+   "nba": "DAL",
+   "pos": "PG",
+   "status": "O",
+   "rank": {
+    "pre": 596,
+    "cur": 361
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Harrison Barnes",
+   "nba": "SAS",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 272,
+    "cur": 362
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Bennedict Mathurin",
+   "nba": "NOP",
+   "pos": "SG,SF",
+   "status": "O",
+   "rank": {
+    "pre": 176,
+    "cur": 363
+   },
+   "owned": 4,
+   "owned_delta": 0,
+   "started": 1,
+   "started_delta": -1
+  },
+  {
+   "name": "Bryce Hopkins",
+   "nba": "DEN",
+   "pos": "SF",
+   "status": "",
+   "rank": {
+    "pre": 565,
+    "cur": 364
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Elijah Harkless",
+   "nba": "DET",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 436,
+    "cur": 365
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Tyus Jones",
+   "nba": "DEN",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 323,
+    "cur": 366
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Simone Fontecchio",
+   "nba": "MIA",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 309,
+    "cur": 367
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jayson Kent",
+   "nba": "POR",
+   "pos": "SF",
+   "status": "",
+   "rank": {
+    "pre": 550,
+    "cur": 368
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Pacôme Dadiet",
+   "nba": "NYK",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 525,
+    "cur": 369
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "John Tonje",
+   "nba": "POR",
+   "pos": "SG",
+   "status": "",
+   "rank": {
+    "pre": 569,
+    "cur": 370
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Chaz Lanier",
+   "nba": "DET",
+   "pos": "SG",
+   "status": "",
+   "rank": {
+    "pre": 504,
+    "cur": 371
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Ousmane Dieng",
+   "nba": "MIL",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 359,
+    "cur": 372
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Carter Bryant",
+   "nba": "SAS",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 376,
+    "cur": 373
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started_delta": -1
+  },
+  {
+   "name": "Duop Reath",
+   "nba": "PHX",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 446,
+    "cur": 374
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Josh Dix",
+   "nba": "OKC",
+   "pos": "SG",
+   "status": "",
+   "rank": {
+    "pre": 555,
+    "cur": 375
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Noa Essengue",
+   "nba": "CHI",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 545,
+    "cur": 376
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Tarris Reed Jr.",
+   "nba": "SAS",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 549,
+    "cur": 377
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Kobe Brown",
+   "nba": "IND",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 362,
+    "cur": 378
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Terance Mann",
+   "nba": "BKN",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 315,
+    "cur": 379
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Hannes Steinbach",
+   "nba": "CHA",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 588,
+    "cur": 380
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started_delta": -1
+  },
+  {
+   "name": "Alex Morales",
+   "nba": "ORL",
+   "pos": "SG",
+   "status": "",
+   "rank": {
+    "pre": 561,
+    "cur": 381
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jaron Pierre Jr.",
+   "nba": "NOP",
+   "pos": "SG",
+   "status": "",
+   "rank": {
+    "pre": 581,
+    "cur": 382
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Brooks Barnhizer",
+   "nba": "OKC",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 462,
+    "cur": 383
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jalen Pickett",
+   "nba": "LAC",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 382,
+    "cur": 384
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Yang Hansen",
+   "nba": "POR",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 527,
+    "cur": 385
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jahmai Mashack",
+   "nba": "MEM",
+   "pos": "PG,SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 440,
+    "cur": 386
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Kevon Looney",
+   "nba": "LAL",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 406,
+    "cur": 387
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Nick Martinelli",
+   "nba": "LAC",
+   "pos": "SF",
+   "status": "",
+   "rank": {
+    "pre": 587,
+    "cur": 388
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Nique Clifford",
+   "nba": "OKC",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 244,
+    "cur": 389
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started": 1
+  },
+  {
+   "name": "Tacko Fall",
+   "nba": "PHI",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 594,
+    "cur": 390
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Kyle Anderson",
+   "nba": "TOR",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 332,
+    "cur": 391
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Asa Newell",
+   "nba": "ATL",
+   "pos": "PF,C",
+   "status": "O",
+   "rank": {
+    "pre": 429,
+    "cur": 392
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Pat Spencer",
    "nba": "PHX",
    "pos": "PG,SG",
    "status": "",
    "rank": {
-    "pre": 266,
-    "cur": 107
+    "pre": 349,
+    "cur": 393
    },
-   "owned": 5,
-   "waiver": "Nov 25"
-  },
-  {
-   "name": "Isaiah Joe",
-   "pos": "",
-   "status": "",
-   "nba": "DET"
-  },
-  {
-   "name": "Danny Wolf",
-   "pos": "",
-   "status": "",
-   "nba": "BKN"
-  },
-  {
-   "name": "Mario Hezonja",
-   "pos": "",
-   "status": "",
-   "nba": "CLE"
-  },
-  {
-   "name": "Caleb Martin",
-   "pos": "",
-   "status": "",
-   "nba": "DAL"
-  },
-  {
-   "name": "Moritz Wagner",
-   "pos": "",
-   "status": "",
-   "nba": "BKN"
-  },
-  {
-   "name": "Rocco Zikarsky",
-   "pos": "",
-   "status": "",
-   "nba": "MIN"
-  },
-  {
-   "name": "Jalen Slawson",
-   "pos": "",
-   "status": "",
-   "nba": "IND"
-  },
-  {
-   "name": "Sion James",
-   "pos": "",
-   "status": "",
-   "nba": "CHA"
-  },
-  {
-   "name": "Jaylin Williams",
-   "pos": "",
-   "status": "",
-   "nba": "OKC"
-  },
-  {
-   "name": "Santi Aldama",
-   "pos": "",
-   "status": "",
-   "nba": "DAL"
-  },
-  {
-   "name": "Trey Lyles",
-   "pos": "",
-   "status": "",
-   "nba": "MIN"
-  },
-  {
-   "name": "Norchad Omier",
-   "pos": "",
-   "status": "",
-   "nba": "CLE"
-  },
-  {
-   "name": "Jamison Battle",
-   "pos": "",
-   "status": "",
-   "nba": "TOR"
-  },
-  {
-   "name": "Walter Clayton Jr.",
-   "pos": "",
-   "status": "",
-   "nba": "DAL"
-  },
-  {
-   "name": "Ben Sheppard",
-   "pos": "",
-   "status": "",
-   "nba": "IND"
-  },
-  {
-   "name": "Svi Mykhailiuk",
-   "pos": "",
-   "status": "",
-   "nba": "UTA"
-  },
-  {
-   "name": "Gary Payton II",
-   "pos": "",
-   "status": "",
-   "nba": "GSW"
-  },
-  {
-   "name": "Chaney Johnson",
-   "pos": "",
-   "status": "",
-   "nba": "BKN"
-  },
-  {
-   "name": "Pete Nance",
-   "pos": "",
-   "status": "",
-   "nba": "MIL"
-  },
-  {
-   "name": "Spencer Jones",
-   "pos": "",
-   "status": "",
-   "nba": "DEN"
-  },
-  {
-   "name": "Lawson Lovering",
-   "pos": "",
-   "status": "",
-   "nba": "LAL"
-  },
-  {
-   "name": "Riley Minix",
-   "pos": "",
-   "status": "",
-   "nba": "CLE"
-  },
-  {
-   "name": "Georges Niang",
-   "pos": "",
-   "status": "",
-   "nba": "GSW"
-  },
-  {
-   "name": "Ryan Conwell",
-   "pos": "",
-   "status": "",
-   "nba": "MIA"
-  },
-  {
-   "name": "Tristan Enaruna",
-   "pos": "",
-   "status": "",
-   "nba": "CLE"
-  },
-  {
-   "name": "Yanic Konan Niederhäuser",
-   "pos": "",
-   "status": "",
-   "nba": "LAC"
-  },
-  {
-   "name": "Jock Landale",
-   "pos": "",
-   "status": "",
-   "nba": "ATL"
-  },
-  {
-   "name": "Scoot Henderson",
-   "pos": "",
-   "status": "",
-   "nba": "POR"
-  },
-  {
-   "name": "Caris LeVert",
-   "pos": "",
-   "status": "",
-   "nba": "MIL"
-  },
-  {
-   "name": "Josh Okogie",
-   "pos": "",
-   "status": "",
-   "nba": "UTA"
-  },
-  {
-   "name": "Taurean Prince",
-   "pos": "",
-   "status": "",
-   "nba": "DET"
-  },
-  {
-   "name": "DeAndre Jordan",
-   "pos": "",
-   "status": "",
-   "nba": "NOP"
-  },
-  {
-   "name": "Trendon Watford",
-   "pos": "",
-   "status": "",
-   "nba": "NOP"
-  },
-  {
-   "name": "Cam Whitmore",
-   "pos": "",
-   "status": "",
-   "nba": "DEN"
-  },
-  {
-   "name": "Jevon Carter",
-   "pos": "",
-   "status": "",
-   "nba": "ORL"
-  },
-  {
-   "name": "Reece Beekman",
-   "pos": "",
-   "status": "",
-   "nba": "WAS"
-  },
-  {
-   "name": "Luka Garza",
-   "pos": "",
-   "status": "",
-   "nba": "BOS"
-  },
-  {
-   "name": "Jayson Kent",
-   "pos": "",
-   "status": "",
-   "nba": "POR"
-  },
-  {
-   "name": "Josh Green",
-   "pos": "",
-   "status": "",
-   "nba": "UTA"
-  },
-  {
-   "name": "John Tonje",
-   "pos": "",
-   "status": "",
-   "nba": "POR"
-  },
-  {
-   "name": "Adem Bona",
-   "pos": "",
-   "status": "",
-   "nba": "PHI"
-  },
-  {
-   "name": "Larry Nance Jr.",
-   "pos": "",
-   "status": "",
-   "nba": "IND"
-  },
-  {
-   "name": "Jabari Walker",
-   "pos": "",
-   "status": "",
-   "nba": "PHI"
-  },
-  {
-   "name": "Braden Smith",
-   "pos": "",
-   "status": "",
-   "nba": "IND"
-  },
-  {
-   "name": "Khris Middleton",
-   "pos": "",
-   "status": "",
-   "nba": "WAS"
-  },
-  {
-   "name": "Nikola Topić",
-   "pos": "",
-   "status": "",
-   "nba": "OKC"
-  },
-  {
-   "name": "Micah Peavy",
-   "pos": "",
-   "status": "",
-   "nba": "OKC"
-  },
-  {
-   "name": "Jordan Walsh",
-   "pos": "",
-   "status": "",
-   "nba": "BOS"
-  },
-  {
-   "name": "Chris Mañon",
-   "pos": "",
-   "status": "",
-   "nba": "LAL"
-  },
-  {
-   "name": "Jonathan Mogbo",
-   "pos": "",
-   "status": "",
-   "nba": "SAC"
-  },
-  {
-   "name": "Nate Ament",
-   "pos": "",
-   "status": "",
-   "nba": "MIL"
-  },
-  {
-   "name": "Zach Collins",
-   "pos": "",
-   "status": "",
-   "nba": "CHI"
-  },
-  {
-   "name": "Steven Adams",
-   "pos": "",
-   "status": "",
-   "nba": "HOU"
-  },
-  {
-   "name": "Tim Hardaway Jr.",
-   "pos": "",
-   "status": "",
-   "nba": "MIA"
-  },
-  {
-   "name": "Jose Alvarado",
-   "pos": "",
-   "status": "",
-   "nba": "NYK"
-  },
-  {
-   "name": "Emanuel Sharp",
-   "pos": "",
-   "status": "",
-   "nba": "SAC"
-  },
-  {
-   "name": "Ben Saraf",
-   "pos": "",
-   "status": "",
-   "nba": "BKN"
-  },
-  {
-   "name": "Tyler Kolek",
-   "pos": "",
-   "status": "",
-   "nba": "NYK"
-  },
-  {
-   "name": "Harrison Barnes",
-   "pos": "",
-   "status": "",
-   "nba": "SAS"
-  },
-  {
-   "name": "Craig Porter Jr.",
-   "pos": "",
-   "status": "",
-   "nba": "CLE"
-  },
-  {
-   "name": "Vít Krejčí",
-   "pos": "",
-   "status": "",
-   "nba": "POR"
-  },
-  {
-   "name": "Noa Essengue",
-   "pos": "",
-   "status": "",
-   "nba": "CHI"
-  },
-  {
-   "name": "Jaylen Clark",
-   "pos": "",
-   "status": "",
-   "nba": "MIN"
-  },
-  {
-   "name": "Dru Smith",
-   "pos": "",
-   "status": "",
-   "nba": "MIA"
-  },
-  {
-   "name": "RayJ Dennis",
-   "pos": "",
-   "status": "",
-   "nba": "ATL"
-  },
-  {
-   "name": "Marcus Sasser",
-   "pos": "",
-   "status": "",
-   "nba": "DAL"
-  },
-  {
-   "name": "Nikola Jović",
-   "pos": "",
-   "status": "",
-   "nba": "MIA"
-  },
-  {
-   "name": "Malachi Smith",
-   "pos": "",
-   "status": "",
-   "nba": "TOR"
-  },
-  {
-   "name": "Asa Newell",
-   "pos": "",
-   "status": "",
-   "nba": "ATL"
-  },
-  {
-   "name": "Jamal Cain",
-   "pos": "",
-   "status": "",
-   "nba": "ORL"
+   "owned_delta": 0,
+   "waiver": "Nov 26"
+  },
+  {
+   "name": "Ryan Nembhard",
+   "nba": "DEN",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 375,
+    "cur": 394
+   },
+   "owned_delta": 0
   },
   {
    "name": "Isaiah Collier",
-   "pos": "",
+   "nba": "UTA",
+   "pos": "PG,SG",
    "status": "",
-   "nba": "UTA"
+   "rank": {
+    "pre": 175,
+    "cur": 395
+   },
+   "owned": 4,
+   "owned_delta": 0,
+   "started": 2,
+   "started_delta": -1
   },
   {
-   "name": "Quinten Post",
-   "pos": "",
+   "name": "Micah Potter",
+   "nba": "POR",
+   "pos": "PF,C",
    "status": "",
-   "nba": "MEM"
-  },
-  {
-   "name": "Alex Morales",
-   "pos": "",
-   "status": "",
-   "nba": "ORL"
-  },
-  {
-   "name": "Chris Youngblood",
-   "pos": "",
-   "status": "",
-   "nba": "POR"
-  },
-  {
-   "name": "Olivier-Maxence Prosper",
-   "pos": "",
-   "status": "",
-   "nba": "MEM"
-  },
-  {
-   "name": "Zyon Pullin",
-   "pos": "",
-   "status": "",
-   "nba": "MIN"
-  },
-  {
-   "name": "Terance Mann",
-   "pos": "",
-   "status": "",
-   "nba": "BKN"
-  },
-  {
-   "name": "LJ Cryer",
-   "pos": "",
-   "status": "",
-   "nba": "GSW"
-  },
-  {
-   "name": "PJ Hall",
-   "pos": "",
-   "status": "",
-   "nba": "CHA"
-  },
-  {
-   "name": "Devin Carter",
-   "pos": "",
-   "status": "",
-   "nba": "BOS"
-  },
-  {
-   "name": "Bryce McGowens",
-   "pos": "",
-   "status": "",
-   "nba": "NOP"
-  },
-  {
-   "name": "James Wiseman",
-   "pos": "",
-   "status": "",
-   "nba": "NYK"
-  },
-  {
-   "name": "Jarred Vanderbilt",
-   "pos": "",
-   "status": "",
-   "nba": "LAL"
-  },
-  {
-   "name": "Zuby Ejiofor",
-   "pos": "",
-   "status": "",
-   "nba": "ATL"
-  },
-  {
-   "name": "Alijah Martin",
-   "pos": "",
-   "status": "",
-   "nba": "TOR"
+   "rank": {
+    "pre": 327,
+    "cur": 396
+   },
+   "owned_delta": 0
   },
   {
    "name": "Mason Plumlee",
-   "pos": "",
+   "nba": "SAC",
+   "pos": "C",
    "status": "",
-   "nba": "SAC"
+   "rank": {
+    "pre": 445,
+    "cur": 397
+   },
+   "owned_delta": 0
   },
   {
-   "name": "Tidjane Salaün",
-   "pos": "",
-   "status": "",
-   "nba": "CHA"
+   "name": "Vít Krejčí",
+   "nba": "POR",
+   "pos": "SG,SF",
+   "status": "O",
+   "rank": {
+    "pre": 299,
+    "cur": 398
+   },
+   "owned_delta": 0
   },
   {
-   "name": "Bogdan Bogdanović",
-   "pos": "",
+   "name": "Scoot Henderson",
+   "nba": "POR",
+   "pos": "PG",
    "status": "",
-   "nba": "HOU"
+   "rank": {
+    "pre": 201,
+    "cur": 399
+   },
+   "owned": 8,
+   "owned_delta": -2,
+   "started": 5,
+   "started_delta": -1
   },
   {
    "name": "Julian Reese",
-   "pos": "",
+   "nba": "NOP",
+   "pos": "C",
    "status": "",
-   "nba": "NOP"
+   "rank": {
+    "pre": 458,
+    "cur": 400
+   },
+   "owned_delta": 0
   },
   {
-   "name": "Myron Gardner",
-   "pos": "",
+   "name": "Ben Saraf",
+   "nba": "BKN",
+   "pos": "SG",
    "status": "",
-   "nba": "MIA"
+   "rank": {
+    "pre": 435,
+    "cur": 401
+   },
+   "owned_delta": 0
   },
   {
-   "name": "Daeqwon Plowden",
-   "pos": "",
+   "name": "Malevy Leons",
+   "nba": "GSW",
+   "pos": "PF",
    "status": "",
-   "nba": "SAC"
-  },
-  {
-   "name": "Jordan McLaughlin",
-   "pos": "",
-   "status": "",
-   "nba": "SAS"
-  },
-  {
-   "name": "Elijah Harkless",
-   "pos": "",
-   "status": "",
-   "nba": "DET"
+   "rank": {
+    "pre": 461,
+    "cur": 402
+   },
+   "owned_delta": 0
   },
   {
    "name": "Gary Trent Jr.",
-   "pos": "",
+   "nba": "MIL",
+   "pos": "SG,SF",
    "status": "",
-   "nba": "MIL"
+   "rank": {
+    "pre": 336,
+    "cur": 403
+   },
+   "owned_delta": 0
   },
   {
-   "name": "Josh Dix",
-   "pos": "",
+   "name": "Zyon Pullin",
+   "nba": "MIN",
+   "pos": "PG,SG",
    "status": "",
-   "nba": "OKC"
+   "rank": {
+    "pre": 562,
+    "cur": 404
+   },
+   "owned_delta": 0
   },
   {
-   "name": "Graham Ike",
-   "pos": "",
-   "status": "",
-   "nba": "GSW"
+   "name": "Tre Mann",
+   "nba": "WAS",
+   "pos": "PG,SG",
+   "status": "GTD",
+   "rank": {
+    "pre": 426,
+    "cur": 405
+   },
+   "owned_delta": 0
   },
   {
-   "name": "Jaron Pierre Jr.",
-   "pos": "",
+   "name": "Koa Peat",
+   "nba": "PHX",
+   "pos": "PF",
    "status": "",
-   "nba": "NOP"
+   "rank": {
+    "pre": 566,
+    "cur": 406
+   },
+   "owned_delta": 0
   },
   {
-   "name": "Trayce Jackson-Davis",
-   "pos": "",
+   "name": "Mohamed Diawara",
+   "nba": "NYK",
+   "pos": "PF",
    "status": "",
-   "nba": "TOR"
+   "rank": {
+    "pre": 428,
+    "cur": 407
+   },
+   "owned_delta": 0
   },
   {
-   "name": "Tobe Awaka",
-   "pos": "",
+   "name": "Karim Lopez",
+   "nba": "MEM",
+   "pos": "SF",
    "status": "",
-   "nba": "CHI"
+   "rank": {
+    "pre": 589,
+    "cur": 408
+   },
+   "owned_delta": 0
   },
   {
-   "name": "Josh Minott",
-   "pos": "",
+   "name": "Taurean Prince",
+   "nba": "DET",
+   "pos": "SF,PF",
+   "status": "O",
+   "rank": {
+    "pre": 357,
+    "cur": 409
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Daeqwon Plowden",
+   "nba": "SAC",
+   "pos": "SG,SF",
    "status": "",
-   "nba": "BKN"
+   "rank": {
+    "pre": 259,
+    "cur": 410
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jaylin Williams",
+   "nba": "OKC",
+   "pos": "PF,C",
+   "status": "O",
+   "rank": {
+    "pre": 169,
+    "cur": 411
+   },
+   "owned": 2,
+   "owned_delta": 0,
+   "started": 1
+  },
+  {
+   "name": "Ben Sheppard",
+   "nba": "IND",
+   "pos": "SG,SF",
+   "status": "O",
+   "rank": {
+    "pre": 330,
+    "cur": 412
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Colin Castleton",
+   "nba": "ORL",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 554,
+    "cur": 413
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Tim Hardaway Jr.",
+   "nba": "MIA",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 208,
+    "cur": 414
+   },
+   "owned": 2,
+   "owned_delta": -1,
+   "started": 1
+  },
+  {
+   "name": "Ron Harper Jr.",
+   "nba": "BOS",
+   "pos": "SF",
+   "status": "",
+   "rank": {
+    "pre": 452,
+    "cur": 415
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Chris Cenac Jr.",
+   "nba": "BOS",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 595,
+    "cur": 416
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Dalen Terry",
+   "nba": "OKC",
+   "pos": "SG,SF",
+   "status": "NA",
+   "rank": {
+    "pre": 404,
+    "cur": 417
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Malik Dia",
+   "nba": "NOP",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 633,
+    "cur": 418
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jericho Sims",
+   "nba": "MIL",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 342,
+    "cur": 419
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "PJ Hall",
+   "nba": "CHA",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 496,
+    "cur": 420
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Lawson Lovering",
+   "nba": "LAL",
+   "pos": "C",
+   "status": "NA",
+   "rank": {
+    "pre": 591,
+    "cur": 421
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Tristan Enaruna",
+   "nba": "CLE",
+   "pos": "SF",
+   "status": "NA",
+   "rank": {
+    "pre": 553,
+    "cur": 422
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Dru Smith",
+   "nba": "MIA",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 294,
+    "cur": 423
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jaden Bradley",
+   "nba": "TOR",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 583,
+    "cur": 424
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Rayan Rupert",
+   "nba": "PHI",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 365,
+    "cur": 425
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Tobi Lawal",
+   "nba": "DAL",
+   "pos": "PF",
+   "status": "O",
+   "rank": {
+    "pre": 590,
+    "cur": 426
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Will Riley",
+   "nba": "WAS",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 219,
+    "cur": 427
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Cam Whitmore",
+   "nba": "DEN",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 432,
+    "cur": 428
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "DaRon Holmes II",
+   "nba": "DEN",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 502,
+    "cur": 429
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Cameron Carr",
+   "nba": "LAL",
+   "pos": "SG",
+   "status": "",
+   "rank": {
+    "pre": 599,
+    "cur": 430
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Bogoljub Marković",
+   "nba": "MIL",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 631,
+    "cur": 431
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Riley Minix",
+   "nba": "CLE",
+   "pos": "SF",
+   "status": "NA",
+   "rank": {
+    "pre": 560,
+    "cur": 432
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Isaac Jones",
+   "nba": "DET",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 564,
+    "cur": 433
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Labaron Philon Jr.",
+   "nba": "PHI",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 611,
+    "cur": 434
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Caleb Love",
+   "nba": "PHI",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 405,
+    "cur": 435
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Dorian Finney-Smith",
+   "nba": "ATL",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 400,
+    "cur": 436
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Tony Bradley",
+   "nba": "UTA",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 453,
+    "cur": 437
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Dailyn Swain",
+   "nba": "CHI",
+   "pos": "SF",
+   "status": "",
+   "rank": {
+    "pre": 626,
+    "cur": 438
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Jett Howard",
+   "nba": "DAL",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 388,
+    "cur": 439
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jaden Hardy",
+   "nba": "LAL",
+   "pos": "PG,SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 397,
+    "cur": 440
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Nikola Topić",
+   "nba": "OKC",
+   "pos": "PG",
+   "status": "O",
+   "rank": {
+    "pre": 584,
+    "cur": 441
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Ebuka Okorie",
+   "nba": "DET",
+   "pos": "PG",
+   "status": "O",
+   "rank": {
+    "pre": 624,
+    "cur": 442
+   },
+   "owned": 1,
+   "owned_delta": 0
+  },
+  {
+   "name": "Bruce Thornton",
+   "nba": "HOU",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 593,
+    "cur": 443
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Nick Richards",
+   "nba": "MIA",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 395,
+    "cur": 444
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Liam McNeeley",
+   "nba": "CHA",
+   "pos": "SF",
+   "status": "",
+   "rank": {
+    "pre": 483,
+    "cur": 445
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Cam Christie",
+   "nba": "LAC",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 485,
+    "cur": 446
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Kyle Filipowski",
+   "nba": "UTA",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 202,
+    "cur": 447
+   },
+   "owned": 3,
+   "owned_delta": 1,
+   "started": 2
+  },
+  {
+   "name": "Jae'Sean Tate",
+   "nba": "HOU",
+   "pos": "SG,SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 451,
+    "cur": 448
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Anthony Gill",
+   "nba": "WAS",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 356,
+    "cur": 449
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Keshad Johnson",
+   "nba": "MIA",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 470,
+    "cur": 450
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Johni Broome",
+   "nba": "MIN",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 739,
+    "cur": 451
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jonas Aidoo",
+   "nba": "UTA",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 642,
+    "cur": 452
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Bronny James",
+   "nba": "LAL",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 471,
+    "cur": 453
+   },
+   "owned": 1,
+   "owned_delta": 0,
+   "started_delta": -1
+  },
+  {
+   "name": "Blake Wesley",
+   "nba": "LAC",
+   "pos": "PG,SG",
+   "status": "NA",
+   "rank": {
+    "pre": 507,
+    "cur": 454
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Maliq Brown",
+   "nba": "SAS",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 640,
+    "cur": 455
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Moussa Cisse",
+   "nba": "DAL",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 442,
+    "cur": 456
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Alex Karaban",
+   "nba": "SAC",
+   "pos": "SF",
+   "status": "",
+   "rank": {
+    "pre": 643,
+    "cur": 457
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Alpha Diallo",
+   "nba": "DEN",
+   "pos": "SF",
+   "status": "",
+   "rank": {
+    "pre": 641,
+    "cur": 458
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Malachi Smith",
+   "nba": "TOR",
+   "pos": "SG",
+   "status": "",
+   "rank": {
+    "pre": 455,
+    "cur": 459
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "David Jones Garcia",
+   "nba": "SAS",
+   "pos": "SG",
+   "status": "",
+   "rank": {
+    "pre": 556,
+    "cur": 460
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Chris Mañon",
+   "nba": "LAL",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 579,
+    "cur": 461
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Rasheer Fleming",
+   "nba": "PHX",
+   "pos": "PF,C",
+   "status": "",
+   "rank": {
+    "pre": 434,
+    "cur": 462
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Cody Williams",
+   "nba": "MIN",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 343,
+    "cur": 463
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Reece Beekman",
+   "nba": "WAS",
+   "pos": "PG",
+   "status": "O",
+   "rank": {
+    "pre": 575,
+    "cur": 464
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Harrison Ingram",
+   "nba": "UTA",
+   "pos": "SF",
+   "status": "",
+   "rank": {
+    "pre": 612,
+    "cur": 465
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Dillon Mitchell",
+   "nba": "BOS",
+   "pos": "SF",
+   "status": "",
+   "rank": {
+    "pre": 692,
+    "cur": 466
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jaden Akins",
+   "nba": "NYK",
+   "pos": "SG",
+   "status": "",
+   "rank": {
+    "pre": 723,
+    "cur": 467
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Kobe Bufkin",
+   "nba": "UTA",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 570,
+    "cur": 468
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Justin Edwards",
+   "nba": "PHI",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 333,
+    "cur": 469
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "AJ Johnson",
+   "nba": "NOP",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 499,
+    "cur": 470
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Drake Powell",
+   "nba": "BKN",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 379,
+    "cur": 471
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Isaiah Evans",
+   "nba": "MIN",
+   "pos": "SG",
+   "status": "",
+   "rank": {
+    "pre": 741,
+    "cur": 472
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Felix Okpara",
+   "nba": "WAS",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 735,
+    "cur": 473
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Tolu Smith",
+   "nba": "DET",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 582,
+    "cur": 474
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Rocco Zikarsky",
+   "nba": "MIN",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 572,
+    "cur": 475
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Carson Cooper",
+   "nba": "LAL",
+   "pos": "C",
+   "status": "",
+   "rank": {
+    "pre": 743,
+    "cur": 477
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Gabe Vincent",
+   "nba": "SAC",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 386,
+    "cur": 478
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Tre Donaldson",
+   "nba": "MIA",
+   "pos": "PG",
+   "status": "",
+   "rank": {
+    "pre": 742,
+    "cur": 479
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Devin Carter",
+   "nba": "BOS",
+   "pos": "PG,SG",
+   "status": "",
+   "rank": {
+    "pre": 427,
+    "cur": 480
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Joshua Jefferson",
+   "nba": "BKN",
+   "pos": "PF",
+   "status": "",
+   "rank": {
+    "pre": 740,
+    "cur": 481
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Adam Flagler",
+   "nba": "SAC",
+   "pos": "PG,SG",
+   "status": "NA",
+   "rank": {
+    "pre": 625,
+    "cur": 482
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Dane Goodwin",
+   "nba": "DEN",
+   "pos": "SG",
+   "status": "NA",
+   "rank": {
+    "pre": 728,
+    "cur": 483
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jake Stephens",
+   "nba": "MIL",
+   "pos": "C",
+   "status": "NA",
+   "rank": {
+    "pre": 712,
+    "cur": 484
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Haywood Highsmith",
+   "nba": "PHX",
+   "pos": "SF,PF",
+   "status": "NA",
+   "rank": {
+    "pre": 437,
+    "cur": 485
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Tyler Smith",
+   "nba": "DAL",
+   "pos": "PF",
+   "status": "NA",
+   "rank": {
+    "pre": 532,
+    "cur": 486
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Malik Williams",
+   "nba": "SAS",
+   "pos": "C",
+   "status": "NA",
+   "rank": {
+    "pre": 674,
+    "cur": 487
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Rob Dillingham",
+   "nba": "CHA",
+   "pos": "PG,SG",
+   "status": "NA",
+   "rank": {
+    "pre": 414,
+    "cur": 488
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Kelly Olynyk",
+   "nba": "SAS",
+   "pos": "PF,C",
+   "status": "NA",
+   "rank": {
+    "pre": 433,
+    "cur": 489
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Dillon Jones",
+   "nba": "PHI",
+   "pos": "SF",
+   "status": "NA",
+   "rank": {
+    "pre": 551,
+    "cur": 490
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Kevin McCullar Jr.",
+   "nba": "TOR",
+   "pos": "SF,PF",
+   "status": "",
+   "rank": {
+    "pre": 548,
+    "cur": 491
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Johnny Furphy",
+   "nba": "IND",
+   "pos": "SG,SF",
+   "status": "",
+   "rank": {
+    "pre": 438,
+    "cur": 492
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Blake Hinson",
+   "nba": "UTA",
+   "pos": "PF,C",
+   "status": "NA",
+   "rank": {
+    "pre": 476,
+    "cur": 493
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Jalen Bridges",
+   "nba": "CHI",
+   "pos": "SF",
+   "status": "NA",
+   "rank": {
+    "pre": 734,
+    "cur": 494
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Kevin Porter Jr.",
+   "nba": "MIL",
+   "pos": "PG,SG",
+   "status": "NA",
+   "rank": {
+    "pre": 171,
+    "cur": 495
+   },
+   "owned": 7,
+   "owned_delta": 0,
+   "started": 2
+  },
+  {
+   "name": "Ariel Hukporti",
+   "nba": "PHI",
+   "pos": "C",
+   "status": "OFS",
+   "rank": {
+    "pre": 430,
+    "cur": 496
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Tristen Newton",
+   "nba": "SAC",
+   "pos": "SG,SF",
+   "status": "NA",
+   "rank": {
+    "pre": 629,
+    "cur": 497
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Cody Martin",
+   "nba": "IND",
+   "pos": "SG,SF",
+   "status": "NA",
+   "rank": {
+    "pre": 491,
+    "cur": 498
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "KJ Simpson",
+   "nba": "DEN",
+   "pos": "PG,SG",
+   "status": "NA",
+   "rank": {
+    "pre": 498,
+    "cur": 499
+   },
+   "owned_delta": 0
+  },
+  {
+   "name": "Enrique Freeman",
+   "nba": "MIN",
+   "pos": "PF",
+   "status": "NA",
+   "rank": {
+    "pre": 576,
+    "cur": 500
+   },
+   "owned_delta": 0
   }
  ],
  "settings": {
@@ -3979,6 +6655,7 @@
    "Util"
   ],
   "il": 3,
+  "points": null,
   "scoring": "categories",
   "max_adds": 4,
   "playoff_teams": 8,
@@ -3988,124 +6665,129 @@
    23
   ]
  },
- "pulled": "2026-11-22T21:11:00-07:00",
+ "pulled": "2026-11-24T16:38:00-07:00",
  "records": {
-  "Toronto blue jays": {
-   "w": 20,
+  "John Ball": {
+   "w": 30,
    "l": 15,
-   "t": 1,
-   "rank": 5
-  },
-  "Shanghai Sharks": {
-   "w": 25,
-   "l": 11,
    "t": 0,
    "rank": 1
   },
-  "Langangsters": {
-   "w": 12,
-   "l": 23,
-   "t": 1,
-   "rank": 11
-  },
-  "Wesburn incident": {
-   "w": 15,
-   "l": 21,
-   "t": 0,
-   "rank": 8
-  },
-  "fatty zhou": {
-   "w": 23,
-   "l": 13,
-   "t": 0,
-   "rank": 3
-  },
-  "Mathmagicians": {
-   "w": 12,
-   "l": 23,
-   "t": 1,
-   "rank": 12
-  },
-  "Mumbai Meteors": {
-   "w": 17,
-   "l": 18,
-   "t": 1,
-   "rank": 6
-  },
-  "kobe colorado": {
-   "w": 22,
-   "l": 14,
-   "t": 0,
-   "rank": 4
-  },
-  "John Ball": {
-   "w": 24,
-   "l": 12,
+  "Shanghai Sharks": {
+   "w": 30,
+   "l": 15,
    "t": 0,
    "rank": 2
   },
-  "Umbrella Corp": {
-   "w": 14,
-   "l": 22,
+  "kobe colorado": {
+   "w": 26,
+   "l": 18,
+   "t": 1,
+   "rank": 3
+  },
+  "fatty zhou": {
+   "w": 26,
+   "l": 19,
    "t": 0,
-   "rank": 10
+   "rank": 4
+  },
+  "Toronto blue jays": {
+   "w": 25,
+   "l": 19,
+   "t": 1,
+   "rank": 5
+  },
+  "Mumbai Meteors": {
+   "w": 22,
+   "l": 22,
+   "t": 1,
+   "rank": 6
   },
   "Birds that I hate": {
-   "w": 15,
-   "l": 20,
+   "w": 21,
+   "l": 23,
    "t": 1,
    "rank": 7
   },
+  "Wesburn incident": {
+   "w": 19,
+   "l": 26,
+   "t": 0,
+   "rank": 8
+  },
   "Kerala blasters": {
-   "w": 14,
-   "l": 21,
+   "w": 18,
+   "l": 26,
    "t": 1,
    "rank": 9
+  },
+  "Umbrella Corp": {
+   "w": 18,
+   "l": 27,
+   "t": 0,
+   "rank": 10
+  },
+  "Langangsters": {
+   "w": 16,
+   "l": 27,
+   "t": 2,
+   "rank": 11
+  },
+  "Mathmagicians": {
+   "w": 15,
+   "l": 29,
+   "t": 1,
+   "rank": 12
   }
  },
  "matchups": [
   {
    "teams": [
-    "fatty zhou",
-    "Toronto blue jays"
+    "Toronto blue jays",
+    "fatty zhou"
    ],
    "totals": {
-    "fatty zhou": {
-     "FGM": 0.0,
-     "FGA": 0.0,
-     "FTM": 0.0,
-     "FTA": 0.0,
-     "FG3M": 0.0,
-     "PTS": 0.0,
-     "REB": 0.0,
-     "AST": 0.0,
-     "STL": 0.0,
-     "BLK": 0.0,
-     "TOV": 0.0
-    },
     "Toronto blue jays": {
-     "FGM": 0.0,
-     "FGA": 0.0,
-     "FTM": 0.0,
-     "FTA": 0.0,
-     "FG3M": 0.0,
-     "PTS": 0.0,
-     "REB": 0.0,
-     "AST": 0.0,
-     "STL": 0.0,
-     "BLK": 0.0,
-     "TOV": 0.0
+     "FGM": 56.0,
+     "FGA": 96.0,
+     "FTM": 22.0,
+     "FTA": 25.0,
+     "FG3M": 19.0,
+     "PTS": 153.0,
+     "REB": 56.0,
+     "AST": 41.0,
+     "STL": 7.0,
+     "BLK": 3.0,
+     "TOV": 10.0
+    },
+    "fatty zhou": {
+     "FGM": 36.0,
+     "FGA": 92.0,
+     "FTM": 24.0,
+     "FTA": 30.0,
+     "FG3M": 7.0,
+     "PTS": 103.0,
+     "REB": 46.0,
+     "AST": 30.0,
+     "STL": 8.0,
+     "BLK": 10.0,
+     "TOV": 11.0
     }
    },
    "games": {
-    "fatty zhou": {
-     "played": 0,
-     "left": 37
-    },
     "Toronto blue jays": {
-     "played": 0,
-     "left": 35
+     "played": 9,
+     "left": 34
+    },
+    "fatty zhou": {
+     "played": 7,
+     "left": 36
     }
+   },
+   "status": "midevent",
+   "won": {
+    "Toronto blue jays": 7,
+    "fatty zhou": 2
    }
   },
   {
@@ -4115,41 +6797,46 @@
    ],
    "totals": {
     "Shanghai Sharks": {
-     "FGM": 0.0,
-     "FGA": 0.0,
-     "FTM": 0.0,
-     "FTA": 0.0,
-     "FG3M": 0.0,
-     "PTS": 0.0,
-     "REB": 0.0,
-     "AST": 0.0,
-     "STL": 0.0,
-     "BLK": 0.0,
-     "TOV": 0.0
+     "FGM": 38.0,
+     "FGA": 94.0,
+     "FTM": 20.0,
+     "FTA": 26.0,
+     "FG3M": 12.0,
+     "PTS": 108.0,
+     "REB": 46.0,
+     "AST": 26.0,
+     "STL": 4.0,
+     "BLK": 2.0,
+     "TOV": 22.0
     },
     "John Ball": {
-     "FGM": 0.0,
-     "FGA": 0.0,
-     "FTM": 0.0,
-     "FTA": 0.0,
-     "FG3M": 0.0,
-     "PTS": 0.0,
-     "REB": 0.0,
-     "AST": 0.0,
-     "STL": 0.0,
-     "BLK": 0.0,
-     "TOV": 0.0
+     "FGM": 37.0,
+     "FGA": 90.0,
+     "FTM": 14.0,
+     "FTA": 21.0,
+     "FG3M": 9.0,
+     "PTS": 97.0,
+     "REB": 33.0,
+     "AST": 31.0,
+     "STL": 8.0,
+     "BLK": 1.0,
+     "TOV": 13.0
     }
    },
    "games": {
     "Shanghai Sharks": {
-     "played": 0,
-     "left": 26
+     "played": 8,
+     "left": 30
     },
     "John Ball": {
-     "played": 0,
-     "left": 33
+     "played": 7,
+     "left": 30
     }
+   },
+   "status": "midevent",
+   "won": {
+    "John Ball": 4,
+    "Shanghai Sharks": 5
    }
   },
   {
@@ -4159,41 +6846,46 @@
    ],
    "totals": {
     "Langangsters": {
-     "FGM": 0.0,
-     "FGA": 0.0,
-     "FTM": 0.0,
-     "FTA": 0.0,
-     "FG3M": 0.0,
-     "PTS": 0.0,
-     "REB": 0.0,
-     "AST": 0.0,
-     "STL": 0.0,
-     "BLK": 0.0,
-     "TOV": 0.0
+     "FGM": 42.0,
+     "FGA": 95.0,
+     "FTM": 30.0,
+     "FTA": 31.0,
+     "FG3M": 14.0,
+     "PTS": 128.0,
+     "REB": 42.0,
+     "AST": 40.0,
+     "STL": 6.0,
+     "BLK": 3.0,
+     "TOV": 12.0
     },
     "Mathmagicians": {
-     "FGM": 0.0,
-     "FGA": 0.0,
-     "FTM": 0.0,
-     "FTA": 0.0,
-     "FG3M": 0.0,
-     "PTS": 0.0,
-     "REB": 0.0,
-     "AST": 0.0,
-     "STL": 0.0,
-     "BLK": 0.0,
-     "TOV": 0.0
+     "FGM": 39.0,
+     "FGA": 80.0,
+     "FTM": 4.0,
+     "FTA": 6.0,
+     "FG3M": 12.0,
+     "PTS": 94.0,
+     "REB": 34.0,
+     "AST": 16.0,
+     "STL": 2.0,
+     "BLK": 5.0,
+     "TOV": 9.0
     }
    },
    "games": {
     "Langangsters": {
-     "played": 0,
-     "left": 32
+     "played": 10,
+     "left": 23
     },
     "Mathmagicians": {
-     "played": 0,
-     "left": 36
+     "played": 8,
+     "left": 34
     }
+   },
+   "status": "midevent",
+   "won": {
+    "Mathmagicians": 3,
+    "Langangsters": 6
    }
   },
   {
@@ -4203,41 +6895,46 @@
    ],
    "totals": {
     "Wesburn incident": {
-     "FGM": 0.0,
-     "FGA": 0.0,
-     "FTM": 0.0,
-     "FTA": 0.0,
-     "FG3M": 0.0,
-     "PTS": 0.0,
-     "REB": 0.0,
-     "AST": 0.0,
-     "STL": 0.0,
-     "BLK": 0.0,
-     "TOV": 0.0
+     "FGM": 78.0,
+     "FGA": 144.0,
+     "FTM": 34.0,
+     "FTA": 42.0,
+     "FG3M": 20.0,
+     "PTS": 210.0,
+     "REB": 38.0,
+     "AST": 45.0,
+     "STL": 4.0,
+     "BLK": 9.0,
+     "TOV": 22.0
     },
     "Kerala blasters": {
-     "FGM": 0.0,
-     "FGA": 0.0,
-     "FTM": 0.0,
-     "FTA": 0.0,
-     "FG3M": 0.0,
-     "PTS": 0.0,
-     "REB": 0.0,
-     "AST": 0.0,
-     "STL": 0.0,
-     "BLK": 0.0,
-     "TOV": 0.0
+     "FGM": 43.0,
+     "FGA": 94.0,
+     "FTM": 19.0,
+     "FTA": 23.0,
+     "FG3M": 19.0,
+     "PTS": 124.0,
+     "REB": 42.0,
+     "AST": 26.0,
+     "STL": 3.0,
+     "BLK": 2.0,
+     "TOV": 13.0
     }
    },
    "games": {
     "Wesburn incident": {
-     "played": 0,
-     "left": 37
+     "played": 10,
+     "left": 31
     },
     "Kerala blasters": {
-     "played": 0,
-     "left": 22
+     "played": 8,
+     "left": 21
     }
+   },
+   "status": "midevent",
+   "won": {
+    "Wesburn incident": 6,
+    "Kerala blasters": 3
    }
   },
   {
@@ -4247,41 +6944,46 @@
    ],
    "totals": {
     "Mumbai Meteors": {
-     "FGM": 0.0,
-     "FGA": 0.0,
-     "FTM": 0.0,
-     "FTA": 0.0,
-     "FG3M": 0.0,
-     "PTS": 0.0,
-     "REB": 0.0,
-     "AST": 0.0,
-     "STL": 0.0,
-     "BLK": 0.0,
-     "TOV": 0.0
+     "FGM": 56.0,
+     "FGA": 114.0,
+     "FTM": 25.0,
+     "FTA": 35.0,
+     "FG3M": 12.0,
+     "PTS": 149.0,
+     "REB": 66.0,
+     "AST": 49.0,
+     "STL": 13.0,
+     "BLK": 7.0,
+     "TOV": 26.0
     },
     "kobe colorado": {
-     "FGM": 0.0,
-     "FGA": 0.0,
-     "FTM": 0.0,
-     "FTA": 0.0,
-     "FG3M": 0.0,
-     "PTS": 0.0,
-     "REB": 0.0,
-     "AST": 0.0,
-     "STL": 0.0,
-     "BLK": 0.0,
-     "TOV": 0.0
+     "FGM": 54.0,
+     "FGA": 128.0,
+     "FTM": 25.0,
+     "FTA": 29.0,
+     "FG3M": 20.0,
+     "PTS": 153.0,
+     "REB": 43.0,
+     "AST": 31.0,
+     "STL": 8.0,
+     "BLK": 10.0,
+     "TOV": 16.0
     }
    },
    "games": {
     "Mumbai Meteors": {
-     "played": 0,
-     "left": 31
+     "played": 10,
+     "left": 30
     },
     "kobe colorado": {
-     "played": 0,
-     "left": 30
+     "played": 10,
+     "left": 26
     }
+   },
+   "status": "midevent",
+   "won": {
+    "Mumbai Meteors": 4,
+    "kobe colorado": 5
    }
   },
   {
@@ -4291,234 +6993,367 @@
    ],
    "totals": {
     "Umbrella Corp": {
-     "FGM": 0.0,
-     "FGA": 0.0,
-     "FTM": 0.0,
-     "FTA": 0.0,
-     "FG3M": 0.0,
-     "PTS": 0.0,
-     "REB": 0.0,
-     "AST": 0.0,
-     "STL": 0.0,
-     "BLK": 0.0,
-     "TOV": 0.0
+     "FGM": 42.0,
+     "FGA": 77.0,
+     "FTM": 23.0,
+     "FTA": 29.0,
+     "FG3M": 15.0,
+     "PTS": 122.0,
+     "REB": 39.0,
+     "AST": 19.0,
+     "STL": 9.0,
+     "BLK": 3.0,
+     "TOV": 13.0
     },
     "Birds that I hate": {
-     "FGM": 0.0,
-     "FGA": 0.0,
-     "FTM": 0.0,
-     "FTA": 0.0,
-     "FG3M": 0.0,
-     "PTS": 0.0,
-     "REB": 0.0,
-     "AST": 0.0,
-     "STL": 0.0,
-     "BLK": 0.0,
-     "TOV": 0.0
+     "FGM": 36.0,
+     "FGA": 78.0,
+     "FTM": 16.0,
+     "FTA": 17.0,
+     "FG3M": 13.0,
+     "PTS": 101.0,
+     "REB": 29.0,
+     "AST": 20.0,
+     "STL": 6.0,
+     "BLK": 3.0,
+     "TOV": 15.0
     }
    },
    "games": {
     "Umbrella Corp": {
-     "played": 0,
-     "left": 37
+     "played": 7,
+     "left": 32
     },
     "Birds that I hate": {
-     "played": 0,
-     "left": 36
+     "played": 7,
+     "left": 29
     }
+   },
+   "status": "midevent",
+   "won": {
+    "Umbrella Corp": 6,
+    "Birds that I hate": 2
    }
   }
  ],
  "transactions": [
   {
-   "when": "Nov 22 4:50pm",
-   "team": "Kerala blasters",
+   "when": "Nov 24 3:58pm",
+   "team": "Mathmagicians",
+   "player": "Tristan da Silva",
    "type": "add",
-   "player": "Obi Toppin",
-   "dropped": "Jordan Goodwin"
+   "dropped": "Precious Achiuwa"
   },
   {
-   "when": "Nov 22 2:16pm",
-   "team": "Toronto blue jays",
+   "when": "Nov 24 12:50pm",
+   "team": "fatty zhou",
+   "player": "Bilal Coulibaly",
    "type": "add",
+   "dropped": "Peyton Watson"
+  },
+  {
+   "when": "Nov 24 12:16pm",
+   "team": "Toronto blue jays",
+   "player": "Zaccharie Risacher",
+   "type": "add"
+  },
+  {
+   "when": "Nov 24 7:14am",
+   "team": "Toronto blue jays",
+   "type": "drop",
+   "player": "Bones Hyland"
+  },
+  {
+   "when": "Nov 24 7:14am",
+   "team": "Toronto blue jays",
+   "type": "drop",
    "player": "Sam Hauser"
   },
   {
-   "when": "Nov 22 1:11pm",
+   "when": "Nov 24 2:12am",
+   "team": "Mathmagicians",
+   "player": "Matisse Thybulle",
+   "type": "waiver claim",
+   "dropped": "Alex Caruso"
+  },
+  {
+   "when": "Nov 23 10:42pm",
+   "team": "Kerala blasters",
+   "player": "Isaiah Joe",
+   "type": "add",
+   "dropped": "Bennett Stirtz"
+  },
+  {
+   "when": "Nov 23 6:33pm",
+   "team": "John Ball",
+   "player": "De'Andre Hunter",
+   "type": "add"
+  },
+  {
+   "when": "Nov 23 4:25pm",
+   "team": "Mathmagicians",
+   "player": "Mo Bamba",
+   "type": "add",
+   "dropped": "Pat Spencer"
+  },
+  {
+   "when": "Nov 23 12:00pm",
+   "team": "fatty zhou",
+   "player": "Peyton Watson",
+   "type": "add",
+   "dropped": "Kevin Huerter"
+  },
+  {
+   "when": "Nov 23 11:55am",
+   "team": "Kerala blasters",
+   "player": "Bennett Stirtz",
+   "type": "add",
+   "dropped": "Landry Shamet"
+  },
+  {
+   "when": "Nov 23 10:01am",
+   "team": "Shanghai Sharks",
+   "player": "Buddy Hield",
+   "type": "add",
+   "dropped": "Daniel Gafford"
+  },
+  {
+   "when": "Nov 23 8:21am",
+   "team": "fatty zhou",
+   "type": "drop",
+   "player": "Pelle Larsson"
+  },
+  {
+   "when": "Nov 23 8:15am",
+   "team": "Langangsters",
+   "type": "drop",
+   "player": "Naji Marshall"
+  },
+  {
+   "when": "Nov 23 2:17am",
+   "team": "John Ball",
+   "type": "trade",
+   "player": "sent Norman Powell + Nic Claxton to kobe colorado (received Davion Mitchell)"
+  },
+  {
+   "when": "Nov 23 2:17am",
+   "team": "kobe colorado",
+   "type": "trade",
+   "player": "sent Davion Mitchell to John Ball (received Norman Powell + Nic Claxton)"
+  },
+  {
+   "when": "Nov 23 2:17am",
+   "team": "kobe colorado",
+   "type": "trade",
+   "player": "sent Jonathan Kuminga to Umbrella Corp (received Collin Murray-Boyles)"
+  },
+  {
+   "when": "Nov 23 2:17am",
+   "team": "Umbrella Corp",
+   "type": "trade",
+   "player": "sent Collin Murray-Boyles to kobe colorado (received Jonathan Kuminga)"
+  },
+  {
+   "when": "Nov 22 5:50pm",
+   "team": "Kerala blasters",
+   "player": "Obi Toppin",
+   "type": "add",
+   "dropped": "Jordan Goodwin"
+  },
+  {
+   "when": "Nov 22 3:16pm",
+   "team": "Toronto blue jays",
+   "player": "Sam Hauser",
+   "type": "add"
+  },
+  {
+   "when": "Nov 22 2:11pm",
    "team": "Shanghai Sharks",
    "type": "drop",
    "player": "Keegan Murray"
   },
   {
-   "when": "Nov 22 11:57am",
-   "team": "Umbrella Corp",
-   "type": "vetoed trade",
-   "player": "VETOED by league vote: Umbrella Corp would have sent Anthony Edwards to fatty zhou for Damian Lillard - no players moved"
-  },
-  {
-   "when": "Nov 22 12:16am",
+   "when": "Nov 22 1:16am",
    "team": "Shanghai Sharks",
-   "type": "add",
    "player": "Daniel Gafford",
+   "type": "add",
    "dropped": "Robert Williams III"
   },
   {
-   "when": "Nov 22 12:01am",
+   "when": "Nov 22 1:01am",
    "team": "fatty zhou",
-   "type": "add",
    "player": "Pelle Larsson",
+   "type": "add",
    "dropped": "Jordan Poole"
   },
   {
-   "when": "Nov 21 3:48pm",
+   "when": "Nov 21 4:48pm",
    "team": "John Ball",
-   "type": "add",
-   "player": "P.J. Washington"
+   "player": "P.J. Washington",
+   "type": "add"
   },
   {
-   "when": "Nov 21 1:26pm",
+   "when": "Nov 21 4:48pm",
+   "team": "John Ball",
+   "type": "drop",
+   "player": "Grayson Allen"
+  },
+  {
+   "when": "Nov 21 2:26pm",
    "team": "Shanghai Sharks",
-   "type": "add",
-   "player": "Robert Williams III"
+   "player": "Robert Williams III",
+   "type": "add"
   },
   {
-   "when": "Nov 21 11:07am",
+   "when": "Nov 21 12:07pm",
    "team": "Langangsters",
-   "type": "add",
-   "player": "Naji Marshall"
+   "player": "Naji Marshall",
+   "type": "add"
   },
   {
-   "when": "Nov 21 9:30am",
+   "when": "Nov 21 10:30am",
    "team": "Shanghai Sharks",
    "type": "drop",
    "player": "Matisse Thybulle"
   },
   {
-   "when": "Nov 21 3:53am",
+   "when": "Nov 21 4:53am",
    "team": "John Ball",
-   "type": "add",
-   "player": "Grayson Allen"
+   "player": "Grayson Allen",
+   "type": "add"
   },
   {
-   "when": "Nov 21 1:13am",
+   "when": "Nov 21 2:13am",
    "team": "Langangsters",
-   "type": "waiver claim",
    "player": "Cam Spencer",
+   "type": "waiver claim",
    "dropped": "Jaylen Wells"
   },
   {
-   "when": "Nov 21 1:13am",
+   "when": "Nov 21 2:13am",
    "team": "Mathmagicians",
-   "type": "waiver claim",
    "player": "Ryan Rollins",
+   "type": "waiver claim",
    "dropped": "Jalen Williams"
   },
   {
-   "when": "Nov 20 4:41pm",
+   "when": "Nov 20 5:41pm",
    "team": "fatty zhou",
-   "type": "add",
-   "player": "Jordan Poole"
+   "player": "Jordan Poole",
+   "type": "add"
   },
   {
-   "when": "Nov 20 12:04pm",
+   "when": "Nov 20 1:04pm",
    "team": "Mathmagicians",
-   "type": "add",
    "player": "Miles McBride",
+   "type": "add",
    "dropped": "Kyle Kuzma"
   },
   {
-   "when": "Nov 19 1:56am",
+   "when": "Nov 19 2:56am",
    "team": "kobe colorado",
    "type": "drop",
    "player": "Leaky Black"
   },
   {
-   "when": "Nov 18 10:33pm",
+   "when": "Nov 18 11:33pm",
    "team": "Shanghai Sharks",
-   "type": "add",
-   "player": "Keegan Murray"
+   "player": "Keegan Murray",
+   "type": "add"
   },
   {
-   "when": "Nov 18 9:43pm",
+   "when": "Nov 18 10:43pm",
    "team": "Kerala blasters",
-   "type": "add",
    "player": "Landry Shamet",
+   "type": "add",
    "dropped": "Ryan Rollins"
   },
   {
-   "when": "Nov 18 3:29pm",
+   "when": "Nov 18 4:29pm",
    "team": "fatty zhou",
    "type": "drop",
    "player": "Robert Williams III"
   },
   {
-   "when": "Nov 18 2:52pm",
+   "when": "Nov 18 3:52pm",
    "team": "Mumbai Meteors",
    "type": "drop",
    "player": "Cam Spencer"
   },
   {
-   "when": "Nov 17 6:40pm",
+   "when": "Nov 17 7:40pm",
    "team": "kobe colorado",
-   "type": "add",
-   "player": "Leaky Black"
+   "player": "Leaky Black",
+   "type": "add"
   },
   {
-   "when": "Nov 17 2:28pm",
-   "team": "Langangsters",
-   "type": "add",
-   "player": "Quentin Grimes"
-  },
-  {
-   "when": "Nov 17 2:27pm",
-   "team": "Langangsters",
-   "type": "add",
-   "player": "Taylor Hendricks"
-  },
-  {
-   "when": "Nov 17 2:26pm",
+   "when": "Nov 17 7:39pm",
    "team": "kobe colorado",
-   "type": "add",
-   "player": "Terrence Shannon Jr."
-  },
-  {
-   "when": "Nov 17 2:25pm",
-   "team": "kobe colorado",
-   "type": "add",
+   "type": "drop",
    "player": "Grayson Allen"
   },
   {
-   "when": "Nov 17 6:32am",
+   "when": "Nov 17 3:28pm",
+   "team": "Langangsters",
+   "player": "Quentin Grimes",
+   "type": "add"
+  },
+  {
+   "when": "Nov 17 3:27pm",
+   "team": "Langangsters",
+   "player": "Taylor Hendricks",
+   "type": "add"
+  },
+  {
+   "when": "Nov 17 3:26pm",
+   "team": "kobe colorado",
+   "player": "Terrence Shannon Jr.",
+   "type": "add"
+  },
+  {
+   "when": "Nov 17 3:25pm",
+   "team": "kobe colorado",
+   "player": "Grayson Allen",
+   "type": "add"
+  },
+  {
+   "when": "Nov 17 7:32am",
    "team": "Shanghai Sharks",
-   "type": "add",
    "player": "Matisse Thybulle",
+   "type": "add",
    "dropped": "Meleek Thomas"
   },
   {
-   "when": "Nov 17 12:05am",
+   "when": "Nov 17 1:05am",
    "team": "fatty zhou",
-   "type": "add",
-   "player": "Kevin Huerter"
+   "player": "Kevin Huerter",
+   "type": "add"
   },
   {
-   "when": "Nov 16 2:27pm",
+   "when": "Nov 16 3:27pm",
    "team": "Kerala blasters",
-   "type": "add",
    "player": "Jordan Goodwin",
+   "type": "add",
    "dropped": "Sandro Mamukelashvili"
   },
   {
-   "when": "Nov 16 11:59am",
+   "when": "Nov 16 12:59pm",
    "team": "kobe colorado",
    "type": "drop",
    "player": "Jaxson Hayes"
   },
   {
-   "when": "Nov 16 11:21am",
+   "when": "Nov 16 12:21pm",
    "team": "fatty zhou",
-   "type": "add",
    "player": "Robert Williams III",
+   "type": "add",
    "dropped": "P.J. Washington"
+  },
+  {
+   "when": "Nov 16 12:19pm",
+   "team": "fatty zhou",
+   "type": "drop",
+   "player": "Daniel Gafford"
   }
  ],
  "projections": {
@@ -8074,17 +10909,17 @@
  },
  "adds": {
   "Toronto blue jays": 1,
-  "Shanghai Sharks": 4,
-  "Langangsters": 4,
+  "Shanghai Sharks": 1,
+  "Langangsters": 0,
   "Wesburn incident": 0,
-  "fatty zhou": 4,
-  "Mathmagicians": 2,
-  "Mumbai Meteors": 1,
-  "kobe colorado": 3,
-  "John Ball": 2,
+  "fatty zhou": 2,
+  "Mathmagicians": 3,
+  "Mumbai Meteors": 0,
+  "kobe colorado": 0,
+  "John Ball": 1,
   "Umbrella Corp": 0,
   "Birds that I hate": 0,
-  "Kerala blasters": 3
+  "Kerala blasters": 2
  },
  "waiver_order": [
   "Wesburn incident",
@@ -8097,8 +10932,8 @@
   "Mumbai Meteors",
   "John Ball",
   "kobe colorado",
-  "Mathmagicians",
-  "Langangsters"
+  "Langangsters",
+  "Mathmagicians"
  ],
  "schedule": [
   {
@@ -8106,10 +10941,6 @@
    "start": "2026-10-20",
    "end": "2026-10-25",
    "matchups": [
-    [
-     "fatty zhou",
-     "Kerala blasters"
-    ],
     [
      "Toronto blue jays",
      "John Ball"
@@ -8121,6 +10952,10 @@
     [
      "Wesburn incident",
      "Birds that I hate"
+    ],
+    [
+     "fatty zhou",
+     "Kerala blasters"
     ],
     [
      "Mathmagicians",
@@ -8138,10 +10973,6 @@
    "end": "2026-11-01",
    "matchups": [
     [
-     "fatty zhou",
-     "kobe colorado"
-    ],
-    [
      "Toronto blue jays",
      "Langangsters"
     ],
@@ -8152,6 +10983,10 @@
     [
      "Wesburn incident",
      "Mathmagicians"
+    ],
+    [
+     "fatty zhou",
+     "kobe colorado"
     ],
     [
      "Mumbai Meteors",
@@ -8169,10 +11004,6 @@
    "end": "2026-11-08",
    "matchups": [
     [
-     "fatty zhou",
-     "Mumbai Meteors"
-    ],
-    [
      "Toronto blue jays",
      "Birds that I hate"
     ],
@@ -8189,6 +11020,10 @@
      "Umbrella Corp"
     ],
     [
+     "fatty zhou",
+     "Mumbai Meteors"
+    ],
+    [
      "Mathmagicians",
      "John Ball"
     ]
@@ -8200,10 +11035,6 @@
    "end": "2026-11-15",
    "matchups": [
     [
-     "fatty zhou",
-     "Wesburn incident"
-    ],
-    [
      "Toronto blue jays",
      "Mathmagicians"
     ],
@@ -8214,6 +11045,10 @@
     [
      "Langangsters",
      "Birds that I hate"
+    ],
+    [
+     "Wesburn incident",
+     "fatty zhou"
     ],
     [
      "kobe colorado",
@@ -8231,10 +11066,6 @@
    "end": "2026-11-22",
    "matchups": [
     [
-     "fatty zhou",
-     "John Ball"
-    ],
-    [
      "Toronto blue jays",
      "Umbrella Corp"
     ],
@@ -8245,6 +11076,10 @@
     [
      "Langangsters",
      "kobe colorado"
+    ],
+    [
+     "fatty zhou",
+     "John Ball"
     ],
     [
      "Mathmagicians",
@@ -8262,8 +11097,8 @@
    "end": "2026-11-29",
    "matchups": [
     [
-     "fatty zhou",
-     "Toronto blue jays"
+     "Toronto blue jays",
+     "fatty zhou"
     ],
     [
      "Shanghai Sharks",
@@ -8293,10 +11128,6 @@
    "end": "2026-12-13",
    "matchups": [
     [
-     "fatty zhou",
-     "Birds that I hate"
-    ],
-    [
      "Toronto blue jays",
      "Shanghai Sharks"
     ],
@@ -8307,6 +11138,10 @@
     [
      "Wesburn incident",
      "kobe colorado"
+    ],
+    [
+     "fatty zhou",
+     "Birds that I hate"
     ],
     [
      "Mathmagicians",
@@ -8324,10 +11159,6 @@
    "end": "2026-12-20",
    "matchups": [
     [
-     "fatty zhou",
-     "Mathmagicians"
-    ],
-    [
      "Toronto blue jays",
      "Kerala blasters"
     ],
@@ -8344,6 +11175,10 @@
      "Mumbai Meteors"
     ],
     [
+     "fatty zhou",
+     "Mathmagicians"
+    ],
+    [
      "kobe colorado",
      "John Ball"
     ]
@@ -8355,10 +11190,6 @@
    "end": "2026-12-27",
    "matchups": [
     [
-     "fatty zhou",
-     "Umbrella Corp"
-    ],
-    [
      "Toronto blue jays",
      "kobe colorado"
     ],
@@ -8369,6 +11200,10 @@
     [
      "Langangsters",
      "Wesburn incident"
+    ],
+    [
+     "fatty zhou",
+     "Umbrella Corp"
     ],
     [
      "Mumbai Meteors",
@@ -8386,16 +11221,16 @@
    "end": "2027-01-03",
    "matchups": [
     [
-     "fatty zhou",
-     "Langangsters"
-    ],
-    [
      "Toronto blue jays",
      "Mumbai Meteors"
     ],
     [
      "Shanghai Sharks",
      "Umbrella Corp"
+    ],
+    [
+     "Langangsters",
+     "fatty zhou"
     ],
     [
      "Wesburn incident",
@@ -8417,12 +11252,12 @@
    "end": "2027-01-10",
    "matchups": [
     [
-     "fatty zhou",
-     "Shanghai Sharks"
-    ],
-    [
      "Toronto blue jays",
      "Wesburn incident"
+    ],
+    [
+     "Shanghai Sharks",
+     "fatty zhou"
     ],
     [
      "Langangsters",
@@ -8448,10 +11283,6 @@
    "end": "2027-01-17",
    "matchups": [
     [
-     "fatty zhou",
-     "Kerala blasters"
-    ],
-    [
      "Toronto blue jays",
      "John Ball"
     ],
@@ -8462,6 +11293,10 @@
     [
      "Wesburn incident",
      "Birds that I hate"
+    ],
+    [
+     "fatty zhou",
+     "Kerala blasters"
     ],
     [
      "Mathmagicians",
@@ -8479,10 +11314,6 @@
    "end": "2027-01-24",
    "matchups": [
     [
-     "fatty zhou",
-     "kobe colorado"
-    ],
-    [
      "Toronto blue jays",
      "Langangsters"
     ],
@@ -8493,6 +11324,10 @@
     [
      "Wesburn incident",
      "Mathmagicians"
+    ],
+    [
+     "fatty zhou",
+     "kobe colorado"
     ],
     [
      "Mumbai Meteors",
@@ -8510,10 +11345,6 @@
    "end": "2027-01-31",
    "matchups": [
     [
-     "fatty zhou",
-     "Mumbai Meteors"
-    ],
-    [
      "Toronto blue jays",
      "Birds that I hate"
     ],
@@ -8530,6 +11361,10 @@
      "Umbrella Corp"
     ],
     [
+     "fatty zhou",
+     "Mumbai Meteors"
+    ],
+    [
      "Mathmagicians",
      "John Ball"
     ]
@@ -8541,10 +11376,6 @@
    "end": "2027-02-07",
    "matchups": [
     [
-     "fatty zhou",
-     "Wesburn incident"
-    ],
-    [
      "Toronto blue jays",
      "Mathmagicians"
     ],
@@ -8555,6 +11386,10 @@
     [
      "Langangsters",
      "Birds that I hate"
+    ],
+    [
+     "Wesburn incident",
+     "fatty zhou"
     ],
     [
      "kobe colorado",
@@ -8572,10 +11407,6 @@
    "end": "2027-02-14",
    "matchups": [
     [
-     "fatty zhou",
-     "John Ball"
-    ],
-    [
      "Toronto blue jays",
      "Umbrella Corp"
     ],
@@ -8586,6 +11417,10 @@
     [
      "Langangsters",
      "kobe colorado"
+    ],
+    [
+     "fatty zhou",
+     "John Ball"
     ],
     [
      "Mathmagicians",
@@ -8603,8 +11438,8 @@
    "end": "2027-02-28",
    "matchups": [
     [
-     "fatty zhou",
-     "Toronto blue jays"
+     "Toronto blue jays",
+     "fatty zhou"
     ],
     [
      "Shanghai Sharks",
@@ -8634,10 +11469,6 @@
    "end": "2027-03-07",
    "matchups": [
     [
-     "fatty zhou",
-     "Birds that I hate"
-    ],
-    [
      "Toronto blue jays",
      "Shanghai Sharks"
     ],
@@ -8648,6 +11479,10 @@
     [
      "Wesburn incident",
      "kobe colorado"
+    ],
+    [
+     "fatty zhou",
+     "Birds that I hate"
     ],
     [
      "Mathmagicians",
@@ -8665,10 +11500,6 @@
    "end": "2027-03-14",
    "matchups": [
     [
-     "fatty zhou",
-     "Mathmagicians"
-    ],
-    [
      "Toronto blue jays",
      "Kerala blasters"
     ],
@@ -8685,6 +11516,10 @@
      "Mumbai Meteors"
     ],
     [
+     "fatty zhou",
+     "Mathmagicians"
+    ],
+    [
      "kobe colorado",
      "John Ball"
     ]
@@ -8696,10 +11531,6 @@
    "end": "2027-03-21",
    "matchups": [
     [
-     "fatty zhou",
-     "Umbrella Corp"
-    ],
-    [
      "Toronto blue jays",
      "kobe colorado"
     ],
@@ -8710,6 +11541,10 @@
     [
      "Langangsters",
      "Wesburn incident"
+    ],
+    [
+     "fatty zhou",
+     "Umbrella Corp"
     ],
     [
      "Mumbai Meteors",
@@ -8740,59 +11575,635 @@
    "matchups": []
   }
  ],
- "rules": {
-  "Scoring type": "Head-to-Head Categories, 9 cats (FG%, FT%, 3PTM, PTS, REB, AST, ST, BLK, TO)",
-  "Roster slots": "PG, SG, G, SF, PF, F, C, C, Util, Util (10 starters) + 3 BN + 3 IL = 16",
-  "Max adds/week": "4 (no season limit on adds or trades)",
-  "Waiver type": "Continual rolling list (waiver priority, not FAAB). Waiver period: 2 days",
-  "Trade deadline": "March 4, 2027 (Yahoo \"Trade End Date\"). Trade review: league votes, 2-day reject time",
-  "Playoffs": "8 teams, Weeks 21, 22 and 23 (Mon Mar 22 - Sun Apr 11, 2027). Reseeding: yes. Tiebreaker: higher seed wins",
-  "Two-week round": "No. Weeks 21, 22 and 23 are each one week (8 teams = 3 rounds, 1 round per week)",
-  "Regular season": "Weeks 1-20. Weeks 7 and 17 each run 14 days (Nov 30 - Dec 13, Feb 15 - Feb 28) as one matchup"
+ "trades": [
+  {
+   "key": "478.l.231900.tr.178",
+   "status": "vetoed",
+   "from": "John Ball",
+   "to": "Langangsters",
+   "give": [
+    "Davion Mitchell"
+   ],
+   "get": [
+    "Trey Murphy III"
+   ],
+   "ts": 1795456857
+  },
+  {
+   "key": "478.l.231900.tr.174",
+   "status": "successful",
+   "from": "John Ball",
+   "to": "kobe colorado",
+   "give": [
+    "Norman Powell",
+    "Nic Claxton"
+   ],
+   "get": [
+    "Davion Mitchell"
+   ],
+   "ts": 1795425440
+  },
+  {
+   "key": "478.l.231900.tr.173",
+   "status": "successful",
+   "from": "kobe colorado",
+   "to": "Umbrella Corp",
+   "give": [
+    "Jonathan Kuminga"
+   ],
+   "get": [
+    "Collin Murray-Boyles"
+   ],
+   "ts": 1795425440
+  },
+  {
+   "key": "478.l.231900.tr.169",
+   "status": "vetoed",
+   "from": "fatty zhou",
+   "to": "Umbrella Corp",
+   "give": [
+    "Damian Lillard"
+   ],
+   "get": [
+    "Anthony Edwards"
+   ],
+   "ts": 1795377466
+  },
+  {
+   "key": "478.l.231900.tr.132",
+   "status": "successful",
+   "from": "Umbrella Corp",
+   "to": "John Ball",
+   "give": [
+    "Darius Acuff Jr."
+   ],
+   "get": [
+    "Derrick White"
+   ],
+   "ts": 1794733884
+  },
+  {
+   "key": "478.l.231900.tr.125",
+   "status": "successful",
+   "from": "Toronto blue jays",
+   "to": "Langangsters",
+   "give": [
+    "Cade Cunningham",
+    "Lauri Markkanen"
+   ],
+   "get": [
+    "De'Aaron Fox",
+    "Giannis Antetokounmpo",
+    "Kawhi Leonard"
+   ],
+   "ts": 1794647541
+  },
+  {
+   "key": "478.l.231900.tr.71",
+   "status": "successful",
+   "from": "Shanghai Sharks",
+   "to": "Birds that I hate",
+   "give": [
+    "Chet Holmgren",
+    "Paul Reed"
+   ],
+   "get": [
+    "Jayson Tatum"
+   ],
+   "ts": 1793174534
+  },
+  {
+   "key": "478.l.231900.tr.31",
+   "status": "successful",
+   "from": "John Ball",
+   "to": "Birds that I hate",
+   "give": [
+    "Peyton Watson"
+   ],
+   "get": [
+    "Kyshawn George"
+   ],
+   "ts": 1792396218
+  },
+  {
+   "key": "478.l.231900.pt.220",
+   "status": "proposed",
+   "from": "fatty zhou",
+   "to": "kobe colorado",
+   "give": [
+    "Brandin Podziemski",
+    "LaMelo Ball"
+   ],
+   "get": [
+    "Brandon Miller",
+    "Evan Mobley"
+   ],
+   "ts": 1795483167
+  },
+  {
+   "key": "478.l.231900.pt.222",
+   "status": "proposed",
+   "from": "fatty zhou",
+   "to": "Mumbai Meteors",
+   "give": [
+    "Walker Kessler",
+    "LaMelo Ball"
+   ],
+   "get": [
+    "Michael Porter Jr.",
+    "Jamal Murray"
+   ],
+   "ts": 1795500229
+  },
+  {
+   "key": "478.l.231900.pt.225",
+   "status": "proposed",
+   "from": "fatty zhou",
+   "to": "kobe colorado",
+   "give": [
+    "LaMelo Ball",
+    "Paul George"
+   ],
+   "get": [
+    "Brandon Miller",
+    "Cooper Flagg"
+   ],
+   "ts": 1795502295
+  },
+  {
+   "key": "478.l.231900.pt.227",
+   "status": "proposed",
+   "from": "fatty zhou",
+   "to": "Kerala blasters",
+   "give": [
+    "Damian Lillard",
+    "LaMelo Ball",
+    "Anthony Black"
+   ],
+   "get": [
+    "Luka Dončić"
+   ],
+   "ts": 1795503148
+  },
+  {
+   "key": "478.l.231900.pt.228",
+   "status": "proposed",
+   "from": "fatty zhou",
+   "to": "Mathmagicians",
+   "give": [
+    "Walker Kessler",
+    "Brandin Podziemski",
+    "LaMelo Ball"
+   ],
+   "get": [
+    "Karl-Anthony Towns",
+    "Jalen Brunson",
+    "Miles McBride"
+   ],
+   "ts": 1795503319
+  }
+ ],
+ "draft": {
+  "Nikola Jokić": 1,
+  "Victor Wembanyama": 2,
+  "Luka Dončić": 3,
+  "Shai Gilgeous-Alexander": 4,
+  "Anthony Edwards": 5,
+  "Cade Cunningham": 6,
+  "Giannis Antetokounmpo": 7,
+  "Cooper Flagg": 8,
+  "Jayson Tatum": 9,
+  "Karl-Anthony Towns": 10,
+  "Tyrese Haliburton": 11,
+  "Tyrese Maxey": 12,
+  "Jalen Johnson": 13,
+  "Alperen Şengün": 14,
+  "Jalen Brunson": 15,
+  "Trae Young": 16,
+  "Donovan Mitchell": 17,
+  "Kawhi Leonard": 18,
+  "Amen Thompson": 19,
+  "Kevin Durant": 20,
+  "Scottie Barnes": 21,
+  "Austin Reaves": 22,
+  "Josh Giddey": 23,
+  "LaMelo Ball": 24,
+  "Devin Booker": 25,
+  "Anthony Davis": 26,
+  "Joel Embiid": 27,
+  "Deni Avdija": 28,
+  "Kyrie Irving": 29,
+  "Bam Adebayo": 30,
+  "Jaylen Brown": 31,
+  "Evan Mobley": 32,
+  "Jalen Duren": 33,
+  "Pascal Siakam": 34,
+  "Jamal Murray": 35,
+  "James Harden": 36,
+  "Chet Holmgren": 37,
+  "Domantas Sabonis": 38,
+  "Jalen Williams": 39,
+  "Stephen Curry": 40,
+  "Brandon Miller": 41,
+  "Trey Murphy III": 42,
+  "Lauri Markkanen": 43,
+  "Paolo Banchero": 44,
+  "Desmond Bane": 45,
+  "LeBron James": 46,
+  "Derrick White": 47,
+  "Cameron Boozer": 48,
+  "Walker Kessler": 49,
+  "Keyonte George": 50,
+  "Jaren Jackson Jr.": 51,
+  "Darius Garland": 52,
+  "AJ Dybantsa": 53,
+  "Ivica Zubac": 54,
+  "Tyler Herro": 55,
+  "Nickeil Alexander-Walker": 56,
+  "OG Anunoby": 57,
+  "Jared McCain": 58,
+  "Michael Porter Jr.": 59,
+  "Dyson Daniels": 60,
+  "Onyeka Okongwu": 61,
+  "Kon Knueppel": 62,
+  "Mikal Bridges": 63,
+  "Draymond Green": 64,
+  "Naz Reid": 65,
+  "Zach LaVine": 66,
+  "Stephon Castle": 67,
+  "Rudy Gobert": 68,
+  "Rui Hachimura": 69,
+  "Franz Wagner": 70,
+  "Matas Buzelis": 71,
+  "Paul George": 72,
+  "Damian Lillard": 73,
+  "Cedric Coward": 74,
+  "Donovan Clingan": 75,
+  "Jarrett Allen": 76,
+  "Caleb Wilson": 77,
+  "Ausar Thompson": 78,
+  "Alex Sarr": 79,
+  "Kel'el Ware": 80,
+  "Zion Williamson": 81,
+  "Josh Hart": 82,
+  "Miles Bridges": 83,
+  "Zach Edey": 84,
+  "Dejounte Murray": 85,
+  "Isaiah Hartenstein": 86,
+  "Julian Champagnie": 87,
+  "Jordan Poole": 88,
+  "Dylan Harper": 89,
+  "De'Aaron Fox": 90,
+  "Jaden McDaniels": 91,
+  "Collin Murray-Boyles": 92,
+  "Julius Randle": 93,
+  "Ryan Rollins": 94,
+  "Payton Pritchard": 95,
+  "VJ Edgecombe": 96,
+  "Brandon Ingram": 97,
+  "Norman Powell": 98,
+  "Ty Jerome": 99,
+  "Jakob Poeltl": 100,
+  "Jalen Green": 101,
+  "Aaron Gordon": 102,
+  "Brandin Podziemski": 103,
+  "Coby White": 104,
+  "Ja Morant": 105,
+  "Alex Caruso": 106,
+  "Jabari Smith Jr.": 107,
+  "Derik Queen": 108,
+  "Immanuel Quickley": 109,
+  "Andrew Nembhard": 110,
+  "Collin Gillespie": 111,
+  "Gradey Dick": 112,
+  "CJ McCollum": 113,
+  "Day'Ron Sharpe": 114,
+  "Ayo Dosunmu": 115,
+  "Darius Acuff Jr.": 116,
+  "Andrew Wiggins": 117,
+  "Egor Dëmin": 118,
+  "Khaman Maluach": 119,
+  "Jalen Suggs": 120,
+  "John Collins": 121,
+  "Toumani Camara": 122,
+  "RJ Barrett": 123,
+  "Cason Wallace": 124,
+  "Yaxel Lendeborg": 125,
+  "Moussa Diabaté": 126,
+  "Keegan Murray": 127,
+  "Davion Mitchell": 128,
+  "Jrue Holiday": 129,
+  "Jaylin Williams": 130,
+  "Jalen Bridges": 131,
+  "Darryn Peterson": 132,
+  "Jaime Jaquez Jr.": 133,
+  "Ace Bailey": 134,
+  "Kristaps Porziņģis": 135,
+  "Bronny James": 136,
+  "Jonathan Kuminga": 137,
+  "Neemias Queta": 138,
+  "Jusuf Nurkić": 139,
+  "Dillon Brooks": 140,
+  "DeMar DeRozan": 141,
+  "Ajay Mitchell": 142,
+  "Kyshawn George": 143,
+  "Bennedict Mathurin": 144,
+  "P.J. Washington": 145,
+  "Peyton Watson": 146,
+  "Pelle Larsson": 147,
+  "Reed Sheppard": 148,
+  "Myles Turner": 149,
+  "Jimmy Butler III": 150,
+  "Nic Claxton": 151,
+  "Sandro Mamukelashvili": 152,
+  "AJ Green": 153,
+  "Pat Spencer": 154,
+  "Yves Missi": 155,
+  "Kevin Porter Jr.": 156
  },
+ "results": [
+  {
+   "week": 5,
+   "teams": [
+    "Toronto blue jays",
+    "Umbrella Corp"
+   ],
+   "score": [
+    5,
+    4
+   ],
+   "totals": {
+    "Toronto blue jays": {
+     "FGM": 212.0,
+     "FGA": 402.0,
+     "FTM": 93.0,
+     "FTA": 124.0,
+     "FG3M": 40.0,
+     "PTS": 557.0,
+     "REB": 241.0,
+     "AST": 153.0,
+     "STL": 46.0,
+     "BLK": 21.0,
+     "TOV": 84.0
+    },
+    "Umbrella Corp": {
+     "FGM": 204.0,
+     "FGA": 462.0,
+     "FTM": 87.0,
+     "FTA": 115.0,
+     "FG3M": 56.0,
+     "PTS": 551.0,
+     "REB": 200.0,
+     "AST": 137.0,
+     "STL": 35.0,
+     "BLK": 24.0,
+     "TOV": 56.0
+    }
+   }
+  },
+  {
+   "week": 5,
+   "teams": [
+    "Shanghai Sharks",
+    "Wesburn incident"
+   ],
+   "score": [
+    5,
+    4
+   ],
+   "totals": {
+    "Shanghai Sharks": {
+     "FGM": 234.0,
+     "FGA": 495.0,
+     "FTM": 102.0,
+     "FTA": 133.0,
+     "FG3M": 73.0,
+     "PTS": 643.0,
+     "REB": 271.0,
+     "AST": 161.0,
+     "STL": 49.0,
+     "BLK": 24.0,
+     "TOV": 89.0
+    },
+    "Wesburn incident": {
+     "FGM": 198.0,
+     "FGA": 392.0,
+     "FTM": 95.0,
+     "FTA": 122.0,
+     "FG3M": 55.0,
+     "PTS": 546.0,
+     "REB": 150.0,
+     "AST": 97.0,
+     "STL": 32.0,
+     "BLK": 25.0,
+     "TOV": 52.0
+    }
+   }
+  },
+  {
+   "week": 5,
+   "teams": [
+    "Langangsters",
+    "kobe colorado"
+   ],
+   "score": [
+    4,
+    4
+   ],
+   "totals": {
+    "Langangsters": {
+     "FGM": 220.0,
+     "FGA": 438.0,
+     "FTM": 84.0,
+     "FTA": 111.0,
+     "FG3M": 71.0,
+     "PTS": 595.0,
+     "REB": 200.0,
+     "AST": 131.0,
+     "STL": 35.0,
+     "BLK": 13.0,
+     "TOV": 59.0
+    },
+    "kobe colorado": {
+     "FGM": 226.0,
+     "FGA": 462.0,
+     "FTM": 88.0,
+     "FTA": 109.0,
+     "FG3M": 78.0,
+     "PTS": 618.0,
+     "REB": 143.0,
+     "AST": 131.0,
+     "STL": 32.0,
+     "BLK": 15.0,
+     "TOV": 79.0
+    }
+   }
+  },
+  {
+   "week": 5,
+   "teams": [
+    "fatty zhou",
+    "John Ball"
+   ],
+   "score": [
+    3,
+    6
+   ],
+   "totals": {
+    "fatty zhou": {
+     "FGM": 279.0,
+     "FGA": 623.0,
+     "FTM": 152.0,
+     "FTA": 190.0,
+     "FG3M": 101.0,
+     "PTS": 811.0,
+     "REB": 281.0,
+     "AST": 191.0,
+     "STL": 50.0,
+     "BLK": 25.0,
+     "TOV": 122.0
+    },
+    "John Ball": {
+     "FGM": 316.0,
+     "FGA": 674.0,
+     "FTM": 123.0,
+     "FTA": 155.0,
+     "FG3M": 102.0,
+     "PTS": 857.0,
+     "REB": 272.0,
+     "AST": 212.0,
+     "STL": 37.0,
+     "BLK": 37.0,
+     "TOV": 101.0
+    }
+   }
+  },
+  {
+   "week": 5,
+   "teams": [
+    "Mathmagicians",
+    "Birds that I hate"
+   ],
+   "score": [
+    3,
+    6
+   ],
+   "totals": {
+    "Mathmagicians": {
+     "FGM": 169.0,
+     "FGA": 351.0,
+     "FTM": 53.0,
+     "FTA": 75.0,
+     "FG3M": 64.0,
+     "PTS": 455.0,
+     "REB": 141.0,
+     "AST": 82.0,
+     "STL": 22.0,
+     "BLK": 14.0,
+     "TOV": 48.0
+    },
+    "Birds that I hate": {
+     "FGM": 175.0,
+     "FGA": 392.0,
+     "FTM": 93.0,
+     "FTA": 113.0,
+     "FG3M": 46.0,
+     "PTS": 489.0,
+     "REB": 170.0,
+     "AST": 150.0,
+     "STL": 50.0,
+     "BLK": 24.0,
+     "TOV": 58.0
+    }
+   }
+  },
+  {
+   "week": 5,
+   "teams": [
+    "Mumbai Meteors",
+    "Kerala blasters"
+   ],
+   "score": [
+    5,
+    4
+   ],
+   "totals": {
+    "Mumbai Meteors": {
+     "FGM": 204.0,
+     "FGA": 428.0,
+     "FTM": 109.0,
+     "FTA": 133.0,
+     "FG3M": 57.0,
+     "PTS": 574.0,
+     "REB": 230.0,
+     "AST": 150.0,
+     "STL": 33.0,
+     "BLK": 15.0,
+     "TOV": 84.0
+    },
+    "Kerala blasters": {
+     "FGM": 218.0,
+     "FGA": 461.0,
+     "FTM": 93.0,
+     "FTA": 117.0,
+     "FG3M": 49.0,
+     "PTS": 578.0,
+     "REB": 194.0,
+     "AST": 151.0,
+     "STL": 27.0,
+     "BLK": 28.0,
+     "TOV": 60.0
+    }
+   }
+  }
+ ],
  "matchup": {
+  "opponent": "Toronto blue jays",
   "week_start": "2026-11-23",
   "week_end": "2026-11-29",
   "totals": {
-   "Shanghai Sharks": {
-    "FGM": 0.0,
-    "FGA": 0.0,
-    "FTM": 0.0,
-    "FTA": 0.0,
-    "FG3M": 0.0,
-    "PTS": 0.0,
-    "REB": 0.0,
-    "AST": 0.0,
-    "STL": 0.0,
-    "BLK": 0.0,
-    "TOV": 0.0
+   "fatty zhou": {
+    "FGM": 36.0,
+    "FGA": 92.0,
+    "FTM": 24.0,
+    "FTA": 30.0,
+    "FG3M": 7.0,
+    "PTS": 103.0,
+    "REB": 46.0,
+    "AST": 30.0,
+    "STL": 8.0,
+    "BLK": 10.0,
+    "TOV": 11.0
    },
-   "John Ball": {
-    "FGM": 0.0,
-    "FGA": 0.0,
-    "FTM": 0.0,
-    "FTA": 0.0,
-    "FG3M": 0.0,
-    "PTS": 0.0,
-    "REB": 0.0,
-    "AST": 0.0,
-    "STL": 0.0,
-    "BLK": 0.0,
-    "TOV": 0.0
+   "Toronto blue jays": {
+    "FGM": 56.0,
+    "FGA": 96.0,
+    "FTM": 22.0,
+    "FTA": 25.0,
+    "FG3M": 19.0,
+    "PTS": 153.0,
+    "REB": 56.0,
+    "AST": 41.0,
+    "STL": 7.0,
+    "BLK": 3.0,
+    "TOV": 10.0
    }
   },
   "games": {
-   "Shanghai Sharks": {
-    "played": 0,
-    "left": 26
+   "fatty zhou": {
+    "played": 7,
+    "left": 36
    },
-   "John Ball": {
-    "played": 0,
-    "left": 33
+   "Toronto blue jays": {
+    "played": 9,
+    "left": 34
    }
   },
-  "from": "2026-11-23",
-  "opponent": "Toronto blue jays"
+  "from": "2026-11-24",
+  "held": {
+   "day": "2026-11-24",
+   "teams": []
+  }
  },
- "fetched": "2026-11-23 14:48"
+ "fetched": "2026-11-24 16:38"
 }

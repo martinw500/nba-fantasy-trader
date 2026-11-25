@@ -1,0 +1,20 @@
+To: fantasyapiapplications@yahoosports.com
+Subject: Yahoo Fantasy Sports API access - agreement completed, access not enabled
+
+Hi Yahoo Fantasy API team,
+
+I applied for personal-use access to the Yahoo Fantasy Sports API and signed the API Access and Use Agreement through DocuSign. The envelope was completed by all parties on November 6, 2026 (envelope ID BA59A5EB-AEEF-86FE-804A-42BFA057A890).
+
+I then created a new app on the Yahoo Developer page (https://developer.yahoo.com/apps/) with Fantasy Sports selected under API Permissions, and submitted the app's Client ID (Consumer Key) along with my name and email through the Developer Application Confirmation Form (https://sports.yahoo.com/developer/application-confirmation/).
+
+My app still does not have Fantasy Sports access. On November 23 I signed in through OAuth successfully, but the first Fantasy request (https://fantasysports.yahooapis.com/fantasy/v2/game/nba/metadata) returned "This application is not authorized to perform this action."
+
+Client ID: dj0yJmk9ZWNZVlFRVlVoeUF3JmQ9WVdrOVlUZENkazFOUVVjbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTUy
+
+Could you confirm that my confirmation form was received and let me know when access will be enabled, or if anything else is needed from my side?
+
+Name: Martin Wu
+Email: martinwu500@gmail.com
+
+Thanks,
+Martin Wu

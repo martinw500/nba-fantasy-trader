@@ -9,7 +9,7 @@ colors:
   line-strong: "oklch(85% 0.008 260)"
   text: "oklch(23% 0.016 260)"
   muted: "oklch(49% 0.016 260)"
-  faint: "oklch(62% 0.012 260)"
+  faint: "oklch(55% 0.012 260)"
   accent: "oklch(51% 0.19 268)"
   accent-hover: "oklch(46% 0.19 268)"
   accent-soft: "oklch(95.5% 0.028 268)"
@@ -27,7 +27,7 @@ colors:
   line-strong-dark: "oklch(36% 0.012 260)"
   text-dark: "oklch(93% 0.006 260)"
   muted-dark: "oklch(72% 0.012 260)"
-  faint-dark: "oklch(61.5% 0.012 260)"
+  faint-dark: "oklch(64% 0.012 260)"
   accent-dark: "oklch(66% 0.17 268)"
   accent-hover-dark: "oklch(72% 0.15 268)"
   accent-soft-dark: "oklch(30% 0.06 268)"
@@ -133,7 +133,7 @@ components:
 
 A working tool for one fantasy manager on a laptop. It is the category standard played straight: the density of Basketball Monster, the calm of Linear, the friendliness of Sleeper. Chrome stays neutral and out of the way so the numbers carry the color.
 
-Every screen is a left nav, a sticky top bar (league, player search, punt chips, refresh), and a single column of panels. Data shows up as tables and category strips, never as KPI tiles.
+Every screen is a left nav, a sticky top bar (league, player search, Aim for, punt chips, an icon-only refresh), and a single column of panels. Data shows up as tables and category strips, never as KPI tiles.
 
 **Key Characteristics:**
 - Cool grey ground, white panels, hairline borders.
@@ -150,11 +150,11 @@ Every screen is a left nav, a sticky top bar (league, player search, punt chips,
 ### Neutral
 - **Cool ground** (`bg`), **panel** (white) and **panel-2** (sidebar, row hover): three steps of the same cool hue 260.
 - **line / line-strong**: hairline borders and control outlines.
-- **text / muted / faint**: primary copy, secondary copy (≥4.5:1 on panels), tertiary labels only.
+- **text / muted / faint**: primary copy, secondary copy, tertiary labels and placeholders. All three clear 4.5:1 on panel, panel-2 and bg in both themes (faint was 3.5:1 until Nov 24).
 
 ### Data
 - **pos / neg**: fill colors for z-score cells, mixed with transparency up to 50% by magnitude (`|z| / 2.5`).
-- **pos-ink / neg-ink**: the text versions of the same hues for signed numbers (`+1.20`, `-0.85`).
+- **pos-ink / neg-ink**: the text versions of the same hues for signed numbers (`+1.20`, `-0.85`). `pos` / `neg` are fills only (2.9:1 as text): odds as coloured text go through `oddsInk()` (pos-ink / neg-ink / muted), dots and bars through `oddsColor()`.
 - **warn-soft / warn-ink**: data-source notices only (demo data, a stale snapshot).
 
 ### Named Rules
@@ -180,9 +180,10 @@ One system sans for everything (Segoe UI Variable on Windows), tabular numerals 
 ## Layout
 
 - Shell: 216px sidebar + fluid main, content max 1360px, 24px gutters (16px on phones).
-- Panels stack with a 20px gap. A panel is a header (title + one-line description + actions) over a body or a full-bleed table.
+- Panels stack with a 20px gap. A panel is a header (title + one-line description + actions) over a body or a full-bleed table. The description says what the panel is for in one line; how it's computed goes in an instant tip on the title or the column header (see Instant tips).
 - `grid2` places two panels side by side; it collapses to one column under 980px.
-- Below 760px the sidebar turns into a horizontally scrolling tab row and tables scroll inside their panel.
+- Below 760px the sidebar turns into a horizontally scrolling tab row (the sync line, "Yahoo synced 5 min ago", moves under the league name in the top bar), the punt chips sit on one sideways-scrolling row, and tables scroll inside their panel.
+- A table wider than its panel fades out on the side that has more (`.tw.more-l` / `.more-r`, a mask set from its scroll position on render, scroll and resize).
 
 ## Elevation & Depth
 
@@ -204,7 +205,7 @@ Punt chips and chat suggestions. Pressed punt chip inverts to text-on-bg with a 
 Panels only. Never nest a panel in a panel.
 
 ### Navigation
-Sidebar buttons with an 18px stroke icon (custom SVG, 1.7 stroke). The current item gets `accent-soft` fill and `accent-ink` text.
+Sidebar buttons with an 18px stroke icon (custom SVG, 1.7 stroke). The current item gets `accent-soft` fill and `accent-ink` text. Ten views in four groups split by a hairline (`.nav-sep`, a 1px vertical line in the phone tab row), no group labels (No Eyebrow Rule): This week, My team, Strategy | Trades, Waivers, Hot & cold, Compare | Schedule, League | AI GM. Keys 1–9 and 0 open them in that order (the button's title says which). Each view switch is a history entry, so Back returns to the last view at its scroll position; an unknown `#name` lands on This week. On phones the tab row scrolls the current tab into view (Q36, Nov 24).
 
 ### Z-score table (signature)
 Category cells are centered numbers on an inset 4px-rounded fill (`--c`) whose strength follows |z|. Punted columns get `opacity .3` + grayscale and a struck-through header. "Now" is green or red against "Value" to show hot or cold starts. A small green up or red down arrow (`i-arrow`) before "Value" marks a player whose last 14 days run far from it.
@@ -216,7 +217,7 @@ A table row that picks what another panel shows (Strategy's Every build, League'
 The top bar's player search opens the card under the player's row when a player table on screen holds him. Otherwise the same card sits in its own panel at the top of the view (`.card-panel`, first in the column, under the top bar), closed by its Close button or a tab change. Never a modal or a popover.
 
 ### Trade pickers
-Two checkable player lists (You give, You get) in a bordered scroll box with a sticky heading row (Player, Value; 12px muted). Value sits in a fixed 44px right-aligned column in pos / neg ink, and the lock button closes each row. A heading that needs explaining has a dotted underline, and hovering, tapping or focusing it shows a small panel-coloured tip right under it (`[data-tip]::after`, 250px, the panel lift shadow, at once): native `title` tooltips were too slow to notice (Martin, Nov 7). Ticking players on both sides evaluates the deal at once; there are no per-player win % columns (tried Nov 7: a free-agent baseline read as noise).
+Two checkable player lists (You give, You get) in a bordered scroll box with a sticky heading row (Player, Value; 12px muted). Value sits in a fixed 44px right-aligned column in pos / neg ink, and the lock button closes each row. A heading that needs explaining is an instant tip (below). Ticking players on both sides evaluates the deal at once; there are no per-player win % columns (tried Nov 7: a free-agent baseline read as noise).
 
 ### Compare table
 Rows are numbers, columns are deals (Saved trades) or players (Compare), the row label in muted 12px. On Compare, bold marks who's ahead on each number, a muted grey sub-heading row starts each group (NBA games, Per game) and category rows are z-score cells with the chosen per-game line beside them. A punted category dims its whole row (`tr.punted-col`).
@@ -224,11 +225,26 @@ Rows are numbers, columns are deals (Saved trades) or players (Compare), the row
 ### Schedule calendar
 A row per calendar week, a column per weekday, each cell a button with the number of your players who have a game and a muted note under it (`2 sit`, `3 open`, `full`). The fill follows that count minus the starting spots on the z-cell scale: red for players who'd sit, green for open spots. A day with no NBA games shows a muted dash. The picked day gets a 2px accent ring (selection) and its starters and sitters show under the table.
 
-### Moves since the snapshot
-Roster moves marked Done on Yahoo (or a drop picked with Use this) list under the What if notice on every view, in the same `.notice` (`.notice.moves`): they say which roster the numbers are on, so they are a data-source notice. One line per move with its own default button (Undo; Done on Yahoo on a pick; Clear on a struck-through move the newer snapshot doesn't show). The buttons that record a move are ghost row actions next to Try ("Done on Yahoo", "Use this"), and a default button in a result's toolbar ("Done on Yahoo" under Try a move, "They accepted" on a trade). Recording is one click and undoable from the notice: no confirm step, no modal.
+### Instant tips
+A label that needs explaining (a panel title, a column header, a bold phrase like "3 of 4 adds left") is `tip(label, text)`: a focusable span with `data-tip` and a dotted `line-strong` underline. Hovering, tapping or focusing it shows `#tip` at once, a single fixed panel-coloured box (300px max, the panel lift shadow, 12.5px) under the label, or above it near the bottom of the window. Fixed so a sideways-scrolling table never clips it; it follows the label on scroll and hides when the view redraws. Native `title` tooltips were too slow to notice (Martin, Nov 7). playerTable's Wk, GP, Plays, Value, Now and Mkt headers carry one each, as does the shared **Trending** column (`trendCol`, Waivers' Best available and Hot pickups): "62% +8" with the change toned pos / neg, then a muted "· starts 40%" whose per-cell title holds the since-yesterday change. Tip text is plain text.
+
+### Your pick (not made yet)
+A drop picked with Use this (Who to drop) lists under the What if notice on every view, in the same `.notice` (`.notice.moves`), since it says which roster the numbers are on: "Your pick, not made on Yahoo yet: drop X. Every tab counts it; once you make it on Yahoo, the next sync clears this." with an Undo button. A pick Yahoo contradicts shows struck through with Clear. Moves made on Yahoo come in with the sync (every 15 minutes, or Refresh), so there are no buttons to record them.
+
+### Offers
+Yahoo's answer to an offer on Yahoo is text (Accepted / Declined, "on Yahoo") with a ghost Change that opens the Accepted / Declined segmented control (Yahoo reads a withdrawn offer as declined). One still open says "Waiting on Yahoo". An offer copied but sent outside Yahoo gets the segmented control straight away.
 
 ### Roster alert
 A roster problem to fix on Yahoo (Q29: a healthy player stuck in an IL slot, too many players, an open spot) opens My team and This week as `.alert`: a panel-weight strip (panel fill, `line-strong` border, the panel lift) with a 7px `neg` dot and one or two plain sentences, the fix and a ghost button ("Who to drop") inline. Never the `warn-soft` notice, which stays for data sources, and never a coloured side border. The My team nav button carries the same dot (`.nav .flag`) while one is open.
+
+### This week's order and folds
+This week (where the app opens when the URL has no hash) runs Today › the score › Start / sit › Streaming adds › Last week. Last week is its one-line result with Show. In Streaming adds, the plan (adds to use, who streams may drop, the add plan) shows; Every path this week and the candidate table fold behind a ghost "More paths" in the header, as The week day by day does in Today. An open fold's ghost button turns `accent-ink` (`aria-expanded`).
+
+### Play for (This week)
+One 9-category chip row in the score panel, under the category table (the only one besides the top bar's punt chips): pick categories, then a 2-option segmented control, "Lean on them (×2)" (weights ×2, the rest at 1) or "Only them" (those categories only), and a ghost Clear. Start / sit, Streaming adds, the plan and Today follow it; Win, Score and the odds stay real. A punted category's chip is dimmed and disabled. Kept in this browser (`weekFocus`).
+
+### Horizons
+Every add/drop suggestion names its horizon: My team's Worth doing now starts each row with a muted "Season" or "This week" (the week row is This week's add plan, from what /api/week already returned), Waivers' gain columns say Season, This week's say This week.
 
 ### Today panel
 This week's first panel (Q31): a header line with tonight's games and the first tip, an unordered to-do list (`.todo`) of what to do before tip, then both lineups as two tables side by side (`.tonight`, a hairline between, one column under 980px). A player's live line is two lines in 12.5px: counting stats with points bold, then shooting in muted. Plays drops out once every game on that side has tipped. Tonight's totals are a category-column table (`so far / expected`), and **The week day by day** is a ghost button in the header that unfolds a day table under it, each category a dot and percentage on the odds scale. Punt dimming on every category column. On a day with no games the panel is just its header.

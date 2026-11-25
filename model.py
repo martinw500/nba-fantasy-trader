@@ -28,6 +28,7 @@ CLI (prints JSON, used by Claude Code and for quick checks):
 """
 import argparse
 import collections
+import contextlib
 import copy
 import difflib
 import functools
@@ -57,6 +58,28 @@ def snapshots():
     """Every snapshot file, oldest name first: snapshots/ and any saved into the project folder (the app files those
     away when it loads them, app.refresh())."""
     return sorted([*SNAPS.glob("*snapshot*.txt"), *ROOT.glob("*snapshot*.txt")], key=lambda p: p.name)
+
+
+def pulls():
+    """Every Yahoo API pull's day file (snapshots/yahoo-<day>.json, yahoo.snapshot(): the day's latest pull), oldest
+    first: the history's record since Nov 23, beside the text snapshots."""
+    return sorted(SNAPS.glob("yahoo-*.json"), key=lambda p: p.name)
+
+
+def read_snap(path):
+    """A snapshot file in parse_text()'s shape: a text one parsed; an API pull's JSON (already built) with its week
+    {week, start, end} from the matchup's dates on the season schedule, `from` from the matchup, no `results`."""
+    path = Path(path)
+    if path.suffix != ".json":
+        import yahoo
+        return yahoo.parse_text(path.read_text(encoding="utf-8"))
+    s = json.loads(path.read_text(encoding="utf-8"))
+    m = s.get("matchup") or {}
+    wk = next((w for w in s.get("schedule", ()) if w["start"] <= (m.get("week_start") or "") <= w["end"]), None)
+    return {**s, "from": m.get("from"), "results": s.get("results", []),
+            "week": wk and {"week": wk["week"], "start": m["week_start"], "end": m["week_end"]}}
+
+
 OLDER, LAST, CUR = "2024-25", "2025-26", "2026-27"
 SHORT = {"2019-20": 70, "2020-21": 72}  # seasons under 82 games (COVID; 2019-20's teams played 64-75): fetch() scales GP
 CATS = ["FG%", "FT%", "FG3M", "PTS", "REB", "AST", "STL", "BLK", "TOV"]
@@ -124,6 +147,9 @@ FORM_DAYS, FORM_GP = 14, 3  # recent form: value over the last 14 days, for play
 # +0.02): an arrow says what happened, not what will
 TREND, TREND_GP = 2.5, 7
 OUT = {"O", "INJ", "IL", "IL+", "NA", "SUSP"}  # Yahoo statuses that mean "not playing now"
+# Yahoo-wide (all its leagues): % that roster him and its change this week, % that start him today and its change
+# since yesterday (Y4). Context only: no number reads them, the market included (A8 decides that in December)
+YAHOO_PCT = ("owned", "owned_delta", "started", "started_delta")
 BENCH = {"BN", "IL", "IL+", "NA"}  # Yahoo roster slots whose games don't count; any other slot (PG ... Util) starts
 # a waiver move with no drop that puts an injured free agent in a free IL slot (B5: mchc allows adding straight to IL;
 # Yahoo's default doesn't). _drops() offers it, _gains() scores it, free_moves() returns it as the drop
@@ -166,6 +192,8 @@ FILL = 0.5                                         # share of a sat-out player's
 # (`python backtest.py fill`, Nov 16: 0.47 of 245 missed games on the real league, 0.36 by an IL move and a pickup, 0.11 a
 # full lineup anyway; by team 0.11 to 0.93, fatty zhou's: one number for every team, ROADMAP M31)
                                                    # (not in backtest.py: its rosters never change, so nobody fills in)
+HABIT_K = 180  # Y5 (Nov 24): ideal starts of the league's rate each team's own lineup habit is shrunk toward (habits();
+# ~4 weeks of a team's: 0, 60, 600 all won out of sample too, python backtest.py habits)
 # A status tag with no ESPN return date, on a player who sat his team's last game: the share of availability() he
 # plays rest of season (python backtest.py availability, 2022-23 to 2025-26, of each team's games since Oct 30: 0.91
 # after sitting 1 game, 0.79 over all, 0.69 after 11+). SUSP is a guess. A tagged player who played his team's last game
@@ -181,7 +209,17 @@ DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sun
 # the weekday with or without "'s" (Nov 12: "questionable for Wednesday against the Bucks", "probable to play Wednesday",
 # "to face the Knicks on Wednesday" were 17 of 144 listings in the note log, read as plain injuries; they play alike)
 DAY = r"\b(" + "|".join(DAYS) + r")(?:'s|s'|\b)"
-LISTED = re.compile(r"\b(probable|questionable|doubtful|game-time decision)\b[^.]{0,60}?" + DAY, re.I)
+
+
+def listed(words):
+    """A designation (one of words) and the weekday it's for, within 60 characters of one sentence, taking the one
+    nearest the day: "downgraded from questionable to doubtful ahead of Saturday's game" is doubtful (Nov 21, AI GM
+    note: read as questionable, 48% to play for 10%). backtest.py gameday fits GAMEDAY with the same rule."""
+    w = "|".join(words)
+    return re.compile(r"\b(" + w + r")\b(?:(?!\b(?:" + w + r")\b)[^.]){0,60}?" + DAY, re.I)
+
+
+LISTED = listed(["probable", "questionable", "doubtful", "game-time decision"])
 # Availability (availability()): a game of his better past season counts AVAIL_PAST of one this season, pulled toward
 # AVAIL_T by AVAIL_K games. Fitted on 2024-25 and 2025-26 (python backtest.py availability: each Monday's guess vs the
 # share of games left that players who were playing then suited up for). Past games barely predict it (correlation
@@ -264,6 +302,15 @@ MARKET = 0.97
 # cold games sink Jalen Brunson (Pre 27, Cur 217) to #81 behind a hot Paul George (Pre 75, Cur 23) at #50 (Martin, Oct 28:
 # managers don't trade like that). ponytail: a guess like MARKET; tune with the trade log (N6)
 CHASE = 20
+# A drafted player Yahoo doesn't rank (below yahoo.MAX_RANK per game: out since the draft, like Ingram) takes this
+# as his current rank in the market.
+UNRANKED = 500
+# Market price cut for a player out with a return date: x (1 - OUT_DISCOUNT x share of his team's games left he misses).
+# Out half the season left = 0.63 of his price, out for good 0.25. ponytail: a guess like MARKET; tune with M6's offers.
+OUT_DISCOUNT = 0.75
+# How far a drafted player's market rank moves toward his ESPN rest-of-season projection rank (geometric; League._market).
+# Nov 24: LaMelo (drafted 24, Cur 90, ESPN 20) 43 -> 30 and Amen Thompson (19, 79, 47) 29 -> 36. ponytail: a guess; M6.
+ROS_WEIGHT = 0.5
 # Hot & cold ONLY, never trades (Martin, Nov 2: "a lot of ppl lean on yahoo current rank ... it should be a mix tho ...
 # only for hot and cold and not regular trading"): sell high and buy low price players with Yahoo's current rank
 # counting half after this many games instead of CHASE's, so a run moves the price (6 games in: 55% current, 45%
@@ -296,6 +343,17 @@ TIERS = {"easy": (0.5, -1, -30, -EVEN), "fair": (1, -np.inf, -15, 15), "finesse"
 FAIR_FIT = 30
 VERDICT, MOVE, GUARD = 0.5, 0.5, 1  # trade accept/decline beyond +-; waiver move worth listing; most a cats/team goal
                                     # search may cost you
+# M30, Aim for the title (Martin, Nov 24: "if punting fg give me more title odds i wanna be able to see that ... cause i
+# wanna win the title"). TITLE_BAR: title-odds points a build, trade or waiver move must gain to be picked on Title
+# (Strategy's verdict, trade()'s and add_drop()'s). Seed noise at SIMS (Nov 24, real league, 10 seeds): a build's title
+# odds sd 0.58-0.88 points, the gap between two builds on the same seed 0.34-0.97, a trade's or a waiver move's
+# 0.49-0.80, so 2 points is about 2 sd of the noisiest gap (16,000 sims cut a gap's to 0.33, at 0.2 s a run, not 0.06)
+TITLE_BAR = 2
+# The title finder (search(goal="title")): a deal may cost up to TITLE_COST win % (One Win terms, x League.s) while
+# your playoff odds stay at PO_FLOOR or above (below it already: they mustn't fall); each team's best TITLE_DEPTH deals
+# on the playoff-week score (_po_score()) are re-scored with the season sim.
+TITLE_COST, PO_FLOOR, TITLE_DEPTH = 2.5, 0.9, 8
+AIMS = ("season", "title")  # Aim for: the regular season (win %, the default) or the title
 # The win-% cutoffs above (and accept()'s) are in One Win terms. A categories league's win % moves about 2.5x less
 # per move (measured Oct 26 on the real league), so League scales them by this.
 CAT_SCALE = 0.4
@@ -366,9 +424,12 @@ def match(name, keys):
         return k
     if last := [x for x in keys if x.endswith(" " + k)]:
         return last[0] if len(last) == 1 else None
+    # a close spelling starts with the same letter (Jalen / Jaylen): Nov 23, Dane Goodwin (no stats yet) read as Jordan
+    # Goodwin, listing him twice in Waivers and overwriting his tag and rank with Dane's
     close = difflib.get_close_matches(k, keys, n=2, cutoff=0.8)
     score = [difflib.SequenceMatcher(None, k, x).ratio() for x in close]
-    return close[0] if len(close) == 1 or len(close) == 2 and score[0] - score[1] > 0.05 else None
+    one = close[0] if len(close) == 1 or len(close) == 2 and score[0] - score[1] > 0.05 else None
+    return one if one and one[:1] == k[:1] else None
 
 
 # Freshness (Q9): the caches load() reads, as (key, label, file in data/, refresh window in hours, what's lost without it)
@@ -674,7 +735,10 @@ def freshness(now=None, data=None, failed=None, times=None):
     own (a League's copies as loaded). Never fetches."""
     now, data, failed = now or time.time(), Path(data or DATA), FAILED if failed is None else failed
     out = []
-    for key, label, name, hours, lost in SOURCES:
+    # Yahoo's API (Nov 23): league.json's time is the last pull that answered (yahoo.snapshot() touches it when nothing
+    # changed), a failed one is in FAILED; the app pulls every 15 minutes, so half an hour without one is stale
+    api = [("yahoo", "Yahoo league", "league.json", 0.5, "rosters, moves and this week's score (the last pull's stay)")]
+    for key, label, name, hours, lost in SOURCES + api * bool(os.environ.get("YAHOO_LEAGUE_ID")):
         t = times[name] if times and name in times else mtime(data / name)
         age = None if t is None else (now - t) / 3600
         status = "missing" if t is None else "failed" if name in failed else "stale" if age > hours else "ok"
@@ -1146,13 +1210,14 @@ def _match_indep(p):
     return (dist * (wins > n / 2)).sum(-1) + 0.5 * (dist * (wins == n / 2)).sum(-1)
 
 
-def season_sim(wins, weeks, bracket, seats, sims=SIMS, seed=0, sd=None):
+def season_sim(wins, weeks, bracket, seats, sims=SIMS, seed=0, sd=None, meet=False):
     """Playoff and title odds by simulating the rest of a categories season. wins: (n,) category wins so far (a tie
     counts half). weeks: [(I, J, p, tie)] for each regular-season week left: both teams of each pairing and their
     category odds and tie odds (pairings, cats), cat_probs(ties=True). bracket: [(p, tie)] for each playoff round,
     (n, n, cats) for every pairing. The top `seats` make it, reseeded each round (best seed plays the worst left, byes
     to the top seeds), and a playoff week goes to whoever wins more categories, the higher seed on a tie.
-    sd: (SEASON_SD, WEEK_SD) to try others. -> (P(playoffs), P(title), expected final wins) per team.
+    sd: (SEASON_SD, WEEK_SD) to try others. -> (P(playoffs), P(title), expected final wins) per team, and with meet
+    (M30) a 4th: (rounds, n, n), the chance i plays j in each round (counted off the same draws: the odds don't move).
     ponytail: equal wins are seeded at random; Yahoo's tiebreak isn't in the snapshot."""
     rng, n = np.random.default_rng(seed), len(wins)
     season_sd, week_sd = sd or (SEASON_SD, WEEK_SD)
@@ -1176,11 +1241,14 @@ def season_sim(wins, weeks, bracket, seats, sims=SIMS, seed=0, sd=None):
     seed_of = np.argsort(order, 1)
     alive, rows = order[:, :seats], np.arange(sims)[:, None]
     rounds = int(np.ceil(np.log2(seats))) if seats > 1 else 0
+    met = np.zeros((rounds, n, n))
     for r in range(rounds):
         bye = 2 ** rounds - seats if r == 0 else 0
         hi, lo = alive[:, bye:], alive[:, bye:][:, ::-1]
         k = hi.shape[1] // 2
         hi, lo = hi[:, :k], lo[:, :k]
+        if meet:
+            np.add.at(met[r], (hi.ravel(), lo.ravel()), 1 / sims)
         p, tie = bracket[min(r, len(bracket) - 1)]
         w = play(hi, lo, p[hi, lo], tie[hi, lo])
         alive = np.concatenate([alive[:, :bye], np.where(w >= p.shape[-1] / 2, hi, lo)], 1)
@@ -1188,7 +1256,7 @@ def season_sim(wins, weeks, bracket, seats, sims=SIMS, seed=0, sd=None):
     made = np.zeros((sims, n), bool)
     made[rows, order[:, :seats]] = True
     champ = np.bincount(alive[:, 0], minlength=n) / sims if seats else np.zeros(n)
-    return made.mean(0), champ, total.mean(0)
+    return (made.mean(0), champ, total.mean(0)) + ((met + met.transpose(0, 2, 1),) if meet else ())
 
 
 # What if (Q27; Martin, Nov 12: "can i not check what if someone breaks out ... the winning percentage thing is so
@@ -1207,7 +1275,7 @@ def whatif(name=None, clear=False, **w):
     """The saved what-ifs {player name: {...}}. With a name: set his (fields left out or empty are dropped; none left,
     or clear: his is removed). clear with no name: all removed. Bad values raise KeyError (the AI GM's input)."""
     got = json.loads(WHATIF.read_text(encoding="utf-8")) if WHATIF.exists() else {}
-    made = got.pop(MOVES, [])  # roster moves (Q30) live in the same file: moves()
+    made = got.pop(MOVES, [])  # plan picks (Q30) live in the same file: moves()
     if name is None and not clear:
         return got
     w = {k: v for k, v in w.items() if v not in (None, "", 0)}
@@ -1237,130 +1305,102 @@ def what_text(w):
          "out": f"out until {day(w['until'])}" if w.get("until") else "out for the season"}.get(w.get("health"))) if x)
 
 
-# Roster what-ifs (Q30): a move you've made on Yahoo since the snapshot ("I dropped Washington"), or a drop you've
-# picked but not made yet (plan), so every tab stops advising on the old roster. Saved in data/whatif.json under
-# "moves", in the order made: [{id, at, me, add, drop, activate, park, give, get, team, their_drop, plan}], names as
-# the snapshot spells them (League.made() builds one). load() applies them to the snapshot before the league is built
-# (moved()); like the player what-ifs, only the app and the CLI read them, never tests or backtests.
+# Plan picks (Q30, Y3): a move you've picked but not made on Yahoo yet (Who to drop's "Use this", or the AI GM's
+# `what --plan`), so every tab counts it. Moves made on Yahoo come in with the next pull (every 15 minutes), so since
+# Nov 24 nothing else is saved. In data/whatif.json under "moves", in the order picked: [{id, at, me, add, drop,
+# activate, park, plan}], names as the snapshot spells them (League.made() builds one). load() applies them to the
+# snapshot before the league is built (moved()); like the player what-ifs, only the app and the CLI read them.
 MOVES = "moves"
 IL_SLOTS = ("IL", "IL+", "NA")
 
 
-def moves(new=None, undo=None, done=None):
-    """The saved roster moves. new: one more (it gets an id and the time). undo: an id, a list of ids, or "all".
-    done: a planned move's id, now made on Yahoo (its time is now, so the next snapshot is expected to show it)."""
+def moves(new=None, undo=None):
+    """The saved plan picks. new: one more (it gets an id and the time). undo: an id, a list of ids, or "all".
+    Y3: a move recorded as made on Yahoo (no `plan`, from before Nov 24) is left out, and gone at the next write."""
     got = json.loads(WHATIF.read_text(encoding="utf-8")) if WHATIF.exists() else {}
-    ms = got.get(MOVES, [])
-    if new is None and undo is None and done is None:
+    ms = [m for m in got.get(MOVES, []) if m.get("plan")]
+    if new is None and undo is None:
         return ms
-    now = datetime.now().isoformat(timespec="seconds")
     if new:
-        ms = ms + [{**new, "id": f"{time.time_ns():x}"[-8:], "at": now}]
+        ms = ms + [{**new, "id": f"{time.time_ns():x}"[-8:], "at": datetime.now().isoformat(timespec="seconds")}]
     if undo:
         ms = [] if undo == "all" else [m for m in ms if m["id"] not in ([undo] if isinstance(undo, str) else undo)]
-    if done:
-        ms = [{k: v for k, v in {**m, "at": now}.items() if k != "plan"} if m["id"] == done else m for m in ms]
     _write(WHATIF, json.dumps({**{k: v for k, v in got.items() if k != MOVES}, **({MOVES: ms} if ms else {})},
                               indent=1, ensure_ascii=False))
     return ms
 
 
 def move_text(m):
-    """A move in words: "Dropped P.J. Washington, activated Jalen Suggs"; a plan: "Drop Daniel Gafford, activate ..."."""
+    """A pick in words: "Drop Daniel Gafford, activate Jalen Suggs"."""
     said = lambda ns: ", ".join(ns[:-1]) + " and " + ns[-1] if len(ns) > 1 else ns[0]
-    did = (lambda now, past: now) if m.get("plan") else (lambda now, past: past)
     L = lambda f: m.get(f) or []
-    t = ", ".join(x for x in (
-        L("give") and f"{did('trade', 'traded')} {said(L('give'))} to {m.get('team')} for {said(L('get'))}",
-        L("add") and f"{did('add', 'added')} {said(L('add'))}", L("drop") and f"{did('drop', 'dropped')} {said(L('drop'))}",
-        L("activate") and f"{did('activate', 'activated')} {said(L('activate'))}",
-        L("park") and f"{did('move', 'moved')} {said(L('park'))} to an IL slot") if x)
+    t = ", ".join(x for x in (L("add") and f"add {said(L('add'))}", L("drop") and f"drop {said(L('drop'))}",
+                              L("activate") and f"activate {said(L('activate'))}",
+                              L("park") and f"move {said(L('park'))} to an IL slot") if x)
     return t[:1].upper() + t[1:]
 
 
 def moved(snap, ms):
-    """The snapshot with the saved roster moves on it, in the order made (Q30), before anything is computed ->
-    (snapshot, [{**move, text, state}], [ids the snapshot already shows]). Each move against the snapshot as the
-    earlier ones left it:
-    shown (every player is where the move put him): nothing to apply, and its id comes back so load() drops it from
-      the file: a new snapshot clears the moves it has without a click;
-    stale (state "stale"): the snapshot was pulled after the move was made and doesn't show it, so the snapshot
-      wins: not applied, kept for the banner's "not in your new snapshot". A plan isn't on Yahoo yet, so it stays on
-      a newer snapshot while every part of it can still be made (the drop is still yours, the add still free);
-    else applied (state "made" / "plan"): drops go to the free agents, activate / park change the slot (a made park
-      gets the O tag Yahoo needed for it when the snapshot shows none), a trade swaps
-      the players (in on the bench), adds come off the free agents onto the bench, and each add is a transaction
-      dated the move's day, which adds() counts against the week's cap (and on the snapshot's own count while the
-      move is in the snapshot's week). A part that can't be made on this snapshot is skipped, never an error: the app
-      has to load.
-    Names match through norm() (accents, Jr/III). ponytail: a dropped player gets no waiver date (he reads as free
-    today); a snapshot with no `pulled` time (demo, hand-typed) never makes a move stale."""
+    """The snapshot with the plan picks on it, in the order picked (Q30), before anything is computed ->
+    (snapshot, [{**move, text, state: "plan"}], [ids to drop from the file]). Each against the snapshot as the earlier
+    ones left it: one it already shows (made on Yahoo, every player where the pick put him) or that can't be made on
+    it any more (the drop isn't yours, the add was taken) comes back as an id, so load() drops it from the file and
+    the pull's rosters stand; else it's applied: drops go to the free agents, activate / park change the slot, adds
+    come off the free agents onto the bench, each a transaction dated the pick's day, which adds() counts against the
+    week's cap (and on the snapshot's own count while the pick is in the snapshot's week). Names match through
+    norm() (accents, Jr/III). ponytail: a dropped player gets no waiver date (he reads as free today)."""
     if not ms:
         return snap, [], []
     snap = {**snap, "teams": {t: [dict(p) for p in ps] for t, ps in snap["teams"].items()},
             "free_agents": [dict(p) for p in snap.get("free_agents", [])],
             "transactions": list(snap.get("transactions", [])), "adds": dict(snap.get("adds", {}))}
-    stamp = lambda x: datetime.fromisoformat(x).astimezone()
-    pulled, wk = snap.get("pulled") and stamp(snap["pulled"]), snap.get("matchup") or {}
-    out, shown = [], []
+    wk = snap.get("matchup") or {}
+    out, gone_ids = [], []
     for m in ms:
         me, L = m.get("me") or snap["me"], lambda f: m.get(f) or []
-        mine, fa, theirs = snap["teams"].get(me, []), snap["free_agents"], snap["teams"].get(m.get("team"), [])
+        mine, fa = snap["teams"].get(me, []), snap["free_agents"]
         at = lambda ps, n: next((p for p in ps if norm(p["name"]) == norm(n)), None)
         on, parked = lambda n: at(mine, n) is not None, lambda n: (at(mine, n) or {}).get("slot") in IL_SLOTS
-        if (all(on(n) for n in L("add") + L("get")) and not any(on(n) for n in L("drop") + L("give"))
-                and all(on(n) and not parked(n) for n in L("activate")) and all(parked(n) for n in L("park"))):
-            shown.append(m["id"])
-            continue
-        can = (all(at(fa, n) for n in L("add")) and all(on(n) for n in L("drop") + L("give"))
-               and all(at(theirs, n) for n in L("get")) and all(parked(n) for n in L("activate"))
-               and all(n in L("add") + L("get") or on(n) and not parked(n) for n in L("park")))
-        if pulled and stamp(m["at"]) < pulled and not (m.get("plan") and can):
-            out.append({**m, "text": move_text(m), "state": "stale"})
+        shown = (all(on(n) for n in L("add")) and not any(on(n) for n in L("drop"))
+                 and all(on(n) and not parked(n) for n in L("activate")) and all(parked(n) for n in L("park")))
+        can = (all(at(fa, n) for n in L("add")) and all(on(n) for n in L("drop")) and all(parked(n) for n in L("activate"))
+               and all(n in L("add") or on(n) and not parked(n) for n in L("park")))
+        if shown or not can:
+            gone_ids.append(m["id"])
             continue
         day = datetime.fromisoformat(m["at"])
         when = f"{day:%b} {day.day} {day.hour % 12 or 12}:{day:%M}{'am' if day.hour < 12 else 'pm'}"
         def go(n, src, dst, slot=None):  # the player from one list to another; on a roster he takes a slot
-            if p := at(src, n):
+            if p := at(src, n):  # never an error: the app has to load
                 src.remove(p)
                 dst.append({**{k: v for k, v in p.items() if k not in ("slot", "waiver")}, **({"slot": slot} if slot else {})})
-            return p
-        gone = [n for n in L("drop") if go(n, mine, fa)]
-        for n in L("their_drop"):
-            go(n, theirs, fa)
+        for n in L("drop"):
+            go(n, mine, fa)
         for n in L("activate"):
-            if parked(n):
-                at(mine, n)["slot"] = "BN"
-        for n in L("give"):
-            go(n, mine, theirs, "BN")
-        for n in L("get"):
-            go(n, theirs, mine, "BN")
+            if p := at(mine, n):
+                p["slot"] = "BN"
         tx = []
         for i, n in enumerate(L("add")):
-            if go(n, fa, mine, "BN"):
-                tx.append({"when": when, "team": me, "type": "add", "player": n, **({"dropped": gone[i]} if i < len(gone) else {})})
-                if me in snap["adds"] and wk.get("week_start", "9") <= m["at"][:10] <= wk.get("week_end", ""):
-                    snap["adds"][me] += 1
-        tx += [{"when": when, "team": me, "type": "drop", "player": n} for n in gone[len(L("add")):]]
+            go(n, fa, mine, "BN")
+            tx.append({"when": when, "team": me, "type": "add", "player": n, **({"dropped": L("drop")[i]} if i < len(L("drop")) else {})})
+            if me in snap["adds"] and wk.get("week_start", "9") <= m["at"][:10] <= wk.get("week_end", ""):
+                snap["adds"][me] += 1
+        tx += [{"when": when, "team": me, "type": "drop", "player": n} for n in L("drop")[len(L("add")):]]
         snap["transactions"][:0] = tx  # newest first, as the snapshot lists them
         for n in L("park"):
             if p := at(mine, n):
                 p["slot"] = "IL"
-                # Yahoo only took him in an IL slot with an O tag (mchc), so the snapshot after it shows one. AI GM
-                # note, Nov 20: Boozer parked on Yahoo with no tag on the 11 AM pull read as healthy there (_stuck:
-                # "you can't add anyone") until a what-if said he was out
-                if not m.get("plan") and not p.get("status"):
-                    p["status"] = "O"
-        out.append({**m, "text": move_text(m), "state": "plan" if m.get("plan") else "made"})
-    return snap, out, shown
+        out.append({**m, "text": move_text(m), "state": "plan"})
+    return snap, out, gone_ids
 
 
 class League:
     """A league snapshot (see yahoo.py) joined with NBA stats."""
 
     def __init__(self, snap, base=None, cur=None, sched=None, inj=None, today=None, logs=None, proj=None, news=None,
-                 live=None, now=None, inj_at=None, what=None):
+                 live=None, now=None, inj_at=None, what=None, habit=None):
         s = snap["settings"]
+        self.habit = habit or {}  # Y5: each team's lineup habit on its rest of This week (habits(), _rest())
         self.snap, self.teams_n, self.roster_n = snap, s.get("teams", 12), s.get("roster", 13)
         self.slots = s.get("slots") or []  # starting slots by position (yahoo.py reads them); none = any players start
         self.lineup = len(self.slots) or s.get("starters", 10)  # players whose games count each day
@@ -1374,7 +1414,7 @@ class League:
         self.points = s.get("points") or POINTS
         self.me = snap["me"]
         self.free = {}  # {team: free moves already made on this copy} (after_free)
-        self.moves = []  # Q30: the saved roster moves this snapshot carries (load(made=): moved()'s notes), for the banner
+        self.moves = []  # Q30: the plan picks this snapshot carries (load(made=): moved()'s notes), for the banner
         self._dropc = {}  # drops() and _drop_pick() by punt: This week reads the pick on every call
         self.trades = []  # trades already made on this copy (after_trade)
         base = baseline(fetch(LAST), fetch(OLDER)) if base is None else base
@@ -1385,6 +1425,7 @@ class League:
         pool = self.teams_n * self.roster_n
         self.today = (today or date.today()).isoformat()
         # expert projections: the snapshot's (Yahoo), and ESPN's (proj, from load()) for players Yahoo doesn't list
+        self.espn = proj or {}  # ESPN's per-game projections as fetched: the market's rest-of-season view (_market)
         self.proj = experts(snap.get("projections", {}), proj or {}, base, base.index.union(cur.index), cur)
         pre = prior(base, self.proj)
         # this season from the box scores, recent games weighing more (recent()), where they hold the games fetch()
@@ -1490,6 +1531,13 @@ class League:
         # week's snapshot) tonight's games count as to play, as before
         if self.rolled or self.me not in {t for pr in snap.get("matchups", ()) for t in pr.get("totals", {})} | set(m.get("totals", {})):
             self.tonight, self.tipped = [], set()
+        # an API pull (Nov 23) keeps today: the NBA teams whose game had tipped when it was pulled (`held`) are in Yahoo's
+        # totals, so they lock (even without the live scoreboard) and their game is never banked again (_so_far), that
+        # day or after; later tips that day still play, then bank live (M18)
+        h = m.get("held") or {}
+        self.held_day, self.held = h.get("day"), set(h.get("teams", ()))
+        if self.held_day == self.today and self.sched and not self.rolled:
+            self.tipped |= self.held
         # teammates' injuries: the lifts players had in this season's box scores while regulars sat (had()) come off,
         # so a teammate's minutes while he sat aren't counted as the new normal. Then the injured go back on: each
         # team's players out with a return date sit together in stretches between their returns (stretches()), each
@@ -1606,7 +1654,7 @@ class League:
         keys = []
         for pl in players:
             k = self.find(pl["name"], strict=False)
-            if k:
+            if k and k not in keys:  # two names for one player: the first listed keeps him
                 self.meta[k] = dict(pl)  # a copy: ESPN's injury tags land here, never in the snapshot it came from
                 keys.append(k)
         return keys
@@ -1935,24 +1983,59 @@ class League:
         Paul) rank after everyone in it."""
         rank = self.effective(frame="cur").rank(ascending=False)
         yahoo = [k for k, m in self.meta.items() if m.get("rank")]
-        for k in yahoo:
-            w = self.p.at[k, "GP_CUR"] / (self.p.at[k, "GP_CUR"] + chase)
-            rank[k] = self.meta[k]["rank"]["pre"] ** (1 - w) * max(self.meta[k]["rank"]["cur"], 1) ** w
+        # the starting price is where this league drafted him (Yahoo API pulls, Nov 23): Edwards went 5th on Yahoo's
+        # preseason 79, LaMelo 24th. Nobody paid for an undrafted player, so he starts from Yahoo's preseason rank and
+        # his form takes over at HOT_CHASE's pace (Martin, Nov 23: "ppl that didnt get drafted but picked up can be rlly
+        # good too": after-the-last-pick at CHASE had Anthony Black, Cur 71, at #116 and Christian Braun, Cur 35, at
+        # #81). A snapshot alone (no draft): everyone at chase, on Yahoo's preseason rank.
+        drafted = self.snap.get("draft") or {}
+        draft = {k: p for n, p in drafted.items() if (k := self.find(n, strict=False)) in rank.index}
+        for k in {*yahoo, *draft}:
+            r = self.meta.get(k, {}).get("rank") or {}
+            c = chase if k in draft or not drafted else min(chase, HOT_CHASE)
+            w = self.p.at[k, "GP_CUR"] / (self.p.at[k, "GP_CUR"] + c)
+            rank[k] = (draft.get(k) or r["pre"]) ** (1 - w) * max(r.get("cur") or UNRANKED, 1) ** w
+        # rest of the season (Martin, Nov 24: "shouldnt market value not only be based on preseason but also ros"): a
+        # drafted player's price moves ROS_WEIGHT of the way (geometrically) to his rank on ESPN's projection, which
+        # managers read too, never the model's own values (trades judge the other side on the market). Undrafted
+        # pickups keep their form: ESPN lags breakouts (Nov 24: Anthony Black 153rd, Christian Braun 194th)
+        if draft and self.espn and self.mode != "points":
+            e = pd.DataFrame(self.espn).T.apply(pd.to_numeric, errors="coerce").dropna(subset=["MIN", *RAW])
+            e.index = [self.find(n, strict=False) for n in e.index]
+            e = e[e.index.notna() & ~e.index.duplicated()]
+            ros = zscores(e, 156)[self.cats].sum(axis=1).rank(ascending=False)
+            for k in draft.keys() & set(ros.index):
+                rank[k] = rank[k] ** (1 - ROS_WEIGHT) * ros[k] ** ROS_WEIGHT
+        yahoo = [*{*yahoo, *draft}]
+        # out with a return date: his price cut by OUT_DISCOUNT x the share of his team's games left he misses, as the
+        # same drop on the MARKET curve (Martin, Nov 23: "injured ppl should have a discount")
+        for k in (k for k in self.inj if k in rank.index):
+            left = [d for d in self.sched.get(self.nba.get(k), ()) if d >= self.today]
+            if left and (missed := 1 - len(self.game_days(k)) / len(left)) > 0:
+                rank[k] += np.log1p(-OUT_DISCOUNT * missed) / np.log(MARKET)
         inside = rank.index.isin(self.here) | rank.index.isin(list(self.meta))
         rank = (rank + np.where(inside, 0, len(rank))).rank(method="first")
         return pd.DataFrame({"rank": rank.astype(int), "value": 100 * MARKET ** (rank - 1),
                              "yahoo": rank.index.isin(yahoo)})
 
-    def _tier(self, tier, you, them, mkt, max_overpay=None):
+    def _tier(self, tier, you, them, mkt, max_overpay=None, cost=None):
         """Which deals clear a difficulty tier (TIERS): win-% gains for you and them, market gap in % (priced()).
-        max_overpay (%) can only tighten a tier's floor. Works on scalars and arrays."""
+        max_overpay (%) can only tighten a tier's floor. cost (M30, the title goal: TITLE_COST): you may lose up to
+        that much win % (One Win terms) in place of the tier's gain. Works on scalars and arrays."""
         y, t, lo, hi = TIERS[tier]
         floor = -np.inf if max_overpay is None else -max_overpay
-        gain = you > y * self.s
-        ok = gain & (them > t * self.s) & (mkt >= max(lo, floor)) & (mkt <= hi)
+        mine = lambda g: you > (g if cost is None else -cost) * self.s
+        ok = mine(y) & (them > t * self.s) & (mkt >= max(lo, floor)) & (mkt <= hi)
         if tier == "hard":  # or you win on market by up to FAIR_FIT and both teams gain: the fit is the pitch
-            ok = ok | ((you > TIERS["fair"][0] * self.s) & (them > 0) & (mkt >= EVEN) & (mkt <= FAIR_FIT))
+            ok = ok | (mine(TIERS["fair"][0]) & (them > 0) & (mkt >= EVEN) & (mkt <= FAIR_FIT))
         return ok
+
+    @staticmethod
+    def _aim(aim):
+        """Aim for (M30): "season" (win %, the default) or "title"; KeyError otherwise (the page's and the AI GM's input)."""
+        if (aim or "season") not in AIMS:
+            raise KeyError(f"Aim for one of {', '.join(AIMS)}, not {aim}")
+        return aim or "season"
 
     def weakest(self, team, m, pv):
         """Perceived cost of the m players `team` would drop to make room: its weakest active ones by perceived value."""
@@ -1987,12 +2070,13 @@ class League:
                 "mkt": round(float(self.market.at[k, "value"]), 1), "mkt_rank": int(self.market.at[k, "rank"]),
                 **({} if self.market.at[k, "yahoo"] else {"mkt_model": True}),  # no Yahoo rank: the model's own
                 **({"games": int(self.games_week[k])} if self.sched else {}),
+                **({"playoff_games": self.playoff_games(k)} if self.sched and self._po_spans else {}),  # M30
                 **({"injury": self.inj[k]["note"], "return": self.inj[k]["return"]} if k in self.inj else {}),
                 **({"listed": {"as": g[2], "day": g[0], "plays": round(100 * g[1])}} if (g := self.gameday.get(k)) else {}),
                 **({"lift": self.lifted[k]} if k in self.lifted else {}),  # injured teammates whose minutes he takes
                 **({"il": True} if k in self.il.get(self.owner(k), ()) else {}),  # parked in an IL / IL+ / NA slot
                 **({"proj": self.proj.at[k, "src"]} if k in self.proj.index else {}),  # whose projection his line blends in
-                **{f: m[f] for f in ("owned", "waiver") if f in m},  # Yahoo roster % / on waivers until
+                **{f: m[f] for f in YAHOO_PCT + ("waiver",) if f in m},  # Yahoo-wide roster and start % (Y4) / on waivers until
                 **({"what": what_text(self.what[k])} if k in self.what else {}),  # Q27: his numbers are on a what-if
                 "z": {c: round(float(self.z.at[k, c]), 2) for c in self.cats}}
 
@@ -2332,7 +2416,7 @@ class League:
 
     def _drop_pick(self, punt=()):
         """(the league with Who to drop's overall pick gone and the players stuck in IL slots activated today, the
-        pick, the stuck players) while a healthy player in an IL slot means a drop (Q30); else None. drops() is the
+        pick, the stuck players) while a player stuck in an IL slot means a drop (Q30); else None. drops() is the
         one place the pick is made (cached by punt, against the snapshot's opponent, as the panel shows it).
         ponytail: with two stuck and two drops needed, only the first drop is taken out"""
         key = ("pick", tuple(punt))
@@ -2358,7 +2442,7 @@ class League:
         n = min(room, cap["left"] if cap else room)
         if team == self.me:  # B17: one back from an IL slot plays from the day you activate him (_week_mine)
             return keys, dict(self._week_mine(punt)["start"]), until
-        if not self.sched or n <= 0:
+        if not self.sched or n <= 0 or self._stuck(team):  # Nov 24: one not IL-eligible in its IL slot blocks its adds
             return keys, {}, until
         day = lambda d, k: (date.fromisoformat(d) + timedelta(k)).isoformat()
         tom, until = day(self.today, 1), dict(until)
@@ -2373,6 +2457,15 @@ class League:
                 if e < self.week_end:
                     until[a] = e
         return keys, start, until
+
+    def _habit(self, team):
+        """Another team's lineup habit (Y5, habits()): the share of its best lineups' starts it really banks, against
+        the league's. Yours is 1: This week plans your lineup."""
+        return 1.0 if team == self.me else self.habit.get(team, {}).get("f", 1.0)
+
+    def _rest(self, team, punt=()):
+        """A team's expected rest of this week: week_vec() on _week_side(), times its lineup habit (_habit, Y5)."""
+        return self.week_vec(*self._week_side(team, punt)) * self._habit(team)
 
     @staticmethod
     def _handoff(until, ends, drops, a, s):
@@ -2499,13 +2592,23 @@ class League:
 
     @functools.cached_property
     def playoffs(self):
+        """season() at its seed: the odds every view shows (None without a schedule or outside a categories league)."""
+        return self._po_run and self._po_run[0]
+
+    @functools.cached_property
+    def _po_run(self):  # (playoffs, its bracket: teams, each playoff week's team totals, odds and who meets whom)
+        return self.season(meet=True)
+
+    def season(self, seed=0, sims=SIMS, meet=False):
         """Each team's odds to make the playoffs and win the title (season_sim()), from its record so far (the
         snapshot's category W-L-T) and the season schedule's weeks left. The live week counts its totals so far plus
         the rest of it (week_vec on _week_side(), as This week does); each later week is that week on the real NBA
         schedule (M2, _sched_week(): each player's games in it, none before his ESPN return date, missed games half
         filled; weeks 7 and 17 run 14 days), or without a schedule an average week (vecs) scaled by its days. Real
         odds: nobody concedes a punt. {seats, weeks_left, teams: {team: w, l, t, proj (expected final W-L), playoffs,
-        title}}, or None without a schedule or outside a categories league.
+        title}}, or None without a schedule or outside a categories league. seed / sims: season_sim()'s (M30 measured
+        the seed noise with them). meet: (that, {teams, weeks: each playoff week's team totals (n, RAW), bracket: its
+        (p, tie), meet: season_sim()'s chance each pair meets in each round}) for the Playoffs view and the title finder.
         ponytail: a stale snapshot's week plays as a fresh one. One Win records count matchups, not categories: None
         there until a One Win league needs it."""
         weeks = [w for w in self.snap.get("schedule", ()) if w.get("matchups")]
@@ -2528,21 +2631,109 @@ class League:
             I, J = np.array(pr, int).reshape(-1, 2).T
             if not self.rolled and w["start"] == self.matchup.get("week_start") and all(t in live for t in teams):
                 so_far = np.array([[float(live[t].get(c, 0)) for c in RAW] for t in teams])
-                rest = np.stack([self.week_vec(*self._week_side(t)) for t in teams])
+                rest = np.stack([self._rest(t) for t in teams])
                 left.append((I, J, *cat_probs(rest[I], rest[J], self.cats, so_far[I], so_far[J], ties=True)))
             else:
                 Vw = week_v(w)
                 left.append((I, J, *cat_probs(Vw[I], Vw[J], self.cats, ties=True)))
         post = [w for w in self.snap["schedule"] if not w.get("matchups") and w["start"] > weeks[-1]["end"]]
-        bracket = [cat_probs((Vw := week_v(w))[:, None], Vw[None], self.cats, ties=True) for w in post]
+        PV = [week_v(w) for w in post] or [V]
+        bracket = [cat_probs(Vw[:, None], Vw[None], self.cats, ties=True) for Vw in PV]
         seats = min(self.snap["settings"].get("playoff_teams", 6), len(teams))  # 6: Yahoo's default for 12 teams
-        made, champ, final = season_sim([r(t, "w") + r(t, "t") / 2 for t in teams], left,
-                                         bracket or [cat_probs(V[:, None], V[None], self.cats, ties=True)], seats)
-        return {"seats": seats, "weeks_left": len(left),
-                "teams": {t: {"w": r(t, "w"), "l": r(t, "l"), "t": r(t, "t"),
-                              "proj": [round(float(final[i]), 1), round(n * len(weeks) - float(final[i]), 1)],
-                              "playoffs": round(float(made[i]), 3), "title": round(float(champ[i]), 3)}
-                          for t, i in ix.items()}}
+        made, champ, final, *met = season_sim([r(t, "w") + r(t, "t") / 2 for t in teams], left, bracket, seats, sims,
+                                               seed, meet=meet)
+        out = {"seats": seats, "weeks_left": len(left),
+               "teams": {t: {"w": r(t, "w"), "l": r(t, "l"), "t": r(t, "t"),
+                             "proj": [round(float(final[i]), 1), round(n * len(weeks) - float(final[i]), 1)],
+                             "playoffs": round(float(made[i]), 3), "title": round(float(champ[i]), 3)}
+                         for t, i in ix.items()}}
+        return (out, {"teams": teams, "weeks": PV, "bracket": bracket, "meet": met[0],
+                      "spans": [(w["start"], w["end"]) for w in post]}) if meet else out
+
+    def _po_wk(self, r):
+        """Playoff round r's week as vec()'s arrays (wk=), the ones season() plays it on: its real NBA week
+        (_sched_week()), its days x the average week without an NBA schedule, the average week when the season
+        schedule names no playoff weeks."""
+        spans = self._po_run[1]["spans"]
+        if not spans:
+            return self._wk, self._bk, self._cr
+        s, e = spans[min(r, len(spans) - 1)]
+        if self.sched:
+            return self._sched_week(s, e)
+        d = ((date.fromisoformat(e) - date.fromisoformat(s)).days + 1) / 7
+        return self._wk * d, self._bk, self._cr * d
+
+    @functools.cached_property
+    def _po_q(self):
+        """M30: who you'd meet in each playoff round: your chance to play each team there given you play that round
+        (season_sim()'s meet), every other team alike in a round you never reach. -> (rounds, n), rows summing to 1"""
+        b = self._po_run[1]
+        i, n = b["teams"].index(self.me), len(b["teams"])
+        m = b["meet"][:, i]
+        tot = m.sum(1, keepdims=True)
+        return np.where(tot > 0, m / np.where(tot > 0, tot, 1), np.where(np.arange(n) == i, 0.0, 1 / max(n - 1, 1)))
+
+    def _po_score(self, mine, other=None, theirs=None):
+        """M30's playoff-week score: your chance to win every playoff round against the teams you'd meet in it
+        (_po_q), a product over the rounds of each one's expected matchup odds (that week's totals, the categories
+        independent as season_sim() plays them, since it stands in for the title odds; WEEK_LOAD found the same best
+        deals on the Nov 7 and Nov 24 leagues). The title finder ranks deals on it and trade() reports it.
+        mine: (..., rounds, RAW) your totals in each round's week (_po_wk); other / theirs: a trade partner and his
+        totals after the deal, in place of his row. -> (...)"""
+        b, q = self._po_run[1], self._po_q
+        j = b["teams"].index(other) if other else None
+        out = 1.0
+        for r in range(len(q)):
+            m = _match_indep(cat_probs(mine[..., r, None, :], b["weeks"][min(r, len(b["weeks"]) - 1)], self.cats))
+            if j is not None:
+                m[..., j] = _match_indep(cat_probs(mine[..., r, :], theirs[..., r, :], self.cats))
+            out = out * (m * q[r]).sum(-1)
+        return out
+
+    def playoff_view(self):
+        """M30, League's Playoffs period: your roster in each playoff round's week (its real NBA games, from each
+        player's return) against the teams you'd likely meet there, by season_sim()'s draws (`meet`: your chance to
+        play each one, given you play that round), and where you're thin. Real odds: the playoffs score every category,
+        so a punt concedes nothing here. Each opponent's `win` is that week's matchup odds as weeks_ahead() counts them
+        (match_prob at WEEK_LOAD, no seed tiebreak), `score` the categories you'd expect to take; a round's `cats` are
+        your odds in each against the likely opponents (weighted by meet), `thin` the ones under 50%, weakest first.
+        {seats, playoffs, title, rounds: [{round, week, start, end, reach, games, opponents, cats, thin}]}; None
+        without playoff odds."""
+        if not self.playoffs:
+            return None
+        b, q, me = self._po_run[1], self._po_q, self.me
+        i, pct1 = b["teams"].index(me), lambda x: round(100 * float(x), 1)
+        spans, nums = b["spans"], [w for w, _, _ in self.playoff_weeks()]
+        act = self._playing(self.rosters[me])
+        rounds = []
+        for r in range(len(q)):
+            p = b["bracket"][min(r, len(b["bracket"]) - 1)][0][i]  # (n, cats): your odds against each team that week
+            opp = [{"team": t, "meet": pct1(q[r, j]), "win": pct1(match_prob(p[j], self.cats, WEEK_LOAD)),
+                    "score": round(float(p[j].sum()), 1), "cats": {c: pct1(x) for c, x in zip(self.cats, p[j])}}
+                   for j, t in enumerate(b["teams"]) if j != i and q[r, j] >= 0.005]
+            opp.sort(key=lambda x: -x["meet"])
+            avg = (q[r][:, None] * p).sum(0)
+            s_, e_ = spans[min(r, len(spans) - 1)] if spans else (None, None)
+            rounds.append({"round": r + 1, "week": nums[r] if r < len(nums) else None, "start": s_, "end": e_,
+                           "reach": pct1(b["meet"][r, i].sum()),
+                           "games": sum(len(self.game_days(k, e_, s_)) for k in act) if s_ and self.sched else None,
+                           "opponents": opp, "cats": {c: pct1(x) for c, x in zip(self.cats, avg)},
+                           "thin": [c for c in sorted(self.cats, key=lambda c: avg[self.cats.index(c)]) if avg[self.cats.index(c)] < 0.5]})
+        po = self.playoffs["teams"][me]
+        return {"seats": self.playoffs["seats"], "playoffs": pct1(po["playoffs"]), "title": pct1(po["title"]), "rounds": rounds}
+
+    def _po_vec(self, keys, il=None, team=None):
+        """A roster's totals in each playoff round's week (vec() on _po_wk()): _po_score()'s input. -> (rounds, RAW)"""
+        return np.array([self.vec(keys, il, team, wk=self._po_wk(r)) for r in range(len(self._po_q))]).reshape(-1, len(RAW))
+
+    @functools.cached_property
+    def _po_spans(self):
+        """The fantasy playoff weeks as (start, end), cached (playoff_weeks())."""
+        return [(s, e) for _, s, e in self.playoff_weeks()]
+
+    def playoff_games(self, k):
+        """M30: his NBA games in each fantasy playoff week, from his return date (game_days(), as season() counts them)."""
+        return [len(self.game_days(k, e, s)) for s, e in self._po_spans]
 
     def weeks_ahead(self, week=1, n=1, add=None, drop=None):
         """The league over n schedule weeks, starting `week` weeks after this one (0 = the rest of this week, with the
@@ -2577,7 +2768,7 @@ class League:
             mine = [k for k in self.rosters[me] if k not in out] + inn if moved else self.rosters[me]
             keys = {t: mine if t == me else self.rosters[t] for t in teams}
             if now:  # the live week: banked totals plus the rest of it, as This week counts it
-                V = np.stack([self.week_vec(*self._week_side(t)) for t in teams])
+                V = np.stack([self._rest(t) for t in teams])
                 S = np.array([[float(live[t].get(c, 0)) for c in RAW] for t in teams])
                 st = [sum(self.starts(*self._week_side(t)).values()) for t in teams]
             elif self.sched:  # a later week, each team's games under the daily lineup limit (_capped)
@@ -2704,12 +2895,17 @@ class League:
                            + ", ".join(f"{p} ({self.owner(k) or 'no team'})" for k, p in zip(get, self.names(get))))
         return give, get
 
-    def trade(self, give, get, punt=(), free=True, their_free=False, drop=()):
+    def trade(self, give, get, punt=(), free=True, their_free=False, drop=(), aim="season"):
         """Evaluate a trade for you. 9-cat: change in your weekly win % vs the league, both rosters updated
         (extra players dropped, open spots filled from waivers), on top of your free moves (after_free; free=False
         scores it on today's rosters). their_free: the other team's too; off by default, since managers judge the
         deal itself, not their own waiver options (Martin, Oct 27). Points: value net of replacement level. drop: who you
-        cut to fit it, your pick over the model's (_after(drop=)); your free moves never drop them first."""
+        cut to fit it, your pick over the model's (_after(drop=)); your free moves never drop them first.
+        aim (M30): "title" gives the verdict on your title odds (accept / decline past TITLE_BAR points, decline when
+        your playoff odds fall under PO_FLOOR) and tiers it as the title finder does (TITLE_COST), the win-% verdict
+        in season_verdict; "season" (the default) on win %. Both carry the playoff-week score (po_score) and
+        playoff-week games."""
+        aim = self._aim(aim)
         give, get = self._check(give, get)
         drop = list(dict.fromkeys(self.find(x) for x in drop))
         if bad := [k for k in drop if k not in self.rosters[self.me] or k in give]:
@@ -2718,7 +2914,7 @@ class League:
             lg = self.after_free(punt, keep=give + drop) if free else self
             if their_free and get:
                 lg = lg.after_free(keep=get, team=lg.owner(get[0]))
-            return lg.trade(give, get, punt, free=False, drop=drop)
+            return lg.trade(give, get, punt, free=False, drop=drop, aim=aim)
         name = self.names
         n = len(get) - len(give)
         rv, rz = self.replacement(punt)
@@ -2756,11 +2952,16 @@ class League:
         # real odds, two frames already: the row stays on the rule (the real-odds best cut is a roster you'd never field)
         sb, sa = self.standings(gain=0 if punt else g0), self.standings(ov, gain=0 if punt else g1)
         pct1 = lambda x: round(100 * x, 1)
-        po = ti = None  # playoff and title odds (Q5) before -> after, both sides: real odds, a punt concedes nothing there
+        po = ti = ps = None  # playoff and title odds (Q5) before -> after, both sides: real odds, a punt concedes nothing there
         if self.playoffs:
             after = lt.playoffs
             po, ti = ({s: [pct1(x["teams"][t][c]) for x in (self.playoffs, after)] for s, t in (("you", self.me), ("them", other))}
                       for c in ("playoffs", "title"))
+            # M30: the playoff-week score the title finder ranks on (_po_score), before -> after, in %
+            ps = [pct1(self._po_score(self._po_vec(self.rosters[self.me], team=self.me))),
+                  pct1(self._po_score(self._po_vec(mk, mil), other, self._po_vec(tk, til, other)))] if len(self._po_q) else None
+        # M30: playoff-week games (each player's NBA games in the fantasy playoff weeks, from his return), whole roster
+        pg = (lambda ks: sum(map(sum, map(self.playoff_games, ks)))) if self.sched and self._po_spans else None
         side = lambda v0, v1, o0, o1, c: {"total": [total(v0, c), total(v1, c)], "odds": [pct1(o0[c]), pct1(o1[c])]}
         cats_detail = {c: {"you": side(self.vecs[self.me], ov[self.me], b["odds"], a["odds"], c),
                            "them": side(self.vecs[other], ov[other], self.outlooks[other]["odds"], to["odds"], c)}
@@ -2834,12 +3035,18 @@ class League:
             "il_cut": {"back": name(dict.fromkeys([*(c0[0] if c0 else ()), *(c1[0] if c1 else ())])),  # who's cut when
                        "now": name(c0[1]) if c0 else [], "after": name(c1[1]) if c1 else []} if c0 or c1 else None,
             "their_win": round(100 * tb, 1), "their_win_after": round(100 * tw, 1),
-            "rank": sb[self.me]["rank"], "rank_after": sa[self.me]["rank"], "playoffs": po, "title": ti,
+            "rank": sb[self.me]["rank"], "rank_after": sa[self.me]["rank"], "playoffs": po, "title": ti, "po_score": ps,
+            "playoff_games": pg and {"you": [pg(self.rosters[self.me]), pg(mk)], "them": [pg(self.rosters[other]), pg(tk)]},
             "odds": {c: round(100 * (a["odds"][c] - b["odds"][c]), 1) for c in self.cats},
             "you_drop": name(md), "you_add": name(ma), "they_drop": name(td), "they_add": name(ta), "market": mkt,
             "tiers": [t for t in TIERS if self._tier(t, net, 100 * (tw - tb), d)],
             "accept": accept(d, 100 * (tw - tb), self.s),
             "verdict": "accept" if net > VERDICT * self.s else "decline" if net < -VERDICT * self.s else "toss-up"})
+        if aim == "title" and ti:  # M30: the title's verdict, the win %'s beside it; tiers as the title finder's
+            dt, low = ti["you"][1] - ti["you"][0], after["teams"][self.me]["playoffs"] < min(self.playoffs["teams"][self.me]["playoffs"], PO_FLOOR)
+            out.update({"aim": "title", "season_verdict": out["verdict"],
+                        "verdict": "decline" if low or dt <= -TITLE_BAR else "accept" if dt >= TITLE_BAR else "toss-up",
+                        **({"tiers": [t for t in TIERS if self._tier(t, net, 100 * (tw - tb), d, cost=TITLE_COST)]} if dt > 0 and not low else {})})
         return out
 
     def _priced(self, give, get, md, ma, td, ta):
@@ -2940,10 +3147,12 @@ class League:
                fits only by a side cutting a trade chip (M24: chips go last, trade() flags it).
         goal:  "win" (weekly win %), "cats" (your odds in goal_cats), "team" (head-to-head vs goal_team) or "title"
                (your title odds, with `playoffs` / `title` before -> after on each deal): what ranks the deals. The
-               tier is always on win % (as trade()'s), and the others also skip deals that cost you more than GUARD
-               win %. ponytail: title re-scores each team's top `limit` deals by win % (the season sim, ~0.08 s a
-               deal), so a title deal ranked lower on win % stays unfound; a playoff-week score in the vectorized
-               pass would reach it.
+               tier is on win % (as trade()'s), and cats / team also skip deals that cost you more than GUARD win %.
+               Title (M30) searches on the playoff weeks: the tier's gain for you becomes a cost of up to TITLE_COST
+               win %, every deal that clears it gets the playoff-week score (_po_score(), `po_score`: its change, in
+               points) in the vectorized pass, the ones that raise it rank on it, and each team's best TITLE_DEPTH
+               (`limit` with a team picked) are re-scored with the season sim (0.06 s a deal), kept while your playoff
+               odds stay at PO_FLOOR (or don't fall, below it), and ranked on the title's change (`score`).
         shape: "consolidate" (you send more players) or "depth" (you get more).
         free:  score deals on top of your free moves (after_free), never offering the players they pick up.
                their_free: each partner's too (as in trade()).
@@ -3017,9 +3226,10 @@ class League:
             return (pad([sorted((k for k in self.rosters[team] if k not in c and k not in il), key=ev)[:L + size] for c in cs], L + size),
                     pad([[k for k in il if k not in c] for c in cs], len(il)))
 
-        def returns(rest, park, ok, hurt, n_park, drop, fa_ids, n_fa, team, n_open):  # what a side's parked players
-            # add after the deal: its active players are `rest` less `drop`, plus the healthy ones coming in (ok), the
-            # injured ones past the first n_park (those park, next to `park`), n_fa free agents and n_open open spots
+        def returns(rest, park, ok, hurt, n_park, drop, fa_ids, n_fa, team, n_open, wk=None):  # what a side's parked
+            # players add after the deal: its active players are `rest` less `drop`, plus the healthy ones coming in
+            # (ok), the injured ones past the first n_park (those park, next to `park`), n_fa free agents and n_open open
+            # spots; wk: a schedule week's arrays (the title goal's playoff weeks)
             if not park.shape[-1] and not n_park.any():  # nobody parked, before or after
                 return 0.0
             j, b = np.arange(size), lambda x: np.broadcast_to(x, n_park.shape + x.shape[-1:])
@@ -3028,7 +3238,7 @@ class League:
                                 np.where(j < n_fa[..., None], b(fa_ids), nobody),
                                 np.where(o < n_open[..., None], self._open(team, 1)[0], nobody)], -1)
             S = np.where((S[..., None] == drop[..., None, :]).any(-1), nobody, S)
-            return self._return(S, np.concatenate([b(park), np.where(j < n_park[..., None], b(hurt), nobody)], -1), L)
+            return self._return(S, np.concatenate([b(park), np.where(j < n_park[..., None], b(hurt), nobody)], -1), L, wk)
 
         def low(groups, c):  # per group: the `size` players the team would miss least (padded with inf), vectors,
             # market, _ids. A trade chip goes last (CHIPPED on top of his value: _after()'s rule, M24)
@@ -3080,6 +3290,15 @@ class League:
         I = np.arange(len(mine))[:, None]
         before = self.outlook(me, punt=punt)
         g0 = c[2] if (c := self._il_cut(punt)) else 0.0  # B13, as in trade()
+        title = goal == "title" and len(self._po_q) > 0  # one seat: no playoff round, the title is the top seed (win %)
+        if title:  # M30: each playoff round's week as vec()'s arrays; the score today; give combos' players as ids
+            WK = [self._po_wk(r) for r in range(len(self._po_q))]
+            ids = lambda cs, skip=(): pad([[k for k in c if k not in skip] for c in cs], size)
+            gv_ids, gh_ids = ids(mine), ids(mine, il_me)
+            now_ids = lambda t, ks: (np.r_[self._ids(self._playing(ks)), self._open(t, self._room(t))].astype(int), self._ids(self.il[t]))
+            v_me = [self.vec(roster, team=me, wk=w) - self._return(*now_ids(me, roster), wk=w) for w in WK]
+            po0 = float(self._po_score(np.stack([self.vec(roster, team=me, wk=w) for w in WK])))
+            msk = lambda n: (np.arange(size) < n[:, None])[..., None]
         out = []
         for t, keys in self.rosters.items():
             if t == me or (team and t != team):
@@ -3145,21 +3364,40 @@ class League:
             # trade chip (M24) is out too: trade() flags it. The tier is on win % for every goal, as trade()'s tiers
             # (B6: a cats or team goal's score passed Fair with win % down, and the builder then listed no tier); the
             # goal's score only ranks the deals that clear it
-            ok = self._tier(tier, dme, dthem, mkt, max_overpay) & ~my_cut & ~their_cut
-            if goal != "win":
+            ok = self._tier(tier, dme, dthem, mkt, max_overpay, TITLE_COST if goal == "title" else None) & ~my_cut & ~their_cut
+            if goal not in ("win", "title"):
                 ok &= dme > -GUARD * self.s
             if shape == "consolidate":
                 ok &= gn[:, None] > rn[None]
             elif shape == "depth":
                 ok &= gn[:, None] < rn[None]
             G, R = np.nonzero(ok)  # fair, easy: both gain; finesse, hard: likelier to be accepted, then your gain
-            rank = (np.minimum(score, dthem) if tier in ("easy", "fair") else
+            if title and len(G):  # M30: both sides' totals in each playoff week after the deal, as me_after /
+                # them_after are built on the average week, for the deals that clear (the playoff-week score)
+                rv_ids, rh_ids, v_t = ids(theirs), ids(theirs, il_t), [self.vec(keys, team=t, wk=w) - self._return(*now_ids(t, keys), wk=w) for w in WK]
+                a0, a1, tm, tt, mw, tw = adds[0][G, R], adds[1][G, R], to_me[G, R], to_t[G, R], my_who[G, R], their_who[G, R]
+                pm, pt = [], []
+                for w, vm_, vt_ in zip(WK, v_me, v_t):
+                    W0 = w[0]
+                    pm.append(vm_ - W0[gh_ids[G]].sum(1) + W0[rv_ids[R]].sum(1) - (W0[r_ids[R]] * msk(tm)).sum(1) - W0[mw].sum(1)
+                              + (W0[fa_me_ids] * msk(a0)).sum(1)
+                              + returns(rest_g[G], park_g[G], ok_r[R], r_ids[R], tm, mw, fa_me_ids, a0, me, self._room(me) - took_me[G, R], w))
+                    pt.append(vt_ - W0[rh_ids[R]].sum(1) + W0[gv_ids[G]].sum(1) - (W0[g_ids[G]] * msk(tt)).sum(1) - W0[tw].sum(1)
+                              + (W0[fa_ids[a0]] * msk(a1)).sum(1) - took_t[G, R][:, None] * W0[nobody + 1]
+                              + returns(rest_r[R], park_r[R], ok_g[G], g_ids[G], tt, tw, fa_ids[a0], a1, t, self._room(t) - took_t[G, R], w))
+                ps = 100 * (self._po_score(np.stack(pm, 1), t, np.stack(pt, 1)) - po0)
+                up = ps > 0  # only deals that help in the playoff weeks
+                G, R, ps = G[up], R[up], ps[up]
+                score = np.zeros_like(dme)
+                score[G, R] = ps
+            # the title's playoff-week score ranks alone: their side's min() is in win %, another unit (the tier vets it)
+            rank = ((score if title else np.minimum(score, dthem)) if tier in ("easy", "fair") else
                     1000 * accept_level(mkt, dthem, self.s) + score)[G, R]
             # ponytail: re-scores at most 10 x limit a team (2-4 ms each) to fill `limit` after the re-check below (a
             # picked team at 30 needed 71-109, Nov 7); a team whose whole top 10 x limit falls under the line shows fewer
-            top, kept = np.argsort(-rank)[:10 * limit], 0
+            top, kept, tried = np.argsort(-rank)[:10 * limit], 0, 0
             for gi, ri in zip(G[top], R[top]):
-                if kept == limit:
+                if kept == limit or goal == "title" and tried == (limit if team else TITLE_DEPTH):
                     break
                 net = float(dme[gi, ri])
                 # B13: the deals shown on your best IL cut, as trade() scores them (ponytail: found and tiered on
@@ -3175,14 +3413,20 @@ class League:
                     net += (c1[2] if c1 else 0.0) - g0
                     # ... and tiered again on it, as the builder tiers it (Nov 7: 5 of the 20 default deals sat just
                     # under Fair there, the before-gain +0.2 off each)
-                    if not (self._tier(tier, net, dthem[gi, ri], mkt[gi, ri], max_overpay)
-                            and (goal == "win" or net > -GUARD * self.s)):
+                    if not (self._tier(tier, net, dthem[gi, ri], mkt[gi, ri], max_overpay, TITLE_COST if goal == "title" else None)
+                            and (goal in ("win", "title") or net > -GUARD * self.s)):
+                        continue
+                if goal == "title":  # the season sim (trade()'s); playoff odds stay at PO_FLOOR, or don't fall below it
+                    tried += 1
+                    p0, p1 = (x["teams"][me]["playoffs"] for x in (self.playoffs, lt.playoffs))
+                    if p1 < min(p0, PO_FLOOR):
                         continue
                 kept += 1
                 gs, rs = sum(mv[k] for k in mine[gi]) - gmk[gi], sum(mv[k] for k in theirs[ri]) - rmk[ri]  # sum - package
                 m = priced(float(give_m[gi, ri]), float(get_m[gi, ri]), (float(give_m[gi, ri] + gs), float(get_m[gi, ri] + rs)))
                 if goal == "title":  # your playoff and title odds before -> after (trade()'s, the same seed), in %
-                    po = {c: [round(100 * x["teams"][me][c], 1) for x in (self.playoffs, lt.playoffs)] for c in ("playoffs", "title")}
+                    po = {**{c: [round(100 * x["teams"][me][c], 1) for x in (self.playoffs, lt.playoffs)] for c in ("playoffs", "title")},
+                          **({"po_score": round(float(score[gi, ri]), 1)} if title else {})}
                     sc = 100 * (lt.playoffs["teams"][me]["title"] - self.playoffs["teams"][me]["title"])
                 else:
                     po, sc = {}, float(score[gi, ri])
@@ -3260,7 +3504,7 @@ class League:
         return sorted(({"cat": c, "odds": round(odds[c], 3), "per_z": round(100 * float(u - odds[c]), 1)}
                        for c, u in zip(self.cats, up)), key=lambda x: -x["per_z"])
 
-    def strategy(self, size=3, top=5, steps=3):
+    def strategy(self, size=3, top=5, steps=3, aim="season"):
         """Punt planner. Conceding a category only lowers today's odds: a punt pays off through the moves it unlocks,
         often over several trades, the first of which costs the most. So each build (staying balanced, each category,
         PAIRS) makes its own free moves, then up to `steps` trades in a row: each the one that lifts its own (punted)
@@ -3272,9 +3516,16 @@ class League:
         one). pick: the build to play, [] (stay balanced) unless a punt beats balanced by more than VERDICT.
         stars: your top 5 players' weak spots (z <= -1) the build concedes. buy: the 5 players on other teams the
         market prices furthest below their worth to the build (its effective() rank on the MARKET curve). sell: its
-        mirror on your team, each with why (sell())."""
+        mirror on your team, each with why (sell()).
+        aim (M30, Aim for): "title" plays each build's plan to the step with the most title odds, sorts the builds by
+        title, and picks a punt only when its title odds beat staying balanced by TITLE_BAR points (edge in title
+        points); season_pick names the build with the best win % when it beats the pick's by VERDICT. "season" (the
+        default): all on win %, and title_pick names the most title odds when TITLE_BAR ahead of the pick's build."""
         if self.mode == "points":
             raise KeyError("The punt planner needs a category league")
+        title = self._aim(aim) == "title"
+        if title and not self.playoffs:
+            raise KeyError("Aim for the title needs the season schedule (playoff odds)")
         me, now = self.me, round(100 * self.outlook(self.me)["win"], 1)
         builds = [[]] + [[c] for c in self.cats] + [list(p) for p in PAIRS if set(p) <= set(self.cats)]
         found = [self.search(tier="fair", punt=b, size=size, limit=top) for b in builds]
@@ -3311,9 +3562,10 @@ class League:
         # build that's dominant in 5 can beat its category share there. Real odds, season_sim's seed: builds compare on
         # the same draws
         odds = lambda lg: {c: round(100 * lg.playoffs["teams"][me][c], 1) for c in ("playoffs", "title")} if self.playoffs else {}
+        goal = (lambda p: p[-1]["lg"].playoffs["teams"][me]["title"]) if title else (lambda p: p[-1]["win"])
         out = []
         for b, _, opts in plans:
-            best = max(opts, key=lambda p: p[-1]["win"])  # the first best, so the fewest moves on a tie
+            best = max(opts, key=goal)  # the first best, so the fewest moves on a tie
             win = round(100 * best[-1]["win"], 1)
             fit = self.effective(b).rank(ascending=False)
             gap = 100 * MARKET ** (fit - 1) - self.market["value"]
@@ -3326,15 +3578,22 @@ class League:
                         "buy": [{**self.player(k, b), "fit_rank": int(fit[k]), "gap": round(float(g), 1)}
                                 for k, g in gap.reindex(theirs).nlargest(5).items() if g > 0],
                         "sell": self.sell(b)})
-        out.sort(key=lambda x: -x["win"])  # stable: balanced wins ties
-        edge = round(out[0]["win"] - next(x["win"] for x in out if not x["punt"]), 1)  # 62.1 - 61.9 isn't 0.2 in floats
-        pick = out[0]["punt"] if edge > VERDICT * self.s else []
-        # the best build for the title, when it isn't the pick's by 2+ points (seeds move a gap ~0.5; Nov 7: punt FG%
-        # 30.8% vs balanced 23.6%, its playoff weeks won 75.6% vs 67.8% against the likely playoff teams, M9's load on)
+        key = "title" if title else "win"
+        out.sort(key=lambda x: -x[key])  # stable: balanced wins ties
+        edge = round(out[0][key] - next(x[key] for x in out if not x["punt"]), 1)  # 62.1 - 61.9 isn't 0.2 in floats
+        pick = out[0]["punt"] if (edge >= TITLE_BAR if title else edge > VERDICT * self.s) else []
+        mine = next(x for x in out if x["punt"] == pick)
+        if title:  # the regular season's best, when it beats the title pick's build by VERDICT
+            top = max(out, key=lambda x: x["win"])
+            se = round(top["win"] - mine["win"], 1)
+            return {"aim": "title", "win": now, **odds(self), "builds": out, "pick": pick, "edge": edge,
+                    "season_pick": top["punt"] if se > VERDICT * self.s else None, "season_edge": se}
+        # the best build for the title, when it isn't the pick's by TITLE_BAR (M30 measured the seed noise; Nov 7: punt
+        # FG% 30.8% vs balanced 23.6%, its playoff weeks won 75.6% vs 67.8% against the likely playoff teams, M9's load on)
         top = max(out, key=lambda x: x.get("title", 0))
-        ti = round(top.get("title", 0) - next(x for x in out if x["punt"] == pick).get("title", 0), 1)
-        return {"win": now, **odds(self), "builds": out, "pick": pick, "edge": edge,
-                "title_pick": top["punt"] if ti >= 2 else None, "title_edge": ti}
+        ti = round(top.get("title", 0) - mine.get("title", 0), 1)
+        return {"aim": "season", "win": now, **odds(self), "builds": out, "pick": pick, "edge": edge,
+                "title_pick": top["punt"] if ti >= TITLE_BAR else None, "title_edge": ti}
 
     def sell(self, punt=(), n=5):
         """The buy list's mirror: up to n players on your team the market prices furthest above their worth to the build
@@ -3366,12 +3625,15 @@ class League:
                         "why": why[0].upper() + why[1:]})
         return out
 
-    def waivers(self, punt=(), limit=15, cats=()):
+    def waivers(self, punt=(), limit=15, cats=(), aim="season"):
         """Best free agents for your team + add/drop pairs. 9-cat: scored by the change in your weekly win %.
         cats (Q32, Play for): the free agents ranked on those categories' odds (goal_fit), the full number (fit) beside
-        it; the moves stay on the full number. Punted ones are left out of the goal, as in Start / sit."""
+        it; the moves stay on the full number. Punted ones are left out of the goal, as in Start / sit.
+        aim "title" (M30): each suggested move also carries your title odds before -> after (`title`, the season sim on
+        the league after it, ~0.06 s a move), and they're listed most title first; they're still the moves that clear
+        MOVE on win %."""
         if self.mode != "points" and self.fa:
-            return self._waivers_matchup(punt, limit, self.goal(cats, punt))
+            return self._waivers_matchup(punt, limit, self.goal(cats, punt), self._aim(aim))
         fa = self.value(self.fa, punt).nlargest(limit)
         roster = [k for k in self.rosters[self.me] if self.meta.get(k, {}).get("status", "") not in OUT]
         drops = self.value(roster, punt).nsmallest(3)
@@ -3382,7 +3644,7 @@ class League:
         return {"free_agents": [self.player(k, punt) for k in fa.index],
                 "drop_candidates": [self.player(k, punt) for k in drops.index], "moves": moves[:8]}
 
-    def _waivers_matchup(self, punt, limit, goal=()):
+    def _waivers_matchup(self, punt, limit, goal=(), aim="season"):
         """Every (add, drop) pair scored by the change in your weekly win % vs the league (drop None: an open spot),
         and the free moves trades are scored on top of. goal: rank the free agents on those categories (goal_fit, its
         drop goal_drop), from the 40 best on your build and the 40 best on them. Each row has `next`: his games in the
@@ -3401,8 +3663,17 @@ class League:
             rank = gg.max(1)
             extra = lambda i: {"goal_fit": round(float(rank[i]), 1), "goal_drop": self._moves_out([(adds[i], drops[gg[i].argmax()], 0)])[0]["drop"]}
         order = np.argsort(-rank, kind="stable")[:limit]
-        moves = [{**self._moves_out([(adds[i], drops[best_drop[i]], fit[i])])[0], "unit": "win%", **sell(i)}
-                 for i in np.argsort(-fit) if fit[i] > MOVE * self.s][:8]
+        picked = [i for i in np.argsort(-fit) if fit[i] > MOVE * self.s][:8]
+        moves = [{**self._moves_out([(adds[i], drops[best_drop[i]], fit[i])])[0], "unit": "win%", **sell(i)} for i in picked]
+        if aim == "title" and self.playoffs:  # M30: the title odds after each (a PARK add goes in a free IL slot)
+            t0, il = self.playoffs["teams"][self.me]["title"], set(self.il[self.me])
+            for m, i in zip(moves, picked):
+                a, d = adds[i], drops[best_drop[i]]
+                lt = self._copy({self.me: [k for k in roster if k != d] + [a]},
+                                [x for x in self.fa if x != a] + ([d] if d not in (None, PARK) else []),
+                                {self.me: il | ({a} if d == PARK else set())})
+                m["title"] = [round(100 * t0, 1), round(100 * lt.playoffs["teams"][self.me]["title"], 1)]
+            moves.sort(key=lambda m: m["title"][0] - m["title"][1])
         cheap = [j for j in np.argsort(-gain.max(0)) if drops[j] not in (None, PARK) and not chip[j]][:3]  # drops that cost least when swapped for the best add
         nxt, wk = self.weeks(1)[0] if self.sched else None, self._week_gains([adds[i] for i in order], punt)
         return {"free_agents": [{**self.player(adds[i], punt), "fit": round(float(fit[i]), 1), **extra(i),
@@ -3557,7 +3828,7 @@ class League:
     def _copy(self, rosters, fa, il=None):
         """A copy of the league with these rosters, free agents and IL slots (after_free, after_trade)."""
         lg = copy.copy(self)
-        for c in ("vecs", "outlooks", "totals", "playoffs", "_tipoff"):  # cached on today's rosters
+        for c in ("vecs", "outlooks", "totals", "playoffs", "_po_run", "_po_q", "_tipoff"):  # cached on today's rosters
             lg.__dict__.pop(c, None)
         lg.rosters, lg.fa, lg.il = {**self.rosters, **rosters}, fa, {**self.il, **(il or {})}
         lg._dropc = {}
@@ -4309,6 +4580,9 @@ class League:
                              "them": [total(so_far[opp], c), total(so_far[opp] + left[opp], c)],
                              "odds": round(100 * float(x), 1), "call": call(c, x)} for c, x in zip(self.cats, p)},
                 "today": max(self.today, m.get("from", "")), "adds": cap, "streams": streams, "plan": plan, "paths": paths,
+                # Y5: their lineup habit, on their rest of the week: the share of their best lineups' starts they bank
+                **({"habit": {"factor": round(h["f"], 3), "banked": round(100 * h["eff"], 1), "league": round(100 * h["league"], 1),
+                              "days": h["days"]}} if (h := self.habit.get(opp)) and opp != me else {}),
                 **({"chosen": True} if choose and any(x.get("pick") and x.get("key") == choose for x in paths) else {}),
                 **({"deep": round(time.time() - t0, 1)} if deep else {}),  # B20: the deep search ran, in this many seconds
                 **({} if self.lean is None else {"weights": {c: float(x) for c, x in zip(self.cats, self.lean) if x != 1}}),
@@ -4320,7 +4594,7 @@ class League:
                                 "fetched": (ft := (self.loaded or {}).get("live.json")) and
                                 datetime.fromtimestamp(ft, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}}
                    if self.tonight and m.get("from", self.today) <= self.today else {}),
-                # Q29: a player stuck in an IL slot (healthy, untagged) is counted in from his first game for who's cut,
+                # Q29: a player stuck in an IL slot (not IL-eligible: _stuck()) is counted in from his first game for who's cut,
                 # a move you haven't made yet: the page says so
                 "assumes": [{"in": name(q), "for": (c := pairs.get(q)) and name(c),
                              "from": self.today if self._drop_pick(punt) else self._back_day(q)} for q in stuck if q in mine],
@@ -4371,13 +4645,16 @@ class League:
         g = live.iloc[:0] if self.logs is None else self.logs
         g = pd.concat([g[(g.GAME_DATE >= f) & (g.GAME_DATE < today)],
                        live[(live.GAME_DATE >= f) & (live.GAME_DATE < today) & ~live.GAME_ID.isin(g.GAME_ID)]])
+        if self.held and len(g):  # games the pull's totals already hold (its day, its teams that had tipped)
+            g = g[[not (str(d.date()) == self.held_day and self.nba.get(k) in self.held) for k, d in zip(g.key, g.GAME_DATE)]]
         now = self.box[self.box.GAME_DATE == today].set_index("key")
         for t in tot:
             on = self._playing(self.rosters.get(t, ()))
             for d, day in g[g.key.isin(on)].groupby("GAME_DATE"):
                 got = day.set_index("key").loc[self._counted(t, day.key, d.date().isoformat()), RAW].sum()
                 tot[t] = {**tot[t], **{s: float(tot[t].get(s, 0)) + float(got[s]) for s in RAW}}
-            if held := [k for k in self._held(on) if k in now.index]:
+            if held := [k for k in self._held(on) if k in now.index
+                        and not (self.today == self.held_day and self.nba.get(k) in self.held)]:
                 got = now.loc[held, RAW].sum()
                 tot[t] = {**tot[t], **{s: float(tot[t].get(s, 0)) + float(got[s]) for s in RAW}}
         return tot
@@ -4399,7 +4676,7 @@ class League:
         me, tot = self.me, self._so_far()
         tot = tot if me in tot and opp in tot else {}
         so_far = {t: np.array([float(tot.get(t, {}).get(s, 0)) for s in RAW]) for t in (me, opp)}
-        them = self.week_vec(*self._week_side(opp, punt))  # their open spot streamed (M20)
+        them = self._rest(opp, punt)  # their open spot streamed (M20), their lineup habit (Y5)
         return so_far, them, lambda v: cat_probs(v, them, self.cats, so_far[me], so_far[opp])
 
     def _week_plan(self, opp=None, punt=(), span=None, cats=(), bench=True, side=None):
@@ -4654,7 +4931,7 @@ class League:
         rows, prev = [], {t: -len(lg._held(ks)) for t, (ks, _, _) in sides.items()}  # tonight's games include tipped ones
         for d in dates:
             cut = {t: (ks, st, {k: min(un.get(k, d), d) for k in ks}) for t, (ks, st, un) in sides.items()}
-            v = {t: lg.week_vec(*x) for t, x in cut.items()}
+            v = {t: lg.week_vec(*x) * lg._habit(t) for t, x in cut.items()}
             n = {t: sum(lg.starts(*x).values()) for t, x in cut.items()}
             p = cat_probs(v[me], v[opp], self.cats, so_far[me], so_far[opp])
             rows.append({"date": d, "games": [n[me] - prev[me], n[opp] - prev[opp]],
@@ -4666,12 +4943,12 @@ class League:
         return {**out, "opponent": opp, "days": rows}
 
     def _dropped(self):
-        """B20: players you've dropped in a saved move (made or planned, Q30), not on a snapshot yet. Each goes to
+        """B20: players you've dropped in a plan pick (Q30), not on a snapshot yet. Each goes to
         waivers, which moved() can't date, so This week never offers adding him back (Nov 23: Larsson, dropped in a
         planned move, read as a free agent from today). One a snapshot shows dropped carries Yahoo's own waiver date
         (_clears): Washington, dropped Nov 16, was a free agent again by Nov 20."""
         me = self.me
-        return {k for m in self.moves if m.get("state") in ("made", "plan") and (m.get("me") or me) == me
+        return {k for m in self.moves if (m.get("me") or me) == me
                 for n in m.get("drop") or () if (k := self.find(n, strict=False))}
 
     def _clears(self, k):
@@ -4683,7 +4960,7 @@ class League:
         d = datetime.strptime(f"{w} {self.today[:4]}", "%b %d %Y").date()
         return {k: (d.replace(year=d.year + 1) if d < date.fromisoformat(self.today) - timedelta(60) else d).isoformat()}
 
-    def add_drop(self, add, drop=None, punt=(), opp=None, day=None):
+    def add_drop(self, add, drop=None, punt=(), opp=None, day=None, aim="season"):
         """Any add and any drop, scored like the trade builder (Q7). 9-cat: the change in your season win % (outlook())
         and in this week's (this_week()'s maths vs opp, else the saved opponent: starts() from the day a claim clears,
         players in IL slots sit). This week's move is made on `day` (ISO), else on its best day (_timed, Q11: the
@@ -4695,18 +4972,22 @@ class League:
         an open active spot, else that same pick. A spot the move leaves open stays open (`open`), since filling it
         is another add. Points: value per game, the add's minus the drop's. KeyError unless add is a free agent and
         drop is on your roster (AI tool input comes through here). add None (Q29): a drop alone, which activates any
-        player stuck in an IL slot (_stuck(): healthy, untagged) today or opens a spot; this week is drops()'s maths
+        player stuck in an IL slot (_stuck(): not IL-eligible) today or opens a spot; this week is drops()'s maths
         (the league after it, _copy(), as This week counts it). B20: the add goes on a day Yahoo takes adds
         (_week_mine()'s `block`: one of yours healthy in an IL slot); a day you name in it moves to the next open one,
-        and with none left this week it's scored on its day all the same, `week.blocked` true."""
+        and with none left this week it's scored on its day all the same, `week.blocked` true. M30: `playoffs` /
+        `title` before -> after (season(), the league after the move: real odds), and aim "title" gives the verdict on
+        the title (TITLE_BAR points, decline under PO_FLOOR), the win-% one in season_verdict. This week's numbers
+        are this week's either way."""
         if not add and not drop:
             raise KeyError("Pick a player to add, one to drop, or both")
+        aim = self._aim(aim)
         # Nov 20: on the league This week runs on, your player who's out moved to a free IL slot (_leaning, `parks`),
         # so an add takes his spot with no drop as This week's stream does; dropping him instead frees it on its own,
         # and an injured add who'd go in the IL slot himself (B5, _stash) keeps it
         if (lg := self._leaning()) is not self and not (drop and lg.find(drop) in lg.parks) and not (
                 add and self._stash(self.find(add), self.il[self.me])):
-            return {**lg.add_drop(add, drop, punt, opp, day), "parks": lg.names(lg.parks)}
+            return {**lg.add_drop(add, drop, punt, opp, day, aim), "parks": lg.names(lg.parks)}
         k, me = self.find(add) if add else None, self.rosters[self.me]
         if k is not None and k not in self.fa:
             who = self.owner(k)
@@ -4804,9 +5085,19 @@ class League:
                 g0, g1 = self.starts(*base), lw.starts(after, start, until)
                 week["games"] = {"add": g1[k] if k else None, "drop": sum(g0[x] - g1[x] for x in gone), "kept": sum(g1[x] for x in gone),
                                  "you": [sum(g0.values()), sum(g1.values())]}
-        return {**out, "unit": "win%", "net": round(net, 1) + 0.0, "win": pct1(b["win"]), "win_after": pct1(a["win"]),
-                "rank": sb[self.me]["rank"], "rank_after": sa[self.me]["rank"], "cats": cats, "week": week,
-                "verdict": "accept" if net > MOVE * self.s else "decline" if net < -MOVE * self.s else "toss-up"}
+        out.update({"unit": "win%", "net": round(net, 1) + 0.0, "win": pct1(b["win"]), "win_after": pct1(a["win"]),
+                    "rank": sb[self.me]["rank"], "rank_after": sa[self.me]["rank"], "cats": cats, "week": week,
+                    "verdict": "accept" if net > MOVE * self.s else "decline" if net < -MOVE * self.s else "toss-up"})
+        if self.playoffs:  # M30: the season's playoff and title odds after the move (real odds), and the title's verdict
+            gone = [d] * bool(d) + auto
+            p0 = self.playoffs["teams"][self.me]
+            p1 = self._copy({self.me: keys}, [x for x in self.fa if x != k] + gone, {self.me: set(il)}).playoffs["teams"][self.me]
+            out.update({c: [pct1(p0[c]), pct1(p1[c])] for c in ("playoffs", "title")})
+            if aim == "title":
+                dt, low = out["title"][1] - out["title"][0], p1["playoffs"] < min(p0["playoffs"], PO_FLOOR)
+                out.update({"aim": "title", "season_verdict": out["verdict"],
+                            "verdict": "decline" if low or dt <= -TITLE_BAR else "accept" if dt >= TITLE_BAR else "toss-up"})
+        return out
 
     def playoff_weeks(self):
         """The fantasy playoffs' matchup weeks as (week, start, end): settings' playoff_weeks (yahoo.py reads the
@@ -4817,6 +5108,26 @@ class League:
             last = max((w["week"] for w in sched if w["matchups"]), default=None)
             nums = [w["week"] for w in sched if last is not None and w["week"] > last and not w["matchups"]]
         return [(w["week"], w["start"], w["end"]) for w in sched if w["week"] in nums]
+
+    def dates(self):
+        """M30's key dates, soonest first, each with days to go (0 = today): the trade deadline (settings' trade_end,
+        Yahoo's trade_end_date or the snapshot's "Trade deadline" line; kept once past, days < 0), the season
+        schedule's long weeks (14 days: the All-Star break's), its last regular week and each playoff round, while
+        they're still to play. trade_closed: the deadline has passed. {today, trade_end, trade_closed, items: [{what,
+        start, end, days}]}"""
+        left = lambda d: (date.fromisoformat(d) - date.fromisoformat(self.today)).days
+        sched, end = self.snap.get("schedule") or (), self.snap["settings"].get("trade_end")
+        regular = [w for w in sched if w.get("matchups")]
+        po = self.playoff_weeks()
+        long = [w for w in regular if left(w["end"]) >= 0 and (date.fromisoformat(w["end"]) - date.fromisoformat(w["start"])).days >= 13]
+        items = ([{"what": "Trade deadline", "start": end, "end": end, "days": left(end)}] if end else []) + [
+            {"what": f"Week {w['week']} runs 14 days", "start": w["start"], "end": w["end"], "days": left(w["start"])} for w in long] + (
+            [{"what": f"Last regular-season week (week {regular[-1]['week']})", "start": regular[-1]["start"], "end": regular[-1]["end"],
+              "days": left(regular[-1]["start"])}] if regular and left(regular[-1]["end"]) >= 0 else []) + [
+            {"what": f"Playoffs round {i + 1} (week {wk})", "start": s, "end": e, "days": left(s)}
+            for i, (wk, s, e) in enumerate(po) if left(e) >= 0]
+        items.sort(key=lambda x: x["start"])
+        return {"today": self.today, "trade_end": end, "trade_closed": bool(end) and left(end) < 0, "items": items}
 
     def planner(self, punt=(), n=3):
         """Schedule planner (Q4): your active players' NBA games per day for the rest of this matchup week and the
@@ -4986,13 +5297,14 @@ class League:
             rows.append({**self.player(k, punt), "since": x.get("since"), "changes": ch, **gain})
         return rows, dirty
 
-    def state(self, punt=()):
+    def state(self, punt=(), aim="season"):
         return {"league": self.snap.get("name", "League"), "mode": self.mode, "scoring": self.scoring, "cats": self.cats,
                 "me": self.me, "teams": list(self.rosters), "fetched": self.snap.get("fetched", ""), "demo": self.snap.get("demo", False),
                 "pulled": self.snap.get("pulled", ""), "rolled": self.rolled,  # snapshot time; its week is over
+                "api": self.snap.get("source") == "yahoo",  # from Yahoo's API (pulled every 15 min), not a snapshot file
                 "adds": self.adds(),  # adds used and left this matchup week (None: no weekly cap)
                 "what": self.whats(),  # Q27: the what-ifs every number here is on
-                "moves": self.moves,  # Q30: roster moves made (or planned) since the snapshot, already on these rosters
+                "moves": self.moves,  # Q30: plan picks (not made on Yahoo yet), already on these rosters
                 # the season schedule's weeks from this one, for League's period picker (weeks_ahead())
                 "weeks": [{"week": w.get("week"), "start": w["start"], "end": w["end"]}
                           for w in self.snap.get("schedule") or () if w["end"] >= self.week_end] if self.mode != "points" else [],
@@ -5002,34 +5314,153 @@ class League:
                 "profile": self.profile() if self.mode != "points" else None,
                 "il_plan": self.il_plan(punt),  # who to cut once your IL players are back
                 "check": self.roster_check(punt),  # Q29: what's wrong with your roster now (the page's alert)
-                "waivers": {**self.waivers(punt, 40), "dropped": self.dropped(punt)}, "movers": self.movers(punt)}
+                "waivers": {**self.waivers(punt, 40, aim=aim), "dropped": self.dropped(punt)}, "movers": self.movers(punt),
+                "dates": self.dates()}  # M30: key dates (trade deadline, long weeks, playoff rounds) with days to go
 
-    def made(self, add=(), drop=(), activate=(), park=(), give=(), get=(), their_drop=(), plan=False):
-        """A roster move for moves(new=) (Q30), checked against this roster (which already carries the saved ones) and
+    def record(self):
+        """Q33: this snapshot's headline numbers, a data/history.jsonl row (history(), on replay()'s league): your
+        season win % (outlook, as My team's), rank, playoff and title odds, adds used; every pairing's odds this week
+        (`pairs`: the totals so far plus week_vec on each _week_side, This week's headline and backtest.py league's
+        odds; `win` = its first team's chance to win the week, match_prob at WEEK_LOAD); and `players`: each of yours
+        in this week's numbers, his expected games for the rest of it (each at his chance to play, _plays) and his line
+        over them (his _ramp in), lineup limits aside, so it reads against his box scores."""
+        so, me, cap = self._so_far(), self.me, self.adds()  # a snapshot pulled after its week ended: no week to call
+        v = lambda t: np.array([float(so[t].get(c, 0)) for c in RAW])
+        left = {t: self._rest(t) for t in self.rosters if t in so}
+        pairs = []
+        for a, b in (pr["teams"] for pr in self.snap.get("matchups", ())):
+            if a in left and b in left:
+                p = cat_probs(left[a], left[b], self.cats, v(a), v(b))
+                pairs.append({"teams": [a, b], "win": round(100 * float(match_prob(p, self.cats, WEEK_LOAD)), 1),
+                              "odds": {c: round(100 * float(x), 1) for c, x in zip(self.cats, p)}})
+        keys, start, until, players = *self._week_side(me), {}
+        for k in (k for k in keys if k in self._ix and not self.rolled):
+            g = [(self._plays(k, d), self._ramp.get((k, d), 1.0)) for d in self.game_days(k, until.get(k, self.week_end), start.get(k))]
+            line = sum(x * r for x, r in g) * self.p_week.loc[k, RAW]
+            players[self.p.at[k, "PLAYER_NAME"]] = {"g": round(sum(x for x, _ in g), 2), **{c: round(float(line[c]), 2) for c in RAW}}
+        st, po = self.standings()[me], ((self.playoffs or {}).get("teams") or {}).get(me, {}) if self.mode != "points" else {}
+        pct = lambda x: None if x is None else round(100 * x, 1)
+        return {"me": me, "opponent": (self.snap.get("matchup") or {}).get("opponent"), "season": pct(st["win"]), "rank": st["rank"],
+                "playoffs": pct(po.get("playoffs")), "title": pct(po.get("title")),
+                "adds": cap and cap["used"], "pairs": pairs, "players": players}
+
+    def recap(self, week=-1, rows=None):
+        """Q33: last week (week -1, the last finished one in data/history.jsonl; or that week's number), for your team:
+        its call (`call`: the week's first snapshot, finished(): your chance to win it and the expected score) against
+        how it ended (`score` won-lost-tied: Yahoo's own when a later snapshot lists it, `yahoo` true, else from each
+        category's final, outcome(); `checked` = the categories' finals give the same score, `ours` = theirs when
+        not), `text` ("Called 54%, won 7-2"); `cats` each
+        category's odds then, both final totals and the result, `upsets` = the ones that went against the odds; your
+        `players` (those in the call) each with his games and counting stats for the week against the call's (box scores
+        while he was yours: a drop's last day goes by the transaction log, 5 PM league time), `net` = the gap in
+        percentage points of your team's projected week summed over the counting stats (TO the other way; FG% / FT%
+        left out), best first, `carried` / `let_down` the top and bottom three; `adds` = each pickup that week and his
+        lines while yours. Then for the season: `weeks` = every finished week's one line, `record` = season_record() on
+        all six matchups a week, `trend` = each snapshot's season win %, rank, playoff and title odds (My team's lines).
+        rows: the history (tests), else the file. KeyError for a week that isn't finished in it."""
+        rows = history_rows() if rows is None else rows
+        fw, who, days = finished(rows), _ids(rows), [r for r in rows if "final" not in r]
+        team = who(max(days, key=lambda r: (r["day"], r["pulled"]))["file"], self.me) if days else self.me.lower()
+        yahoo_ = _scores(rows, who)
+
+        def line(call, fin):
+            pr = next((p for p in call["pairs"] if team in (who(call["file"], t) for t in p["teams"])), {"teams": []})
+            ids = [who(call["file"], t) for t in pr["teams"]]
+            tot = {who(fin["file"], t): np.array([x.get(c, 0) for c in RAW], float) for t, x in fin["totals"].items()}
+            if not ids or not all(t in tot for t in ids):
+                return None
+            i = ids.index(team)
+            them, A, B = pr["teams"][1 - i], tot[team], tot[ids[1 - i]]
+            res = outcome(A, B, self.cats)
+            sc = [int((res == 1).sum()), int((res == 0).sum()), int((res == 0.5).sum())]
+            win = pr["win"] if i == 0 else round(100 - pr["win"], 1)
+            odds = {c: o if i == 0 else round(100 - o, 1) for c, o in pr["odds"].items()}
+            y = yahoo_.get((fin["final"], frozenset(ids)))
+            ours, sc = sc, [y[team], y[ids[1 - i]], len(self.cats) - y[team] - y[ids[1 - i]]] if y else sc
+            said = "won" if sc[0] > sc[1] else "lost" if sc[0] < sc[1] else "tied"
+            return {"week": fin["final"], "start": fin["start"], "end": fin["end"], "opponent": them,
+                    "call": {"day": call["day"], "from": call["from"], "win": win,
+                             "score": [round(sum(odds.values()) / 100, 1), round(len(self.cats) - sum(odds.values()) / 100, 1)]},
+                    "score": sc, "result": said, "text": f"Called {int(win + 0.5)}%, {said} {sc[0]}–{sc[1]}" + (f"–{sc[2]}" if sc[2] else ""),
+                    "yahoo": bool(y), **({"checked": ours == sc} if y else {}), **({"ours": ours} if y and ours != sc else {}),
+                    "_": (A, B, res, odds)}
+        weeks = [x for c, f in fw if (x := line(c, f))]
+        out = {"weeks": [{k: v for k, v in x.items() if k != "_"} for x in weeks], "record": season_record(rows, self.cats),
+               "trend": [{k: r.get(k) for k in ("day", "week", "season", "rank", "playoffs", "title")}
+                         for r in days if who(r["file"], r["me"]) == team]}
+        if not weeks:
+            if week != -1:
+                raise KeyError(f"No finished week {week} in the history yet")
+            return {"week": None, **out}
+        w = weeks[-1] if week == -1 else next((x for x in weeks if x["week"] == week), None)
+        if w is None:
+            raise KeyError(f"No finished week {week} in the history: " + ", ".join(str(x["week"]) for x in weeks))
+        call = next(c for c, f in fw if f["final"] == w["week"])
+        A, B, res, odds = w.pop("_")
+        cats = [{"cat": c, "odds": odds[c], "you": total(A, c), "them": total(B, c),
+                 "result": "won" if r == 1 else "lost" if r == 0 else "tied"} for c, r in zip(self.cats, res)]
+        upsets = [x["cat"] for x in cats if x["result"] != "tied" and (x["odds"] >= 50) != (x["result"] == "won")]
+        # your players' weeks: box scores while each was yours, against the call's line for him
+        mv = {tuple(m.get(k) for k in ("day", "type", "player", "dropped")): m for r in days
+              for m in r.get("moves", ()) if who(r["file"], m["team"]) == team and w["start"] <= m["day"] <= w["end"]}
+        mv = sorted(mv.values(), key=lambda m: m["day"])
+        nxt = lambda d, n: (date.fromisoformat(d) + timedelta(n)).isoformat()
+        gone = {}  # name -> his last day as yours this week
+        for m in mv:
+            for n in ([m["player"]] if m["type"] == "drop" else [m["dropped"]] if m.get("dropped") else []):
+                gone.setdefault(n, m["day"] if m["late"] else nxt(m["day"], -1))
+        logs = self.logs
+        def box(name, first, last):
+            k = self.find(name, strict=False)
+            g = logs[(logs.key == k) & (logs.GAME_DATE >= first) & (logs.GAME_DATE <= last)] if k and logs is not None else None
+            return (0, {c: 0.0 for c in RAW}) if g is None else (len(g), {c: float(g[c].sum()) for c in RAW})
+        proj = call["players"] if who(call["file"], call["me"]) == team else {}
+        team_c = {c: sum(p[c] for p in proj.values()) for c in COUNTING}
+        players = []
+        for n, p in proj.items():
+            g, got = box(n, call["from"], gone.get(n, w["end"]))
+            net = sum((-1 if c == "TOV" else 1) * (got[c] - p[c]) / team_c[c] for c in COUNTING if team_c[c])
+            players.append({"name": n, "games": [g, round(p["g"], 1)], "net": round(100 * net, 1),
+                            "line": {c: [round(got[c], 1), round(p[c], 1)] for c in COUNTING},
+                            **{c: [total(np.array([got[x] for x in RAW]), c), total(np.array([p[x] for x in RAW]), c)]
+                               for c in ("FG%", "FT%")}})
+        players.sort(key=lambda x: -x["net"])
+        adds = []
+        for m in mv:
+            if re.search(r"add|claim", m["type"]):
+                first = nxt(m["day"], 1) if m["late"] else m["day"]
+                last = min([x["day"] if x["late"] else nxt(x["day"], -1) for x in mv if x["day"] >= m["day"] and m["player"] in (
+                    x.get("dropped"), x["player"] if x["type"] == "drop" else None)] or [w["end"]])
+                g, got = box(m["player"], first, last)
+                adds.append({"name": m["player"], "day": m["day"], "dropped": m.get("dropped"), "until": last if last < w["end"] else None,
+                             "games": g, "line": {c: round(got[c], 1) for c in COUNTING},
+                             **{c: total(np.array([got[x] for x in RAW]), c) for c in ("FG%", "FT%")}})
+        return {**w, "cats": cats, "upsets": upsets, "players": players,
+                "carried": [x["name"] for x in players[:3] if x["net"] > 0],
+                "let_down": [x["name"] for x in players[::-1][:3] if x["net"] < 0], "adds": adds, **out}
+
+    def made(self, add=(), drop=(), activate=(), park=()):
+        """A plan pick for moves(new=) (Q30), checked against this roster (which already carries the saved ones) and
         spelled as the snapshot spells the names: add (free agents), drop (yours), activate (yours, out of an IL slot),
-        park (yours or coming in, into an IL slot), a trade's give / get with one team (and who it drops). plan: picked
-        but not made on Yahoo yet. KeyError when it can't be made (the AI GM's and the page's input come through here)."""
+        park (yours or coming in, into an IL slot). KeyError when it can't be made (the AI GM's and the page's input
+        come through here)."""
         me, il = self.rosters[self.me], self.il[self.me]
         ks = lambda ns: [self.find(n) for n in ([ns] if isinstance(ns, str) else ns or ()) if n]
-        add, drop, activate, park, give, get, their_drop = map(ks, (add, drop, activate, park, give, get, their_drop))
+        add, drop, activate, park = map(ks, (add, drop, activate, park))
         nm = lambda xs: [self.meta.get(k, {}).get("name") or self.p.at[k, "PLAYER_NAME"] for k in xs]
         said = lambda xs: ", ".join(self.names(xs))
-        if not (add or drop or activate or park or give or get):
-            raise KeyError("A move needs a player to add, drop, activate, park or trade")
+        if not (add or drop or activate or park):
+            raise KeyError("A move needs a player to add, drop, activate or park")
         if bad := [k for k in add if k not in self.fa]:
             raise KeyError(f"{said(bad)}: not a free agent on this snapshot (on {self.owner(bad[0]) or 'no list'})")
-        if bad := [k for k in drop + give + activate if k not in me] + [k for k in park if k not in me + add + get]:
+        if bad := [k for k in drop + activate if k not in me] + [k for k in park if k not in me + add]:
             raise KeyError(f"Not on your roster: {said(bad)}")
         if bad := [k for k in activate if k not in il] + [k for k in park if k in il]:
             raise KeyError(f"{said(bad)}: activate takes a player in an IL slot, park one who isn't")
-        team = {self.owner(k) for k in get}
-        if (give or get) and (len(team) != 1 or team & {self.me, "FA", None} or not give or not get):
-            raise KeyError("A trade gives your players and gets players from one other team")
-        if len(il - set(drop + give + activate)) + len(park) > self.il_n:
+        if len(il - set(drop + activate)) + len(park) > self.il_n:
             raise KeyError(f"No IL slot free for {said(park)}")
         return {k: v for k, v in {"me": self.me, "add": nm(add), "drop": nm(drop), "activate": nm(activate),
-                                  "park": nm(park), "give": nm(give), "get": nm(get), "team": next(iter(team), None),
-                                  "their_drop": nm(their_drop), "plan": bool(plan)}.items() if v}
+                                  "park": nm(park), "plan": True}.items() if v}
 
     def whats(self):
         """The what-ifs this league was built on (Q27): [{name, text, line, pct, min, health, until}]."""
@@ -5086,15 +5517,15 @@ class League:
         return (back, [k for i, k in enumerate(pool) if i not in best], float(win[top] - r), [k for k in pool if k not in rule])
 
     def _stuck(self, team=None):
-        """Players in a team's IL slots who aren't injured any more (Q29): no injury tag on the snapshot (Yahoo's own)
-        and ESPN doesn't list them out. Yahoo (help SLN6863): a player can stay in an IL slot all season, but once he's
-        activated in real life "you can't complete any transaction that adds a player" until he's moved. Q / GTD / DTD
-        tags aren't flagged (B17, Nov 16): kobe colorado's waiver claim went through Nov 14 with Brandon Miller in an
-        IL slot tagged GTD, so Yahoo isn't blocking those (docs/MODEL.md 5)."""
+        """Players in a team's IL / IL+ slots on the snapshot who aren't IL-eligible (Q29): Yahoo's own flag (`il`:
+        "IL" / "IL+" among his eligible positions, the API's pulls), else (text snapshots, demo) a tag other than O.
+        Martin, Nov 24: in mchc only Out can sit in an IL slot, so a Q / GTD / DTD one there is stuck too. Yahoo (help
+        SLN6863): "you can't complete any transaction that adds a player" until he's moved. One the model parks only
+        on a copy (_parkable, _stash, a trade) isn't on the snapshot's IL slot, so he's never stuck (docs/MODEL.md 5)."""
         team = team or self.me
-        tag = {k: p.get("status") or "" for p in self.snap["teams"].get(team, ()) if (k := self.find(p["name"], strict=False))}
-        return [k for k in self.rosters[team] if k in self.il[team] and not tag.get(k)
-                and self.inj.get(k, {}).get("status") not in OUT]
+        snap = {k: p for p in self.snap["teams"].get(team, ()) if (k := self.find(p["name"], strict=False))}
+        return [k for k in self.rosters[team] if k in self.il[team] and (p := snap.get(k)) and p.get("slot") in ("IL", "IL+")
+                and not p.get("il", p.get("status") == "O")]
 
     def _parkable(self):
         """Your players in active spots who are out now, as many as your free IL slots take, longest out first: This
@@ -5111,7 +5542,7 @@ class League:
     def roster_check(self, punt=()):
         """What's wrong with your roster right now (Q29, Martin Nov 16: "i have too many players rn cause one of my il
         players returned"), worst first. -> {active, il, spots, il_slots, problems: [{kind, players, text, fix}]}. kinds:
-        il: a player in an IL slot who isn't injured any more (_stuck(): Yahoo blocks adds until he's moved); drop: more
+        il: a player in an IL slot who isn't IL-eligible (_stuck(): not out; Yahoo blocks adds until he's moved); drop: more
         players than active spots once he's activated (who: drops()); park: an injured player in an active spot while
         an IL slot is free (_parkable(): Yahoo's O, or ESPN's since the snapshot), which frees a spot with no drop;
         open: an open active spot (yours holds nothing, vec(), so every day it's open costs games; its fix is scored
@@ -5128,7 +5559,7 @@ class League:
         news = [k for k in park if tag.get(k) not in OUT]  # ESPN has him out since the snapshot: Yahoo may not yet
         if stuck:
             out.append({"kind": "il", "players": self.names(stuck),
-                        "text": f"{said(stuck)} {many(stuck, 'is', 'are')} healthy and still in an IL slot. You can't add "
+                        "text": f"{said(stuck)} {many(stuck, 'is', 'are')} in an IL slot but not out, and only out players can stay there. You can't add "
                                 f"anyone until {many(stuck, "he's", "they're")} moved.",
                         "fix": f"Move {many(stuck, 'him', 'them')} to an active spot, or drop {many(stuck, 'him', 'them')}."})
         if (need := n - self.roster_n - len(park)) > 0:
@@ -5328,11 +5759,13 @@ def _seen_pos(files):
 
 
 def positions(snap):
-    """B20: each player the snapshot lists with no positions gets the ones the latest snapshot in snapshots/ to
-    list him showed. yahoo.py pads the free agents a snapshot leaves out with none, and lineup() then fits them in
-    any slot, C included: Nov 23, 87 of 182 healthy free agents (Danny Wolf, PF/C, in most of the best plans);
-    31 of the 100 padded ones get theirs back (~0.1 s). The rest still fit anywhere."""
-    if miss := [p for ps in [*snap["teams"].values(), snap.get("free_agents", ())] for p in ps if not p.get("pos")]:
+    """B20: in a league read from a text snapshot, each player it lists with no positions gets the ones the latest
+    snapshot in snapshots/ to list him showed. yahoo.py pads the free agents a snapshot leaves out with none, and
+    lineup() then fits them in any slot, C included: Nov 23, 87 of 182 healthy free agents (Danny Wolf, PF/C, in most
+    of the best plans); 31 of the 100 padded ones get theirs back (~0.1 s). The rest still fit anywhere. Y3: an API
+    pull's free agents carry Yahoo's positions (the 20 rank pages list everyone who's played and isn't rostered:
+    nobody padded on Nov 24), so it's skipped there."""
+    if snap.get("text") and (miss := [p for ps in [*snap["teams"].values(), snap.get("free_agents", ())] for p in ps if not p.get("pos")]):
         seen = _seen_pos(tuple((str(f), f.stat().st_mtime) for f in snapshots()))
         for p in miss:
             p["pos"] = seen.get(norm(p["name"]), "")
@@ -5343,8 +5776,8 @@ def load(path=DATA / "league.json", refetch=(), what=None, made=None):
     """The league from the snapshot, with every cache refreshed once past its window. refetch: "injuries" and "live"
     (scores()) now, "stats" (this season's stats and box scores) once 15 minutes old: Refresh (Nov 1: a 9:57pm Refresh
     read 1:06pm stats, before the day's games). It keeps each cache's file time (`loaded`), so sources() shows what this copy was
-    built from. made: the saved roster moves (moves(), Q30), put on the snapshot before anything is computed
-    (moved()); the ones the snapshot already shows are dropped from the file here."""
+    built from. made: the saved plan picks (moves(), Q30), put on the snapshot before anything is computed
+    (moved()); the ones the snapshot already shows, or that can't be made on it, are dropped from the file here."""
     if not Path(path).exists() and Path(path) == DATA / "league.json":  # first run: the demo league (yahoo.demo()
         import yahoo                                                    # writes there, never to another path)
         yahoo.demo()
@@ -5362,7 +5795,9 @@ def load(path=DATA / "league.json", refetch=(), what=None, made=None):
     if shown:
         moves(undo=shown)
     lg = League(snap, cur=fetch(CUR, max_age_hours=hours), sched=schedule(),
-                inj=inj, logs=logs, proj=espn(), news=news, live=live, inj_at=mtime(DATA / "injuries.json"), what=what)
+                inj=inj, logs=logs, proj=espn(), news=news, live=live, inj_at=mtime(DATA / "injuries.json"), what=what,
+                habit=habits(lineup_days(), logs, snap["settings"].get("slots"), _keys_of(snap),
+                             (date.today() - timedelta(1)).isoformat()))
     lg.moves = notes
     news_index()  # news() reads it when a card or the News panel asks (My team, at once); fetch it now so its time shows
     lg.loaded = {name: mtime(DATA / name) for _, _, name, _, _ in SOURCES if name != "news_index.json"}
@@ -5425,17 +5860,273 @@ def watching(lg, punt=(), add=None, remove=None):
     return rows
 
 
+# Q33: the record. data/history.jsonl holds one row per snapshot file, each the league backtest's replay of that
+# snapshot (replay(): its own forecast, nothing seen after it, no what-ifs or saved moves), and a `final` row per
+# finished week (its last snapshot plus the box scores to its end). League.recap() reads them.
+HISTORY = DATA / "history.jsonl"
+
+
+def outcome(A, B, cats=CATS):
+    """A week's real result per category for A against B: 1 won, 0.5 tied, 0 lost. A, B: (..., len(RAW)) totals; TOV
+    lower wins, FG% / FT% are makes over attempts."""
+    out = []
+    for c in cats:
+        if c in ("FG%", "FT%"):
+            m, a = RAW.index(c[:2] + "M"), RAW.index(c[:2] + "A")
+            x, y = A[..., m] / np.maximum(A[..., a], 1e-9), B[..., m] / np.maximum(B[..., a], 1e-9)
+        else:
+            x, y = A[..., RAW.index(c)], B[..., RAW.index(c)]
+            if c == "TOV":
+                x, y = y, x
+        out.append(np.where(x > y, 1.0, np.where(x < y, 0.0, 0.5)))
+    return np.stack(out, -1)
+
+
+@functools.lru_cache(maxsize=1)
+def _replay_data(at):
+    """replay()'s caches: this season's box scores, the baseline and the NBA schedule, read once per box-score file time."""
+    return (gamelogs(CUR), baseline(fetch(LAST), fetch(OLDER)),
+            json.loads((DATA / f"schedule_{CUR}.json").read_text(encoding="utf-8")))
+
+
+def replay(path, end=None, bank=False):
+    """The league as the app stood at snapshot file `path` (backtest.py league's replay, Nov 9): its rosters and
+    totals, box scores before its `from`, the day before's last injury feed (data/injuries_<day>.json: a day's archive
+    keeps its last copy, after the pull), ESPN's projections from that day or before; no live scores, news, what-ifs or
+    saved moves. end: the week counted through that day only (backtest.py league's last snapshot). bank (Q33's final):
+    the box scores through `end` banked on its totals instead (_so_far(): each day's starters by _counted()), as of the
+    next morning."""
+    import yahoo
+    s = read_snap(path)
+    if Path(path).suffix == ".json":  # an API pull: already built
+        snap = {k: v for k, v in s.items() if k not in ("week", "results", "from")}
+    else:
+        with contextlib.redirect_stdout(sys.stderr):  # build()'s "Left out ..." line stays out of the CLI's JSON
+            snap = yahoo.build(s, text=str(path), write=False)
+    logs, base, sched = _replay_data(mtime(DATA / f"gamelogs_{CUR}.csv"))
+    d = s["from"]
+    day = lambda x, n: (date.fromisoformat(x) + timedelta(n)).isoformat()
+    past = logs[logs.GAME_DATE < pd.Timestamp(d)]
+    cur = past.groupby("key").agg(PLAYER_NAME=("PLAYER_NAME", "last"), TEAM_ABBREVIATION=("TEAM_ABBREVIATION", "last"),
+                                  GP=("GAME_ID", "count"), **{c: (c, "mean") for c in ["MIN"] + RAW})
+    inj = DATA / f"injuries_{day(d, -1)}.json"
+    ps = sorted(x for x in DATA.glob("projections_20??-??-??.json") if x.name[-15:-5] <= d)
+    if end:
+        snap["matchup"] = {**snap.get("matchup", {}), "week_end": day(end, 1) if bank else end}
+    return League(snap, base, cur, sched, json.loads(inj.read_text(encoding="utf-8")) if inj.exists() else {},
+                  today=date.fromisoformat(day(end, 1) if bank else d),
+                  logs=logs[logs.GAME_DATE <= pd.Timestamp(end)] if bank else past,
+                  proj=json.loads(ps[-1].read_text(encoding="utf-8")) if ps else {},
+                  habit=habits(lineup_days(), past, snap["settings"].get("slots"), _keys_of(snap), day(d, -1)))
+
+
+LINEUPS = DATA / "yahoo_lineups.json"  # every team's lineup on each past day, yahoo.lineups() (Y5)
+
+
+def _keys_of(snap):
+    """{team: its players' names as stats keys (norm())}, for habits()' names."""
+    return {t: [norm(p["name"]) for p in ps] for t, ps in snap.get("teams", {}).items()}
+
+
+def lineup_days():
+    """yahoo.lineups()' days: {date: {team: [[name, NBA team, positions, slot], ...]}}; {} before the first fetch."""
+    try:
+        return json.loads(LINEUPS.read_text(encoding="utf-8"))["days"]
+    except (OSError, ValueError, KeyError):
+        return {}
+
+
+def habits(days, logs, slots, rosters=None, until=None, k=HABIT_K):
+    """Y5 (Nov 24): each team's lineup habit, a factor on its rest of This week (_rest()). Each day with games a team
+    banks the players in its starting slots who played (Yahoo has no auto-subs); the best lineup that day would have
+    banked the most of its active players who played that fit the slots (lineup(): a matroid, so its size is the
+    most), which is what This week's expected starts assume for every team (_subs(): whoever plays starts). A team's
+    banked / best over the season so far, shrunk toward the league's by k best starts, over the league's.
+    A day with nobody in a starting slot is left out (B14: the lineup wasn't set; John Ball's three were accidents,
+    Martin, Nov 17). Measured on Yahoo's daily lineups Oct 20-Nov 23 (python backtest.py habits): 95.7% banked
+    league-wide, Mathmagicians 88.6% and Wesburn 89.1% to Shanghai 99.6%, the same teams low week after week; on
+    weeks 2-5's 25 pre-tip snapshots (275 team-days, 150 matchup-days) it beat the shipped rest of the week out of
+    sample (each week left out): PTS error 37.2 -> 35.6 a team-day, category log loss 0.4111 -> 0.4040, matchups
+    0.3604 -> 0.3431, every week better (fitted only on the days before each snapshot, as the app has it: 36.1,
+    0.4049, 0.3463); streaming habits (adds a week) measured worse and aren't in (ROADMAP Y5).
+    days: lineup_days(); logs: box scores (gamelogs()); rosters: {team: player keys}, to key the result by the
+    league's names (the lineup team sharing the most players on the last day); until: the last day counted.
+    -> {team: {f: factor, eff: its banked / best, league: the league's, days: team-days counted}}"""
+    if not days or logs is None or not len(logs) or not slots:
+        return {}
+    on = logs.groupby(logs.GAME_DATE.dt.strftime("%Y-%m-%d")).key.apply(set)
+    got, last = {}, None
+    for d, teams in days.items():
+        if until and d > until or d not in on.index:
+            continue
+        last, played = d, on[d]
+        for t, ps in teams.items():
+            act = [(norm(n), pos, s) for n, _, pos, s in ps if s not in IL_SLOTS]
+            if all(s == "BN" for *_, s in act):
+                continue
+            pl = [(pos, s) for x, pos, s in act if x in played]
+            b = got.setdefault(t, [0, 0, 0])
+            b[0] += sum(s != "BN" for _, s in pl)
+            b[1] += len(lineup(slots, [{x for x in pos.split(",") if x} for pos, _ in pl]))
+            b[2] += 1
+    if not (e := sum(b for b, _, _ in got.values()) / max(sum(i for _, i, _ in got.values()), 1)):
+        return {}
+    out = {t: {"f": (b + k * e) / (i + k) / e, "eff": b / max(i, 1), "league": e, "days": n} for t, (b, i, n) in got.items()}
+    if rosters:
+        names = {u: {norm(p[0]) for p in ps} for u, ps in days[last].items()}
+        out = {t: out[u] for t, ks in rosters.items() if (u := max(names, key=lambda u: len(names[u] & set(ks)))) in out}
+    return out
+
+
+def history_rows(path=None):
+    path = Path(path or HISTORY)
+    return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()] if path.exists() else []
+
+
+def history(path=None):
+    """Q33: data/history.jsonl brought up to date, and its rows. A snapshot file not in it yet gets its row (replay()'s
+    League.record(), with the file's final scores and transactions); a week the history has gone past (a later week's
+    snapshot, or its end passed) gets its `final`: {team: totals} from its last snapshot (the latest `from`) with the
+    box scores to its end, once they're in (the last NBA game day to its end). Rows already there stay, so a row is
+    what that snapshot said then. The first run backfills every snapshot in snapshots/ (~25 s); app.refresh() runs it
+    after each new one (~1 s), app.live() after a pull that changed something. Text snapshots and, since Nov 23, the
+    API pulls' day files (pulls(): one row a day, from the day's first pull the history saw)."""
+    with _HISTORY_LOCK:
+        return _history(Path(path or HISTORY))
+
+
+_HISTORY_LOCK = threading.Lock()
+
+
+def _history(path):
+    import yahoo
+    rows, y0 = history_rows(path), int(CUR[:4])
+    have, n0 = {r["file"] for r in rows if "final" not in r}, len(rows)
+    for f in [*snapshots(), *pulls()]:
+        if f.name in have:
+            continue
+        try:
+            s = read_snap(f)
+            if not (s.get("pulled") and s.get("week") and s.get("from")):
+                continue
+            lg = replay(f)
+            wk = lg.snap.get("matchup") or {}  # the snapshot's own week: lg.matchup rolls on once it's over
+            when = lambda w: datetime.strptime(w.split()[2], "%I:%M%p").hour >= 17  # after 5 PM league time: the next day's
+            rows.append({"day": (m[0] if (m := re.search(r"\d{4}-\d{2}-\d{2}", f.name)) else s["pulled"][:10]),
+                         "file": f.name, "pulled": s["pulled"], "from": s["from"], "week": s["week"]["week"],
+                         "start": wk.get("week_start", s["week"]["start"]), "end": wk.get("week_end", s["week"]["end"]),
+                         **lg.record(), "results": s["results"], "rosters": {t: [p["name"] for p in ps] for t, ps in s["teams"].items()},
+                         "moves": [{"day": yahoo._day(" ".join(t["when"].split()[:2]), y0), "late": when(t["when"]),
+                                    **{k: t[k] for k in ("team", "type", "player", "dropped") if k in t}}
+                                   for t in s["transactions"]]})
+        except Exception as e:  # a snapshot that can't be replayed (a cache missing) is left out, never the rest
+            print(f"history: {f.name} left out ({type(e).__name__}: {e})", file=sys.stderr)
+    days, done = [r for r in rows if "final" not in r], {r["final"] for r in rows if "final" in r}
+    files = {f.name: f for f in [*snapshots(), *pulls()]}
+    for w in sorted({r["week"] for r in days} - done):
+        last = max((r for r in days if r["week"] == w), key=lambda r: (r["from"], r["pulled"]))
+        end = last["end"]
+        if not (any(r["week"] > w for r in days) or date.today().isoformat() > end) or last["file"] not in files:
+            continue
+        logs, _, sched = _replay_data(mtime(DATA / f"gamelogs_{CUR}.csv"))
+        nba = [d for ds in sched.values() for d in ds if last["from"] <= d <= end]
+        if nba and (logs is None or logs.GAME_DATE.max() < pd.Timestamp(max(nba))):
+            continue  # the last night's box scores aren't in yet
+        try:
+            tot = replay(files[last["file"]], end, bank=True)._so_far()
+        except Exception as e:
+            print(f"history: week {w}'s final left out ({type(e).__name__}: {e})", file=sys.stderr)
+            continue
+        rows.append({"final": w, "start": last["start"], "end": end, "file": last["file"],
+                     "totals": {t: {c: round(float(x.get(c, 0)), 1) for c in RAW} for t, x in tot.items()}})
+    if len(rows) > n0:
+        rows.sort(key=lambda r: (r.get("day") or r["end"], "final" in r, r.get("file", "")))
+        _write(path, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+    return rows
+
+
+def _ids(rows):
+    """Q33: who(file, team) = one id per team across the history's snapshots, so a renamed team is the same team (Oct 28
+    John Basketball -> John Ball, Nov 1 Big Tuo Plumbing Inc. -> Umbrella Corp, Nov 18 langangsters -> Langangsters):
+    each row's teams matched to the row before's by the most players in common (backtest.py league's rule), the id its
+    name in the first row it's in, lower case."""
+    ids, prev = {}, None
+    for r in sorted((r for r in rows if "rosters" in r), key=lambda r: (r["day"], r["pulled"])):
+        for t, ps in r["rosters"].items():
+            m = max(prev["rosters"], key=lambda u: len(set(ps) & set(prev["rosters"][u]))) if prev else None
+            ids[r["file"], t.lower()] = ids[prev["file"], m.lower()] if m and len(set(ps) & set(prev["rosters"][m])) >= 3 else t.lower()
+        prev = r
+    return lambda f, t: ids.get((f, t.lower()), t.lower())
+
+
+def _scores(rows, who):
+    """{(week, frozenset of team ids): {id: categories won}}: Yahoo's own final scores, as the snapshots list them
+    (Part 6's "WEEK 4 FINAL RESULTS": weeks 3-5 so far)."""
+    return {(x["week"], frozenset(who(r["file"], t) for t in x["teams"])): {who(r["file"], t): n for t, n in zip(x["teams"], x["score"])}
+            for r in rows if "final" not in r for x in r.get("results", ())}
+
+
+def finished(rows):
+    """Q33: each finished week in the history, oldest first, as (call, final): the call is the week's first row (the
+    earliest `from`, the latest pull among those: before as few of its games as any snapshot), the final its row."""
+    days, out = [r for r in rows if "final" not in r], []
+    for f in sorted((r for r in rows if "final" in r), key=lambda r: r["final"]):
+        if wk := [r for r in days if r["week"] == f["final"]]:
+            first = min(r["from"] for r in wk)
+            out.append((max((r for r in wk if r["from"] == first), key=lambda r: r["pulled"]), f))
+    return out
+
+
+def _won(res):
+    """A matchup's result from its categories (outcome()): 1 won more than lost, 0.5 level, 0 lost."""
+    w, l = int((res == 1).sum()), int((res == 0).sum())
+    return 1.0 if w > l else 0.0 if w < l else 0.5
+
+
+def calls(calls_):
+    """How the favourites did: [(the call's odds for one side, 1 / 0.5 / 0 how it went)] -> every call's favourite
+    (odds 50%+) by how sure it was, 50-60% up to 90-100%: n, won (ties half), expected (the odds summed)."""
+    fav = [(p, y) if p >= 0.5 else (1 - p, 1 - y) for p, y in calls_]
+    bins = []
+    for lo in (50, 60, 70, 80, 90):
+        x = [(p, y) for p, y in fav if lo <= 100 * p < lo + 10 or lo == 90 and p >= 1]
+        if x:
+            bins.append({"bin": f"{lo}–{lo + 10}%", "n": len(x), "won": sum(y for _, y in x), "expected": round(sum(p for p, _ in x), 1)})
+    return {"n": len(fav), "won": sum(y for _, y in fav), "expected": round(sum(p for p, _ in fav), 1), "bins": bins}
+
+
+def season_record(rows, cats=CATS):
+    """Q33: the model's running record, every finished week's call on all its matchups (finished()) against how the
+    week ended: `matchups` (each pairing's chance to win the week: Yahoo's final score where a snapshot lists it, else
+    the categories' finals) and `cats` (each category's odds against its final), by calls(). The finals' last night
+    reads the last snapshot's lineups (_counted), so a close category can come out wrong: Nov 23, 15 of the 18
+    matchups Yahoo lists agree, the other 3 off by one or two categories on the last night."""
+    ms, cs, who = [], [], _ids(rows)
+    yahoo_ = _scores(rows, who)
+    for call, fin in finished(rows):
+        tot = {who(fin["file"], t): np.array([x.get(c, 0) for c in RAW]) for t, x in fin["totals"].items()}
+        for pr in call["pairs"]:
+            a, b = (tot.get(who(call["file"], t)) for t in pr["teams"])
+            if a is not None and b is not None:
+                res, y = outcome(a, b, cats), yahoo_.get((fin["final"], frozenset(who(call["file"], t) for t in pr["teams"])))
+                ya, yb = (y[who(call["file"], t)] for t in pr["teams"]) if y else (0, 0)
+                ms.append((pr["win"] / 100, (1.0 if ya > yb else 0.0 if ya < yb else 0.5) if y else _won(res)))
+                cs += [(pr["odds"][c] / 100, float(y)) for c, y in zip(cats, res)]
+    return {"weeks": len(finished(rows)), "matchups": calls(ms), "cats": calls(cs)}
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["team", "trade", "ideas", "search", "waivers", "movers", "roster", "week",
                                     "strategy", "news", "compare", "schedule", "move", "sources", "wants", "lineup",
-                                    "note", "ahead", "what", "check", "drop", "watch", "today"])
-    ap.add_argument("--activate", default="", help="what: your players moved out of an IL slot on Yahoo")
-    ap.add_argument("--park", default="", help="what: your players moved into an IL slot on Yahoo")
-    ap.add_argument("--plan", action="store_true", help="what: the move is picked, not made on Yahoo yet")
-    ap.add_argument("--undo", help='what: remove a saved roster move by its id, or "all"')
-    ap.add_argument("--done", help="what: a planned move's id, now made on Yahoo")
+                                    "note", "ahead", "what", "check", "drop", "watch", "today", "recap", "playoffs"])
+    ap.add_argument("--aim", default="season", choices=list(AIMS),
+                    help="strategy, trade, move, waivers, search: aim for the regular season (win %%) or the title (search's goal then defaults to title)")
+    ap.add_argument("--activate", default="", help="what --plan: your players to move out of an IL slot")
+    ap.add_argument("--park", default="", help="what --plan: your players to move into an IL slot")
+    ap.add_argument("--plan", action="store_true", help="what: record a move picked, not made on Yahoo yet (--add, --drop, --activate, --park)")
+    ap.add_argument("--undo", help='what: remove a saved pick by its id, or "all"')
     ap.add_argument("--give", default="")
     ap.add_argument("--get", default="")
     ap.add_argument("--mode", default="fair", choices=["fair", "finesse"])
@@ -5443,7 +6134,7 @@ def main():
     ap.add_argument("--punt", default="", help='e.g. "FT%%,TOV"')
     ap.add_argument("--lock", default="", help="search: players never traded")
     ap.add_argument("--tier", default="fair", choices=list(TIERS), help="search: how likely they say yes")
-    ap.add_argument("--goal", default="win", choices=["win", "cats", "team", "title"])
+    ap.add_argument("--goal", choices=["win", "cats", "team", "title"], help="search: what ranks the deals (default: win, title with --aim title)")
     ap.add_argument("--cats", default="", help='search --goal cats: e.g. "STL,AST". lineup, week, waivers: play for these categories only')
     ap.add_argument("--remove", help="watch: take this player off the watchlist")
     ap.add_argument("--vs", help="search --goal team: the team to beat. week, move, lineup: this week's opponent")
@@ -5467,7 +6158,7 @@ def main():
     ap.add_argument("--healthy-fa", action="store_true", help="injured free agents off waivers (Waivers' Healthy only)")
     ap.add_argument("--text", default="", help="note: what to write down for Claude Code (none: list the open notes)")
     ap.add_argument("--close", type=int, help="note: close open note N (1 = the first listed), with --text as the reason")
-    ap.add_argument("--week", type=int, default=0, help="ahead (and week / move): weeks after this one, 1 = next week")
+    ap.add_argument("--week", type=int, default=0, help="ahead (and week / move): weeks after this one, 1 = next week. recap: that week's number (default: last week)")
     ap.add_argument("--weeks", type=int, default=1, help="ahead: how many weeks from --week (4 = a month)")
     ap.add_argument("--player", help="what: the player the what-if is about (none: list them; with --clear: his only). watch: add him to the watchlist")
     ap.add_argument("--line", choices=list(LINES), help="what: " + "; ".join(f"{k} = {v}" for k, v in LINES.items()))
@@ -5486,34 +6177,36 @@ def main():
     if a.cmd == "what" and (a.player or a.clear):  # set or clear one, then show what's on (the app picks it up: watch())
         name = a.player and (lg0 := load()).p.at[lg0.find(a.player), "PLAYER_NAME"]
         whatif(name, a.clear, line=a.line, pct=a.pct, min=a.min, health=a.health, until=a.until)
-    if a.cmd == "what" and (a.add or a.drop or a.activate or a.park or a.give or a.get):  # a roster move made on Yahoo
-        moves(new=load(what=whatif(), made=moves()).made(split(a.add), split(a.drop), split(a.activate), split(a.park),
-                                                         split(a.give), split(a.get), plan=a.plan))
-    if a.cmd == "what" and (a.undo or a.done):
-        if (a.undo or a.done) not in ("all", *(m["id"] for m in moves())):
-            raise KeyError(f"No saved move {a.undo or a.done}: " + (", ".join(f"{m['id']} ({move_text(m)})" for m in moves()) or "none saved"))
-        moves(undo=a.undo, done=a.done)
+    if a.cmd == "what" and (a.add or a.drop or a.activate or a.park):  # a plan pick (Q30)
+        if not a.plan:
+            raise KeyError("Moves made on Yahoo come in with the next pull (every 15 minutes); --plan records one picked, not made yet")
+        moves(new=load(what=whatif(), made=moves()).made(split(a.add), split(a.drop), split(a.activate), split(a.park)))
+    if a.cmd == "what" and a.undo:
+        if a.undo not in ("all", *(m["id"] for m in moves())):
+            raise KeyError(f"No saved pick {a.undo}: " + (", ".join(f"{m['id']} ({move_text(m)})" for m in moves()) or "none saved"))
+        moves(undo=a.undo)
     lg, punt = load(what=whatif(), made=moves()), punts(a.punt)
     lg = lg.healthy_fa() if a.healthy_fa else lg
     if a.week and a.cmd in ("week", "move"):  # a later week (the AI GM's Nov 13 note): the schedule-week projection
         a.cmd = "ahead"
     out = {"team": lambda: {**lg.profile(), "roster": lg.team_roster(lg.me, punt), "il_plan": lg.il_plan(punt)},
-           "trade": lambda: lg.trade(split(a.give), split(a.get), punt, not a.no_free, a.their_free, split(a.drop)),
+           "trade": lambda: lg.trade(split(a.give), split(a.get), punt, not a.no_free, a.their_free, split(a.drop), a.aim),
            "ideas": lambda: lg.ideas(a.mode, punt, a.team),
-           "search": lambda: lg.search(split(a.give), split(a.get), split(a.lock), a.team, a.size, a.tier, a.goal,
+           "search": lambda: lg.search(split(a.give), split(a.get), split(a.lock), a.team, a.size, a.tier,
+                                       a.goal or ("title" if a.aim == "title" else "win"),
                                        split(a.cats), a.vs, a.healthy, a.shape, punt, free=not a.no_free,
                                        their_free=a.their_free, max_overpay=a.max_overpay, outside=a.outside),
-           "waivers": lambda: lg.waivers(punt, cats=split(a.cats)),
+           "waivers": lambda: lg.waivers(punt, cats=split(a.cats), aim=a.aim),
            "movers": lambda: lg.movers(punt),
            "week": lambda: lg.without(split(a.skip)).this_week(a.vs, punt, keep=[x.strip() for x in a.keep.split(",") if x.strip()], weights=weights(a.weight),
                                         cats=split(a.cats), choose=a.choose, deep=a.deep, adds=a.adds),
-           "strategy": lambda: lg.strategy(a.size),
+           "strategy": lambda: lg.strategy(a.size, aim=a.aim),
            "news": lg.roster_news,
            "compare": lambda: lg.compare(split(a.players), punt),
            "schedule": lambda: lg.planner(punt),
            "lineup": lambda: lg.without(split(a.skip)).this_week(a.vs, punt, keep=split(a.keep), weights=weights(a.weight), cats=split(a.cats), choose=a.choose,
                                                                  deep=a.deep, adds=a.adds)["lineups"],
-           "move": lambda: lg.add_drop(a.add, a.drop or None, punt, a.vs, a.day),
+           "move": lambda: lg.add_drop(a.add, a.drop or None, punt, a.vs, a.day, a.aim),
            "sources": lg.sources,
            "roster": lambda: lg.team_roster(a.team or lg.me, punt),
            "wants": lambda: lg.wants(a.team),
@@ -5522,16 +6215,17 @@ def main():
            "check": lambda: lg.roster_check(punt),
            "drop": lambda: lg.drops(punt, a.vs),
            "watch": lambda: {"watch": watching(lg, punt, a.player, a.remove)},
-           "today": lambda: lg.without(split(a.skip)).game_night(a.vs, punt, split(a.keep), weights(a.weight))}[a.cmd]()
+           "today": lambda: lg.without(split(a.skip)).game_night(a.vs, punt, split(a.keep), weights(a.weight)),
+           "recap": lambda: (history(), lg.recap(a.week or -1))[1],
+           "playoffs": lambda: {**(lg.playoff_view() or {}), "dates": lg.dates()}}[a.cmd]()  # M30
     # no indent, and a trade's player cards last: the AI GM chat (claude -p) shows only a 2 KB preview of output over
     # ~30 KB, and an indented trade ran 33 KB, its playoff and title odds past the cut (Nov 7 note)
     if a.cmd == "trade":
         out = dict(sorted(out.items(), key=lambda kv: kv[0] in ("give", "get", "cats_detail", "roster_after")))
     if lg.what and isinstance(out, dict):  # every number above is on these what-ifs (Q27): say so first
         out = {"what_if": [f"{w['name']}: {w['text']}" for w in lg.whats()], **out}
-    if lg.moves and isinstance(out, dict) and a.cmd != "what":  # and on these roster moves (Q30)
-        say = {"made": "", "plan": " (planned, not made on Yahoo yet)", "stale": " (NOT counted: the newer snapshot doesn't show it)"}
-        out = {"roster_moves": [m["text"] + say[m["state"]] for m in lg.moves], **out}
+    if lg.moves and isinstance(out, dict) and a.cmd != "what":  # and on these plan picks (Q30)
+        out = {"roster_moves": [m["text"] + " (planned, not made on Yahoo yet)" for m in lg.moves], **out}
     print(json.dumps(brief(a.cmd, out), ensure_ascii=False))
 
 
@@ -5540,7 +6234,7 @@ def brief(cmd, out):
     chat saw a 2 KB preview of each). The app's own views keep everything.
     news: your players' items whole; a teammate's latest one, headline only; past 27 KB the oldest go, teammates' first.
     strategy: buy / sell rows down to the fields the gm skill names, and plans (steps, buy, sell) for the builds it
-    would quote: the best 8, balanced, the pick and the title pick."""
+    would quote: the best 8, balanced, the pick and the title pick (or, aiming for the title, the season pick)."""
     if cmd == "news":
         seen = set()
         out = [x if x["mine"] else {k: v for k, v in x.items() if k != "story"} for x in out
@@ -5548,7 +6242,7 @@ def brief(cmd, out):
         while len(json.dumps(out, ensure_ascii=False)) > 27000:
             out.remove(next((x for x in reversed(out) if not x["mine"]), out[-1]))
     if cmd == "strategy":
-        quoted = [(), tuple(out["pick"]), tuple(out["title_pick"] or ())]
+        quoted = [(), tuple(out["pick"]), tuple(out.get("title_pick") or out.get("season_pick") or ())]
         for i, b in enumerate(out["builds"]):
             for k in ("buy", "sell"):
                 b[k] = [{f: x[f] for f in ("name", "team", "fit_rank", "mkt_rank", "gap", "why") if f in x} for x in b[k]]

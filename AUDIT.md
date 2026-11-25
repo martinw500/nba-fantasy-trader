@@ -1,3 +1,66 @@
+# Playoff planning and Aim for the title (Nov 24, M30, shipped)
+
+**Why:** Martin, Nov 24: "i want to be able to decide to do things whether i wanna win title or win regular season ... if punting FG gives me more title odds I wanna be able to see that". Title odds existed per build and per trade (Q23, Q24), but every pick ranked on win %, and the title finder only re-scored each team's best deals on win %.
+
+**Seed noise in the title odds** (`League.season(seed=)`, real league, 10 seeds at the shipped 4,000 sims): a build's title odds sd 0.58–0.88 points (balanced after its waiver moves 20.9% ± 0.87, range 19.8–22.3; FG% 19.4 ± 0.79; FT%+TOV 18.4 ± 0.73); the gap between two builds on the same seed sd 0.34–0.97 (FG3M − balanced −0.18 ± 0.86, FG% − balanced −1.46 ± 0.34); a trade's gap 0.68–0.80 (five finder deals), a waiver move's 0.49–0.74. 16,000 sims cut a gap's sd to 0.33 (0.2 s a run against 0.06). The bar for a pick on Title (`TITLE_BAR`) stays 2 points: about 2 sd of the noisiest gap, so noise alone clears it ~2–5% of the time, and with the seed fixed the same league always gives the same pick. (The Nov 7 note set 2 points on ~0.5 points of noise measured at 40,000 sims.)
+
+**The title finder against Q24's** (`search(goal="title")`, limit 30; Q24's way = each team's best 20 / 30 on win % through the season sim, run from a copy of the old code; back to back on the same inputs):
+
+| League | Q24's way, 20 a team | Q24's way, 30 a team | M30 |
+|---|---|---|---|
+| Nov 24 (the 4:23 PM pull) | +8.6 in 18.8 s | +8.6 in 27.0 s | **+14.8 in 9.1 s** (Wembanyama + Coward + Kyshawn George for George, Booker, Kessler: 19.8 → 34.6%, +4.6 win %, playoffs 97.1 → 99.0%) |
+| Nov 7 snapshot (replayed) | +7.2 in 20.0 s | +7.2 in 28.1 s | **+10.6 in 9.7 s** (Wembanyama + Keyonte and Kyshawn George for Kessler, George, Booker) |
+| Nov 15 snapshot | +7.6 in 143.6 s | +7.6 in 222.8 s | **+12.7 in 63.1 s** |
+| Nov 20 snapshot | +8.5 in 18.8 s | +8.7 in 26.3 s | **+16.3 in 8.8 s** |
+
+Nov 15 is slow both ways (several players back from IL slots, so every re-scored deal recomputes the best IL cut; another job was running then too). Q24 itself measured +5.9 on the Nov 7 file on Nov 8 in 18 s; replayed with today's code its way finds +6.0 to +7.2 (replays read caches that refresh during the day: an hour apart the same file moved by up to 1.2 points, so compare runs made back to back). The playoff-week score the finder ranks on equals `trade()`'s for the same deal (17.9 vs 17.9, 16.6 vs 16.7, 16.3 vs 16.3 on the real league; test_model checks it within rounding).
+
+**The knobs** (Nov 24 pull and Nov 7, all at limit 30): `TITLE_COST` off (the fair tier's own +0.4 win % gain) / a cost of up to 0.4 / 1.0 / 2.0 win % found the same best deal on both (2–4 of the 30 listed cost win %), so 1.0 (2.5 in One Win terms) ships as the allowance Q24 lacked; `PO_FLOOR` 0.9 never bound (playoff odds 95–98% today); `TITLE_DEPTH` 4 found the same best in 5.6 / 6.1 s, 8 in 8.6 / 9.4 s, 12 and 20 the same in 12–22 s: 8 ships. The score with categories moving together (match_prob at WEEK_LOAD) found the same best deals; it stays independent, as `season_sim()` plays them.
+
+**Strategy on Title, real league (Nov 24 pull):** staying balanced on both aims: its plan (4 waiver moves, 3 trades) 60.4% win %, 25.9% title; next on Title BLK 23.8%, TOV 23.6% (its plan stops after 2 steps, at 22.8% after all 4), AST+TOV 22.4%. 43.8 s on Season, 47.9 s on Title.
+
+**`python backtest.py playoffs`** after `season_sim(meet=)` (which draws nothing new): the same to the digit as Nov 7 at the shipped 0.35 / 0.6: average weeks playoffs log loss 0.3563 (weeks 0–5 0.5278), title 0.2728; the real schedule 0.3306 (0.4769), title 0.2750. Real-schedule calibration 0–10% → 3.2% made, 20–30% → 24.5%, 40–50% → 42.3%, 60–70% → 64.5%, 80–90% → 85.7%, 90–100% → 97.7%; title 0–20% → 7.1%, 20–40% → 18.5%, 40–60% → 43.2%.
+
+**Playoff-week games, by hand:** ESPN's 2026-27 team schedules against `playoff_games()` (Mar 22–28 / Mar 29–Apr 4 / Apr 5–11): Jokić (DEN) 3 / 4 / 4, Anthony Edwards (MIN) 4 / 4 / 4, Jalen Williams (OKC, back Mar 2) 4 / 3 / 4, every date the same as ESPN's (DEN Mar 24, 25, 28; Mar 29, 31, Apr 2, 4; Apr 6, 8, 9, 11, and so on).
+
+# Opponents' real lineups: each team's lineup habit (Nov 24, Y5, shipped)
+
+**Why:** This week counted every other team as setting a perfect lineup each day (`_subs()`: whoever plays starts while the slots fit him), and M31 (Nov 16–17) suspected managers differ. Yahoo's API now gives every team's lineup on any past day (`teams/roster;date=D`: one call a day for all 12 teams), so the season so far (Oct 20–Nov 23) is 35 calls (`yahoo.lineups()`, `data/yahoo_lineups.json`; plus the 168-move add / drop log).
+
+**Measured** (`python backtest.py habits`, 408 team-days). Of the starts a perfect lineup of its active players who played would have banked, the league banked 95.7%: Mathmagicians 88.6%, Wesburn 89.1%, Kerala 92.9%, the rest 95.8–99.6% (Shanghai). The low ones are low every week (Mathmagicians 88/96/88/85/85%, Wesburn 91/88/91/81/91%, weeks 1–5). The per-game guess `_counted()` uses on a day after the pull matched the real starters on 76% of team-days (53% Wesburn to 91% Shanghai). Adds a week 0 (Wesburn) to 2.8 (Shanghai, 93% dropped within 7 days). Rebuilding each team's daily totals from the lineups and box scores reproduced the snapshots' day-to-day totals on 251 of 273 team-spans and Yahoo's week 5 finals within 0–2.
+
+**Test** (weeks 2–5, 25 pre-tip snapshots, 275 opponent team-days, 150 matchup-days, each week left out of the fit): scaling a team's rest of the week by its banked rate over the league's, shrunk by `HABIT_K` = 180 best starts, against the shipped perfect lineup: PTS error a team-day 37.16 → 35.55 (−1.61 ± 0.55), z² 1.011 → 0.989, category log loss 0.4111 → 0.4040 (−0.0071 ± 0.0034), matchup log loss 0.3604 → 0.3431 (−0.0173 ± 0.0060); every week better. Fitted only on the days before each snapshot (what the app has): 36.15, 0.4049, 0.3463. Lost: the absolute rate (z² 1.086: the shipped week was already right on average, PTS actual / predicted 1.002), each team's own past actual / predicted ratio (z² 1.033), and a streaming term from each team's adds (matchup 0.3789). `HABIT_K` 0 / 60 / 600: 0.3259 / 0.3345 / 0.3524, all better than shipped; 180 kept until December's rerun.
+
+**Shipped:** `model.habits()` → `League.habit` → `_rest()` for every team but yours (This week, Game day's day table, the live week of playoffs and weeks ahead, the history's calls). Real league Nov 24: vs Toronto 72.7 → 72.1%; the biggest moves vs Wesburn 76.8 → 80.3 and Shanghai 89.7 → 87.7. `python backtest.py league`: category log loss 0.3788 → 0.3762. `python backtest.py` (simulated leagues, no habits) unchanged. Four finished weeks is little: rerun `backtest.py habits` in December.
+
+# Blocks, 3-pointers and rebounds: how fast they follow this season (Nov 24, not changed)
+
+**Why:** Martin, Nov 24: Jamal Murray blocks 1.0 a game (15 games) after 0.5 and 0.4 the last two seasons. Does the rest-of-season line (trades, standings, waivers) expect that to fall? It does, partly: the model has 0.80 the rest of the way (ESPN 0.51). Blocks, 3PM and rebounds move at `SHRINK` (20 games of baseline minutes); A5 gave steals 60 and never tested these three on their own.
+
+**Measured** (A5's method: `backtest.season()`'s loop, the season line, players with 10+ games left, every Monday to 4 weeks before the end; each stat's own rest-of-season error vs k 20; a scratch script, nothing in the repo changed), 2022-23 / 2023-24 / 2024-25 / 2025-26:
+- **BLK:** 10: +2.01 / +2.11 / +1.67 / +1.61%; 15: +0.57 / +0.64 / +0.37 / +0.43%; 30: −0.09 / −0.34 / +0.25 / +0.01%; 40: +0.32 / −0.16 / +0.90 / +0.41%; 60: +1.46 / +0.66 / +2.33 / +1.42%; 90: +2.94 / +1.87 / +4.12 / +2.73%. **20 stays**: blocks hold up far better than steals, so a block jump keeps about half its gap. Murray's 0.80 is what four seasons support.
+- **REB:** 10: −0.73 / +0.51 / +1.34 / +0.10%; 15: −0.49 / +0.09 / +0.42 / −0.10%; 30 to 90 worse in 3–4 seasons. 20 stays.
+- **3PM:** faster wins every season (10: −0.85 / −1.02 / −0.66 / −0.33%; 15: −0.57 / −0.64 / −0.49 / −0.33%; slower is +1 to +6.7% worse), PTS within ±0.3%. **Weekly gate** (`backtest.py`'s report, real schedule, matchups with the shared factor, k 20 → 10): 0.5759 → 0.5762, 0.5485 → 0.5486, 0.5479 → 0.5481, 0.5186 → 0.5185; categories 0.5263 / 0.5148 / 0.5257 / 0.5135 → 0.5263 / 0.5148 / 0.5258 / 0.5134. Loses three seasons, so not shipped (like A5's 3PA / 3P% split).
+
+# The model's own record, Nov 23 2026 (Q33)
+
+Every snapshot in `snapshots/` (28 files, Oct 26 to Nov 23) replayed as the app stood that day (`model.replay()`, the league backtest's replay: box scores before the snapshot's `from`, the day before's injury feed, that day's ESPN projections, nothing later) and written to `data/history.jsonl`, one row each; weeks 2–5 have finals (each week's last snapshot plus the box scores to Sunday). Each week's call is its first snapshot (Oct 27, Nov 2, Nov 9, Nov 16).
+
+**Are the finals right?** Yahoo's own final scores are in the Nov 9, Nov 16 and Nov 23 snapshots (weeks 3–5). The category tallies from the finals match 15 of those 18 matchups exactly, fatty zhou's three included (week 3 7–2, week 4 7–2 vs Wesburn incident, the week ending Nov 15, week 5 3–6). Week 2 has no results block; all 6 tallies match the standings' W-L-T change from Nov 2 to Nov 9. The 3 misses (week 4 John Ball vs Umbrella Corp 7–1–1 against Yahoo's 6–3; week 5 Langangsters vs kobe colorado 4–5 against 4–4–1, Mumbai Meteors vs Kerala blasters 5–3–1 against 5–4) are one or two categories within a hair on the last night (3PM 71–71, AST 150–150, BLK 12–15): that night is counted on the last pre-tip snapshot's lineups, and a lineup or add changed after the pull. So the record takes Yahoo's score wherever a snapshot lists it, and the recap says when the categories don't add up to it.
+
+**The record, weeks 2–5 (24 matchups, 216 category calls):**
+
+| Favourite at | Matchups won (expected) | Categories won (expected) |
+|---|---|---|
+| 50–60% | 3.5 of 6 (3.2) | 40.5 of 59 (31.9) |
+| 60–70% | 5.5 of 8 (5.1) | 38 of 58 (37.5) |
+| 70–80% | 6 of 6 (4.5) | 45.5 of 57 (42.7) |
+| 80–90% | 3 of 3 (2.6) | 25 of 27 (22.8) |
+| 90–100% | 1 of 1 (0.9) | 14 of 15 (14.2) |
+| All | **19 of 24 (16.2)** | **163 of 216 (149.1)** |
+
+`python backtest.py league` replays the same calls and prints the same counts ("data/history.jsonl the same"); its earlier numbers didn't move with the switch to `model.replay()` (output identical to HEAD's). Reading: favourites won a little more often than their odds said, matchups +2.8 and categories +13.9 over expected, most of it in the 50–60% category bin (40.5 of 59 against 31.9). That leans the same way as the league backtest's log loss (0.379, against 0.414 if the odds were exactly calibrated): on real teams the odds are, if anything, a bit timid, never too sure. Four weeks is too few to change anything: 24 matchups can't tell 16 from 19 apart from luck (a binomial sd of about 2). Look again in December with 8+ weeks (ROADMAP's `backtest.py league` item). fatty zhou: called 34% and lost 4–5, 72% won 7–2, 86% won 7–2, 61% lost 3–6.
+
 # Model audit, Nov 9 2026
 
 Martin asked for everything to be gone through, issues found and fixed, backtested, and left alone where it's already good. Claude Code read `model.py`, `backtest.py`, `yahoo.py`, `app.py` and the gm skill end to end, reran every backtest that reads this season's data, and measured each new idea on frozen copies (old and new code side by side, the same caches). `python test_model.py` passes. Details and numbers: each item's ROADMAP section.

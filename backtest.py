@@ -32,6 +32,8 @@ python backtest.py stream: streaming policies (most games, generic value, this w
 later in the week, timed) on the same simulated team-weeks with real box scores, 2022-23 to 2025-26 (Nov 22; checked
 Nov 23). Add pos (the real slots), opp (the opponent streams), held (mid-week news, the last add kept for it), beam
 (the whole week's plan searched), adds (adds a week): STREAM_RUNS.
+python backtest.py habits: each team's lineup and streaming habits from Yahoo's daily lineups (yahoo.lineups()), then
+the opponent's rest of This week with and without them on this league's finished weeks (fits HABIT_K: Y5, Nov 24).
 python backtest.py fill: the real league's missed games, and how many were covered by an IL move or a full lineup
 (checks FILL, league-wide and by team; rerun as snapshots pile up).
 python backtest.py recency: replay's error by minutes shrink and recent games' weight, 2022-23 to 2025-26 (fits
@@ -58,7 +60,7 @@ import pandas as pd
 import model
 
 ARGS = [a for a in sys.argv[1:]
-        if a not in ("replay", "teammates", "onoff", "minor", "backups", "usage", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season", "league", "fill", "stream",
+        if a not in ("replay", "teammates", "onoff", "minor", "backups", "usage", "bench", "rookies", "yahoo", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season", "league", "fill", "stream", "habits",
                      "base", "pos", "opp", "held", "beam", "adds")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
@@ -130,19 +132,7 @@ def draft(line, seed):
     return teams
 
 
-def outcome(A, B):
-    """Real result per category: 1 win, 0.5 tie, 0 loss. A, B: (..., len(RAW)) weekly totals."""
-    out = []
-    for c in model.CATS:
-        if c in ("FG%", "FT%"):
-            m, a = model.RAW.index(c[:2] + "M"), model.RAW.index(c[:2] + "A")
-            x, y = A[..., m] / np.maximum(A[..., a], 1e-9), B[..., m] / np.maximum(B[..., a], 1e-9)
-        else:
-            x, y = A[..., model.RAW.index(c)], B[..., model.RAW.index(c)]
-            if c == "TOV":
-                x, y = y, x
-        out.append(np.where(x > y, 1.0, np.where(x < y, 0.0, 0.5)))
-    return np.stack(out, -1)
+outcome = model.outcome  # real result per category: 1 win, 0.5 tie, 0 loss (Q33 moved it to model.py for recap())
 
 
 def sat(g, line, team, w, low=None):
@@ -1005,8 +995,8 @@ def gameday():
     from datetime import date, timedelta
     lg = model.load()
     done, played = lg.logs.GAME_DATE.max().date(), set(zip(lg.logs.key, lg.logs.GAME_DATE.dt.date))
-    pat = re.compile(r"\b(probable|questionable|doubtful|game-time decision|out|ruled out|won't play|will not play)\b"
-                     r"[^.]{0,60}?" + model.DAY, re.I)
+    pat = model.listed(["probable", "questionable", "doubtful", "game-time decision", "out", "ruled out", "won't play",
+                        "will not play"])
     seen = {}  # (name, note) -> the day it was written (ESPN's time) or first seen
     for f in sorted(glob.glob(str(model.DATA / "injuries_2026-*.json"))):
         day = date.fromisoformat(f[-15:-5])
@@ -1287,13 +1277,13 @@ def league():
     SCHED_CV fit real teams), and the odds' log loss against what calibrated odds would score. Nov 9, weeks 2-3 (132
     team-days, 11 snapshots): totals within 2% but FTM +5%, BLK -5% and TO +6%, Yahoo's games played +6% (streams);
     sd 0.8-1.3 (John Ball's two unset nights in it); log loss 0.377 against 0.415 expected, so no sign the odds are
-    too sure on real teams. Two weeks: rerun as snapshots pile up."""
-    import glob
-    import json
+    too sure on real teams. Two weeks: rerun as snapshots pile up.
+    Each league is model.replay()'s, the one data/history.jsonl's rows come from (Q33). Then each finished week's call
+    (its first snapshot, model.finished()'s rule) on all six matchups against how the week ended (Yahoo's final score
+    where a snapshot lists it, else the box-score finals of model.history()), as League's Season so far counts them,
+    and that count from data/history.jsonl beside it: they must agree."""
     from datetime import date, timedelta
     import yahoo
-    logs_all, base = model.gamelogs(model.CUR), model.baseline(model.fetch(model.LAST), model.fetch(model.OLDER))
-    sched = json.loads((model.DATA / f"schedule_{model.CUR}.json").read_text(encoding="utf-8"))
     snaps = [(f, s) for f in map(str, model.snapshots())
              if (s := yahoo.parse_text(open(f, encoding="utf-8").read())).get("pulled") and s.get("week") and s.get("from")]
     day = lambda d, n: (date.fromisoformat(d) + timedelta(n)).isoformat()
@@ -1306,19 +1296,11 @@ def league():
         end = min(day(s1["from"], -1), s0["week"]["end"])
         if s0["pulled"][:10] != d or end < d:
             continue
-        snap = yahoo.from_text(f0, write=False)
-        snap["matchup"] = {**snap.get("matchup", {}), "week_end": end}
-        past = logs_all[logs_all.GAME_DATE < pd.Timestamp(d)]
-        cur = past.groupby("key").agg(PLAYER_NAME=("PLAYER_NAME", "last"), TEAM_ABBREVIATION=("TEAM_ABBREVIATION", "last"),
-                                      GP=("GAME_ID", "count"), **{c: (c, "mean") for c in ["MIN"] + model.RAW})
-        inj = model.DATA / f"injuries_{day(d, -1)}.json"
-        ps = sorted(x for x in glob.glob(str(model.DATA / "projections_20??-??-??.json")) if x[-15:-5] <= d)
-        lg = model.League(snap, base, cur, sched, json.loads(inj.read_text(encoding="utf-8")) if inj.exists() else {},
-                          today=date.fromisoformat(d), logs=past, proj=json.loads(open(ps[-1], encoding="utf-8").read()) if ps else {})
+        lg = model.replay(f0, end)
         same = {t: max(s1["teams"], key=lambda u: len(names(p) & names(s1["teams"][u]))) for t, p in s0["teams"].items()}
         tot1, sf = {t: x for pr in s1["matchups"] for t, x in pr["totals"].items()}, lg._so_far()
         ok = [t for t in lg.rosters if t in sf and same[t] in tot1]
-        left = {t: lg.week_vec(*lg._week_side(t)) for t in ok}
+        left = {t: lg._rest(t) for t in ok}  # their lineup habit in (Y5)
         g0, g1 = ({t: g["played"] for pr in s["matchups"] for t, g in pr.get("games", {}).items()} for s in (s0, s1))
         for t in ok:
             var = np.array([model.DISPERSION.get(c, np.nan) for c in model.RAW]) * left[t] + (model.SCHED_CV * left[t]) ** 2
@@ -1345,6 +1327,180 @@ def league():
     p, y = np.clip(np.array([c[0] for c in cats]), 1e-6, 1 - 1e-6), np.array([c[1] for c in cats])
     print(f"category odds ({len(p)}):", {k: round(v, 4) for k, v in score(p, y).items()},
           f"calibrated odds would score {float(-(p * np.log(p) + (1 - p) * np.log(1 - p)).mean()):.4f};", calibration(p, y, 5))
+    # Q33: each finished week's call, replayed here, on all six matchups (League's Season so far, from the history file)
+    weeks = {}
+    for f, s in snaps:
+        weeks.setdefault(s["week"]["week"], []).append((f, s))
+    later = max(weeks)
+    finals = {r["final"]: r for r in model.history_rows() if "final" in r}
+    names = lambda ps: {p["name"] for p in ps}
+    results = [x for _, s in snaps for x in s.get("results", ())]
+    ms, cs = [], []
+    for w, fs in sorted(weeks.items()):
+        if w == later and w not in finals:
+            continue  # still on
+        first = min(s["from"] for _, s in fs)
+        f0, s0 = max(((f, s) for f, s in fs if s["from"] == first), key=lambda x: x[1]["pulled"])
+        if w not in finals:
+            print(f"  week {w}: no final in data/history.jsonl (python model.py recap writes it)")
+            continue
+        fin = finals[w]
+        s1 = next(s for f, s in snaps if f.endswith(fin["file"]))
+        same = {t: max(s1["teams"], key=lambda u: len(names(ps) & names(s1["teams"][u]))) for t, ps in s0["teams"].items()}
+        tot = {t: np.array([x[c] for c in model.RAW]) for t, x in fin["totals"].items()}
+        for pr in model.replay(f0).record()["pairs"]:
+            a, b = pr["teams"]
+            res = outcome(tot[same[a]], tot[same[b]])
+            # Yahoo's final score, under the name either snapshot gave each team (renames: John Basketball, Big Tuo)
+            al = lambda t: {t.lower(), same[t].lower()}
+            y = next((x["score"] if x["teams"][0].lower() in al(a) else x["score"][::-1] for x in results if x["week"] == w
+                      and {n.lower() for n in x["teams"]} & al(a) and {n.lower() for n in x["teams"]} & al(b)), None)
+            won = model._won(res) if y is None else 1.0 if y[0] > y[1] else 0.0 if y[0] < y[1] else 0.5
+            ms.append((pr["win"] / 100, won))
+            cs += [(pr["odds"][c] / 100, float(r)) for c, r in zip(model.CATS, res)]
+    rec, hist = {"matchups": model.calls(ms), "cats": model.calls(cs)}, model.season_record(model.history_rows())
+    for k in ("matchups", "cats"):
+        print(f"each week's call, {k}: favourites won {rec[k]['won']:g} of {rec[k]['n']} (expected {rec[k]['expected']}): "
+              + ", ".join(f"{b['bin']} {b['won']:g} of {b['n']}" for b in rec[k]["bins"])
+              + ("; data/history.jsonl the same" if rec[k] == hist[k] else f"; data/history.jsonl DIFFERS: {hist[k]}"))
+
+
+def habits():
+    """Y5 (Nov 24; folds in M31): each team's habits on Yahoo's daily lineups (yahoo.lineups(): every team's slots on
+    every past day, and the season's add / drop log) against the box scores, then This week's opponent side with and
+    without them, scored on this league's finished weeks.
+    The table, per team over every day with games: starting slot-days left empty, holding a player with no game, or
+    one whose team played and he sat; starts lost a day (the best lineup of its active players who played, lineup(),
+    minus the starters who played: what _subs() assumes, against what it banked); banked / best (model.habits()'s
+    rate, unset days left out; `unset` counts them); how often its starters who played equal the per-game guess
+    (_lineup() on the active players who played, each day's values from the latest replay; _counted()'s rule on a day
+    after the pull); adds a week and the share dropped within 7 days (streams), weeks 1-5.
+    Then every pre-tip snapshot of a finished week from week 2 (model.replay()), each team's rest of the week against
+    what it really banked (its starters who played each day to the week's end): shipped (week_vec on _week_side, no
+    habit), `habit` (x habits()' factor fitted with the week left out, keyed by the snapshot day's rosters), `habit as
+    replayed` (lg._rest(): the day before the snapshot, what the app would have said), `stream` (+ (its share of
+    starts from players added that week - the league's) x the rest of the week's starts x the waiver level's line, while
+    it has adds left; fitted with the week left out). Your team is never changed (This week plans it). Scores: z^2 over
+    the counting stats (the model's sd), |PTS| a team-day, category and matchup log loss on every matchup, each with the
+    change from shipped and its se (by team-week / matchup-week). Nov 24 (weeks 2-5, 25 snapshots): Y5's numbers.
+    ponytail: 4 finished weeks; rerun as they pile up"""
+    import json
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    c = json.loads(model.LINEUPS.read_text(encoding="utf-8"))
+    days, lg_json = c["days"], json.loads((model.DATA / "league.json").read_text(encoding="utf-8"))
+    slots, sched = lg_json["settings"]["slots"], lg_json["schedule"]
+    week = lambda d: next((w["week"] for w in sched if w["start"] <= d <= w["end"]), 0)
+    span = {w["week"]: (w["start"], w["end"]) for w in sched}
+    g = model.gamelogs(model.CUR)
+    g = g.assign(d=g.GAME_DATE.dt.strftime("%Y-%m-%d"))
+    box = {d: x.set_index("key") for d, x in g.groupby("d")}
+    plays = {t: set(x) for t, x in json.loads((model.DATA / f"schedule_{model.CUR}.json").read_text(encoding="utf-8")).items()}
+    team_on = g.sort_values("d").groupby("key")[["d", "TEAM_ABBREVIATION"]].apply(lambda x: list(zip(x.d, x.TEAM_ABBREVIATION))).to_dict()
+    ET, added = ZoneInfo("America/New_York"), {}
+    for m in c["moves"]:
+        if m["add"]:
+            added.setdefault((m["team"], model.norm(m["add"])), []).append(datetime.fromtimestamp(m["ts"], ET).date().isoformat())
+    # every pre-tip snapshot of a finished week (its end on file), as the app stood then
+    last, snaps = max(days), []
+    for f in model.snapshots():
+        s = model.read_snap(f)
+        if s.get("week") and s.get("pulled", "")[:10] == s.get("from") and 2 <= s["week"]["week"] and s["week"]["end"] <= last:
+            snaps.append((f, s, model.replay(f)))
+    vals = [(s["from"], lg._value) for _, s, lg in snaps]
+    # each team-day: what it banked, the best it could have, and why not
+    T = []
+    for d, teams in days.items():
+        if (bx := box.get(d)) is None:
+            continue
+        v = next((x for dd, x in reversed(vals) if dd <= d), vals[0][1])
+        for t, ps in teams.items():
+            act = [(model.norm(n), {x for x in pos.split(",") if x}, slot, nba) for n, nba, pos, slot in ps if slot not in model.IL_SLOTS]
+            st, pl = [p for p in act if p[2] != "BN"], [p for p in act if p[0] in bx.index]
+            has = lambda p: p[0] in bx.index or d in plays.get(next((x for dd, x in reversed(team_on.get(p[0], ())) if dd <= d), p[3]), ())
+            by = sorted(pl, key=lambda p: v.get(p[0], -9e9), reverse=True)
+            guess = {by[j][0] for j in model.lineup(slots, [p[1] for p in by]).values()}
+            banked = [p[0] for p in st if p[0] in bx.index]
+            T.append({"team": t, "day": d, "week": week(d), "empty": len(slots) - len(st), "nogame": sum(not has(p) for p in st),
+                      "sat": sum(has(p) and p[0] not in bx.index for p in st), "banked": len(banked), "unset": not st,
+                      "best": len(model.lineup(slots, [p[1] for p in pl])), "match": guess == set(banked),
+                      "stream": sum(any(span[week(d)][0] <= a <= d for a in added.get((t, k), ())) for k in banked),
+                      "line": bx.loc[banked, model.RAW].sum().to_numpy(float) if banked else np.zeros(len(model.RAW))})
+    T = pd.DataFrame(T)
+    A = pd.DataFrame([{**m, "week": week(datetime.fromtimestamp(m["ts"], ET).date().isoformat())} for m in c["moves"] if m["add"]])
+    A["stream"] = [any(x["team"] == m.team and x["drop"] == m.add and 0 < x["ts"] - m.ts <= 7 * 86400 for x in c["moves"])
+                   for m in A.itertuples()]
+    done = sorted(w for w in set(T.week) if span[w][1] <= last)
+    A = A[A.week.isin(done)]
+    print(f"\n== each team's habits: Yahoo's daily lineups {min(days)} to {last}, {len(T)} team-days with games ==")
+    print("% of starting slot-days empty / no game / sat; starts lost a day; banked of the best lineup's starts (unset days out);"
+          " lineup = the per-game guess; adds a week (weeks " + f"{done[0]}-{done[-1]}" + "), most in a week, share streamed")
+    for t, x in [*T.groupby("team"), ("league", T)]:
+        a, n, k = (A if t == "league" else A[A.team == t]), len(x) * len(slots), x[~x.unset]
+        print(f"  {t:20} {len(x):3}  {100 * x["empty"].sum() / n:4.1f} / {100 * x.nogame.sum() / n:4.1f} / {100 * x.sat.sum() / n:4.1f}"
+              f"  lost {(x.best - x.banked).mean():.2f}  banked {100 * k.banked.sum() / k.best.sum():5.1f}% (unset {int(x.unset.sum())})"
+              f"  guess {100 * x.match.mean():3.0f}%  adds {len(a) / len(done) / (12 if t == 'league' else 1):.1f}"
+              f" (max {a.groupby(['team', 'week']).size().max() if len(a) else 0})  streamed {100 * a.stream.mean() if len(a) else 0:3.0f}%")
+    # the replay: each team's rest of the week against what it banked
+    line = {(r.team, r.day): r.line for r in T.itertuples()}
+    names = lambda ps: {model.norm(p[0] if isinstance(p, list) else p["name"]) for p in ps}
+    R = []
+    for f, s, lg in snaps:
+        d, end, day = s["from"], s["week"]["end"], days[s["from"]]
+        same = {t: max(day, key=lambda u: len(names(ps) & names(day[u]))) for t, ps in s["teams"].items()}
+        sf, cap = lg._so_far(), lambda t: lg.adds(t)
+        lvl = lg.p_week.reindex([k for k in lg.level_keys if k in lg.p_week.index])[model.RAW].mean().to_numpy(float)
+        for t in (t for t in lg.rosters if t in sf):
+            side = lg._week_side(t)
+            R.append({"file": f.name, "week": s["week"]["week"], "team": same[t], "me": t == lg.me, "P": lg.week_vec(*side),
+                      "live": lg._rest(t), "S": sum(lg.starts(*side, plays=True).values()), "level": lvl,
+                      "left": (cap(t) or {}).get("left", 1), "sofar": np.array([float(sf[t].get(x, 0)) for x in model.RAW]),
+                      "act": sum((line.get((same[t], x), 0) for x in model.span(d, end)), np.zeros(len(model.RAW))),
+                      "opp": next((same[u] for pr in s["matchups"] for u in pr["teams"] if t in pr["teams"] and u != t), None)})
+    print(f"\n== the opponent's rest of This week, {len(R)} team-days from {len(snaps)} pre-tip snapshots, weeks "
+          f"{min(r['week'] for r in R)}-{max(r['week'] for r in R)}; each week left out of the fit ==")
+    CNT, PTS = [model.RAW.index(x) for x in model.COUNTING], model.RAW.index("PTS")
+    sd = lambda P: np.sqrt(np.array([model.DISPERSION.get(x, np.nan) for x in model.RAW]) * P + (model.SCHED_CV * P) ** 2)
+    rules = ("shipped", "habit", "habit as replayed", "stream")
+    got = {n: {"z2": [], "pts": [], "cat": [], "match": [], "t": [], "m": []} for n in rules}
+    for w in sorted({r["week"] for r in R}):
+        lo, hi = span[w]
+        fit = model.habits({d: x for d, x in days.items() if not lo <= d <= hi}, g, slots)
+        x = T[(T.week != w) & ~T.unset]
+        sig = (x.groupby("team").stream.sum() / (x.banked - x.stream).groupby(x.team).sum()).to_dict()
+        s_bar = x.stream.sum() / (x.banked - x.stream).sum()
+        rs = [r for r in R if r["week"] == w]
+        for n in rules:
+            Q = {(r["file"], r["team"]): r["P"] if r["me"] or n == "shipped" else r["live"] if n == "habit as replayed" else
+                 r["P"] * fit.get(r["team"], {}).get("f", 1.0) if n == "habit" else
+                 r["P"] + (sig.get(r["team"], s_bar) - s_bar) * r["S"] * r["level"] * (r["left"] > 0) for r in rs}
+            for r in rs:
+                q, a = Q[r["file"], r["team"]], r["act"]
+                if not r["me"]:
+                    with np.errstate(invalid="ignore", divide="ignore"):
+                        got[n]["z2"].append(float(np.nanmean(((a - q) / sd(q))[CNT] ** 2)))
+                    got[n]["pts"].append(float(abs(a - q)[PTS]))
+                    got[n]["t"].append(f"{r['team']} {w}")
+                o = next((y for y in rs if y["file"] == r["file"] and y["team"] == r["opp"]), None)
+                if o is None or r["team"] > o["team"]:
+                    continue
+                p = model.cat_probs(q, Q[o["file"], o["team"]], model.CATS, r["sofar"], o["sofar"])
+                y = model.outcome(r["sofar"] + r["act"], o["sofar"] + o["act"])
+                pc, m = np.clip(p, 1e-6, 1 - 1e-6), float(np.clip(model.match_prob(p, model.CATS, model.WEEK_LOAD), 1e-6, 1 - 1e-6))
+                got[n]["cat"].append(float(-(y * np.log(pc) + (1 - y) * np.log(1 - pc)).mean()))
+                got[n]["match"].append(-(model._won(y) * np.log(m) + (1 - model._won(y)) * np.log(1 - m)))
+                got[n]["m"].append(f"{sorted((r['team'], o['team']))} {w}")
+    base = got["shipped"]
+    print(f"  {'':18} {'z^2':>22} {'|PTS| a team-day':>22} {'category log loss':>24} {'matchup log loss':>24}")
+    for n in rules:
+        out = f"  {n:18}"
+        for k, cl in (("z2", "t"), ("pts", "t"), ("cat", "m"), ("match", "m")):
+            v, b = np.array(got[n][k]), np.array(base[k])
+            dd = pd.Series(v - b).groupby(got[n][cl]).sum()
+            out += f" {v.mean():7.4f} {(v - b).mean():+.4f} ({dd.std(ddof=1) * np.sqrt(len(dd)) / len(v):.4f})"
+        print(out)
+    by = pd.DataFrame({"week": [int(x.rsplit(" ", 1)[1]) for x in base["t"]], "d": np.array(got["habit"]["pts"]) - np.array(base["pts"])})
+    print("  habit's |PTS| change by week left out: " + ", ".join(f"{w} {x:+.2f}" for w, x in by.groupby("week").d.mean().items()))
 
 
 # 2026-27's season on 2025-26's NBA weeks: 20 matchups (weeks 7 and 17 run two NBA weeks, 6-7 and 16-17), then three
@@ -1872,6 +2028,8 @@ if __name__ == "__main__":
         lineups()
     elif "league" in sys.argv:
         league()
+    elif "habits" in sys.argv:
+        habits()
     elif "fill" in sys.argv:
         fill()
     elif "stream" in sys.argv:

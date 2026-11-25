@@ -13,8 +13,8 @@ The detail lives in `docs/`, moved out of this file on Nov 15 so it isn't loaded
 
 ## Files
 - `model.py`: the engine (`League` class) plus a JSON CLI. All numbers come from here: UI, AI chat and the `/gm` skill. It also fetches and caches the NBA schedule, ESPN's injuries, projections and news, box scores and live scores (`load()`).
-- `yahoo.py`: league snapshot → `data/league.json` (`python yahoo.py import <snapshot>.txt`, or `demo`). Snapshots live in `snapshots/`; one saved into the project folder is loaded and filed there by the app.
-- `app.py`: stdlib server on 127.0.0.1:8765, routes in `api()`; `live()` refetches injuries and live scores, `watch()` loads new snapshots and what-ifs.
+- `yahoo.py`: Yahoo's API → `data/league.json` + `snapshots/yahoo-<day>.json` (`python yahoo.py`; `check` diffs a pull against the newest text snapshot). Text snapshots (`import <file>.txt`, `demo`) are the fallback, loaded by hand (`import`, then Refresh; nothing watches the folder since Y3).
+- `app.py`: stdlib server on 127.0.0.1:8765, routes in `api()`; `live()` refetches injuries and live scores and pulls Yahoo every 15 min (rebuilds only on news, `yahoo.NEWS()`), `watch()` loads new snapshots and what-ifs.
 - The AI GM chat: `/api/chat` runs `claude -p` on Martin's Claude Code login with the gm SKILL.md and only `model.py` allowed (no API-key path since Nov 19).
 - `backtest.py`: replays real NBA seasons and the real league's snapshots; the evidence behind every fitted constant.
 - `web/index.html`: the whole UI. State in `S`, views are `view*()` functions returning HTML strings, event delegation via `data-act` / `data-view` / `data-punt`.
@@ -25,7 +25,7 @@ Python lives in `.venv` (Homebrew Python blocks global pip): use `.venv/bin/pyth
 - `python test_model.py`: run it after touching `model.py` or `app.py`'s model calls. Prints `ok`.
 - `python backtest.py`: calibration check (~1 min). Run it after changing projections or odds maths. Its other modes (`replay`, `teammates`, `ahead`, `returns`, `gameday`, `league`, `lineups`, `playoffs`, `season`, ...): `docs/COMMANDS.md`.
 - `python app.py --no-browser`: run the app without opening a tab. `#view` and `?punt=FT%25,TOV` deep-link a view and build.
-- `python model.py {team|trade|ideas|search|waivers|movers|roster|week|strategy|news|compare|schedule|move|sources|wants|lineup|ahead|what|note|check|drop|today} [--punt ...]`: prints JSON; flags in `docs/COMMANDS.md`. `strategy` takes ~40s.
+- `python model.py {team|trade|ideas|search|waivers|movers|roster|week|strategy|news|compare|schedule|move|sources|wants|lineup|ahead|what|note|check|drop|today|recap|playoffs} [--punt ...]`: prints JSON; flags in `docs/COMMANDS.md`. `strategy` takes ~45 s.
 
 ## Rules that hold everywhere
 The short list. Each has its full rule, numbers and history in `docs/MODEL.md`.
@@ -45,7 +45,7 @@ The short list. Each has its full rule, numbers and history in `docs/MODEL.md`.
 
 ## Gotchas
 - `nba_api` names have accents (Jokić). Windows consoles need `sys.stdout.reconfigure(encoding="utf-8")`, which the CLIs already do.
-- `yahoo.py` hasn't been run against a real league yet. yfpy field access is defensive, but verify the first real pull.
+- Yahoo's API (live since Nov 23) differs from its docs: made/attempted stats are "FGM/A" / "FTM/A" (`yahoo._pair()`), the snapshots' Cur rank is `sort_type=average_season` and Pre is the `OR` rank, and it has no projections. Verify field paths with `python yahoo.py check` (raw XML in `data/yahoo_raw/`).
 - Browser checks go through the Playwright MCP, which runs headless Microsoft Edge (`PLAYWRIGHT_MCP_BROWSER=msedge` in `~/.claude/settings.json`; Chrome isn't installed). If it fails to start, tell Martin instead of working around it.
 - Headless Chromium browsers clamp windows to 504px wide. For phone screenshots, load the app in a 390px iframe.
 - Project skills added mid-session don't register until Claude Code restarts.
