@@ -1,0 +1,347 @@
+[
+ {
+  "me": "fatty zhou",
+  "team": "Mathmagicians",
+  "give": [
+   "Walker Kessler",
+   "Brandin Podziemski",
+   "LaMelo Ball"
+  ],
+  "get": [
+   "Karl-Anthony Towns",
+   "Jalen Brunson",
+   "Miles McBride"
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": 0.8,
+  "their_net": 0.4,
+  "their_view": -1.77,
+  "win": 58.5,
+  "win_after": 59.3,
+  "market": {
+   "give": 67.9,
+   "get": 107.3,
+   "diff_pct": 36.8,
+   "verdict": "they overpay 37%",
+   "sum": {
+    "give": 79.9,
+    "get": 119.8,
+    "diff_pct": 33.3,
+    "verdict": "they overpay 33%"
+   }
+  },
+  "accept": "Long shot",
+  "verdict": "accept",
+  "punt": [],
+  "id": "4de11b5b",
+  "sent": "2026-11-23T23:55:19",
+  "outcome": null,
+  "yahoo": "478.l.231900.pt.228"
+ },
+ {
+  "me": "fatty zhou",
+  "team": "Kerala blasters",
+  "give": [
+   "Damian Lillard",
+   "LaMelo Ball",
+   "Anthony Black"
+  ],
+  "get": [
+   "Luka Dončić"
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": 1.2,
+  "their_net": 0.3,
+  "their_view": -4.31,
+  "win": 58.5,
+  "win_after": 59.7,
+  "market": {
+   "give": 60.4,
+   "get": 99.2,
+   "diff_pct": 39.2,
+   "verdict": "they overpay 39%",
+   "sum": {
+    "give": 70.6,
+    "get": 99.2,
+    "diff_pct": 28.8,
+    "verdict": "they overpay 29%"
+   }
+  },
+  "accept": "Long shot",
+  "verdict": "accept",
+  "punt": [],
+  "id": "d5916d7d",
+  "sent": "2026-11-23T23:52:28",
+  "outcome": null,
+  "yahoo": "478.l.231900.pt.227"
+ },
+ {
+  "me": "fatty zhou",
+  "team": "John Ball",
+  "give": [
+   "Damian Lillard",
+   "Walker Kessler",
+   "LaMelo Ball"
+  ],
+  "get": [
+   "Victor Wembanyama"
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": 2.5,
+  "their_net": -2.7,
+  "their_view": -4.07,
+  "win": 58.5,
+  "win_after": 61.0,
+  "market": {
+   "give": 71.2,
+   "get": 104.7,
+   "diff_pct": 32.0,
+   "verdict": "they overpay 32%",
+   "sum": {
+    "give": 91.1,
+    "get": 104.7,
+    "diff_pct": 13.0,
+    "verdict": "they overpay 13%"
+   }
+  },
+  "accept": "Long shot",
+  "verdict": "accept",
+  "punt": [],
+  "id": "4ad20892",
+  "sent": "2026-11-23T23:46:47",
+  "outcome": "no",
+  "yahoo": "478.l.231900.pt.226",
+  "auto": true
+ },
+ {
+  "me": "fatty zhou",
+  "team": "kobe colorado",
+  "give": [
+   "LaMelo Ball",
+   "Paul George"
+  ],
+  "get": [
+   "Brandon Miller",
+   "Cooper Flagg"
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": 0.9,
+  "their_net": -1.2,
+  "their_view": -1.08,
+  "win": 58.5,
+  "win_after": 59.4,
+  "market": {
+   "give": 76.5,
+   "get": 88.7,
+   "diff_pct": 13.8,
+   "verdict": "they overpay 14%",
+   "sum": {
+    "give": 89.3,
+    "get": 94.2,
+    "diff_pct": 5.2,
+    "verdict": "they overpay 5%"
+   }
+  },
+  "accept": "Maybe",
+  "verdict": "accept",
+  "punt": [],
+  "id": "7b2c4b4b",
+  "sent": "2026-11-23T23:38:15",
+  "outcome": null,
+  "yahoo": "478.l.231900.pt.225"
+ },
+ {
+  "me": "fatty zhou",
+  "team": "John Ball",
+  "give": [
+   "Brandon Ingram",
+   "Anthony Black"
+  ],
+  "get": [
+   "Josh Giddey",
+   "Wendell Carter Jr."
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": 0.0,
+  "their_net": -0.3,
+  "their_view": 0.14,
+  "win": 58.5,
+  "win_after": 58.6,
+  "market": {
+   "give": 12.2,
+   "get": 33.6,
+   "diff_pct": 63.7,
+   "verdict": "they overpay 64%",
+   "sum": {
+    "give": 13.6,
+    "get": 37.7,
+    "diff_pct": 63.8,
+    "verdict": "they overpay 64%"
+   }
+  },
+  "accept": "Long shot",
+  "verdict": "toss-up",
+  "punt": [],
+  "id": "b294cb89",
+  "sent": "2026-11-23T23:26:56",
+  "outcome": "yes",
+  "by": "them",
+  "yahoo": "478.l.231900.pt.224"
+ },
+ {
+  "me": "fatty zhou",
+  "team": "John Ball",
+  "give": [
+   "Brandon Ingram"
+  ],
+  "get": [
+   "Josh Giddey"
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": 0.3,
+  "their_net": -0.6,
+  "their_view": 0.0,
+  "win": 58.5,
+  "win_after": 58.8,
+  "market": {
+   "give": 4.9,
+   "get": 23.9,
+   "diff_pct": 79.5,
+   "verdict": "they overpay 80%",
+   "sum": {
+    "give": 4.9,
+    "get": 23.9,
+    "diff_pct": 79.5,
+    "verdict": "they overpay 80%"
+   }
+  },
+  "accept": "Long shot",
+  "verdict": "accept",
+  "punt": [],
+  "id": "abbd2f20",
+  "sent": "2026-11-23T23:23:57",
+  "outcome": "yes",
+  "by": "them",
+  "yahoo": "478.l.231900.pt.223"
+ },
+ {
+  "me": "fatty zhou",
+  "team": "Mumbai Meteors",
+  "give": [
+   "Walker Kessler",
+   "LaMelo Ball"
+  ],
+  "get": [
+   "Michael Porter Jr.",
+   "Jamal Murray"
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": 1.5,
+  "their_net": -2.4,
+  "their_view": -3.77,
+  "win": 58.5,
+  "win_after": 60.1,
+  "market": {
+   "give": 66.0,
+   "get": 85.4,
+   "diff_pct": 22.7,
+   "verdict": "they overpay 23%",
+   "sum": {
+    "give": 76.0,
+    "get": 94.0,
+    "diff_pct": 19.1,
+    "verdict": "they overpay 19%"
+   }
+  },
+  "accept": "Long shot",
+  "verdict": "accept",
+  "punt": [],
+  "id": "3166d86a",
+  "sent": "2026-11-23T23:03:49",
+  "outcome": null,
+  "yahoo": "478.l.231900.pt.222"
+ },
+ {
+  "me": "fatty zhou",
+  "team": "kobe colorado",
+  "give": [
+   "Brandin Podziemski",
+   "LaMelo Ball"
+  ],
+  "get": [
+   "Brandon Miller",
+   "Evan Mobley"
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": 0.6,
+  "their_net": -0.6,
+  "their_view": 2.66,
+  "win": 58.2,
+  "win_after": 58.8,
+  "market": {
+   "give": 33.7,
+   "get": 47.2,
+   "diff_pct": 28.6,
+   "verdict": "they overpay 29%",
+   "sum": {
+    "give": 35.6,
+    "get": 51.2,
+    "diff_pct": 30.5,
+    "verdict": "they overpay 30%"
+   }
+  },
+  "accept": "Long shot",
+  "verdict": "accept",
+  "punt": [],
+  "id": "a0e0c9bb",
+  "sent": "2026-11-23T18:19:27",
+  "outcome": null,
+  "yahoo": "478.l.231900.pt.220"
+ },
+ {
+  "me": "fatty zhou",
+  "team": "Wesburn incident",
+  "give": [
+   "LaMelo Ball",
+   "Damian Lillard"
+  ],
+  "get": [
+   "Shai Gilgeous-Alexander"
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": 1.7,
+  "their_net": -0.5,
+  "their_view": -4.47,
+  "win": 58.2,
+  "win_after": 59.9,
+  "market": {
+   "give": 33.6,
+   "get": 42.5,
+   "diff_pct": 21.0,
+   "verdict": "they overpay 21%",
+   "sum": {
+    "give": 36.1,
+    "get": 42.5,
+    "diff_pct": 15.2,
+    "verdict": "they overpay 15%"
+   }
+  },
+  "accept": "Long shot",
+  "verdict": "accept",
+  "punt": [],
+  "id": "90565f00",
+  "sent": "2026-11-20T15:33:31",
+  "outcome": "no",
+  "yahoo": "478.l.231900.pt.200",
+  "auto": true
+ }
+]

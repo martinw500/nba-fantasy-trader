@@ -1,5 +1,4 @@
 .env
-data/
 __pycache__/
 .impeccable/review/
 .impeccable/build/
@@ -7,3 +6,22 @@ __pycache__/
 .impeccable/config.local.json
 .venv/
 .playwright-mcp/
+
+# data/: live caches stay out. Each computer refetches them by itself (Yahoo's API, ESPN, nba.com),
+# so they'd only churn every 15 minutes here.
+data/*
+# What can't be fetched again goes in: the history the backtests and the record are built on,
+# plus your own inputs.
+!data/injuries_*.json
+!data/projections_*.json
+!data/injury_notes.jsonl
+!data/history.jsonl
+!data/offers.json
+!data/notes.md
+!data/whatif.json
+!data/stats_*.csv
+!data/gamelogs_*.csv
+# ...except this season's, which are live caches (bump with CUR each October)
+data/projections_2026-27.json
+data/stats_2026-27.csv
+data/gamelogs_2026-27.csv
