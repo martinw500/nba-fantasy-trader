@@ -3,6 +3,43 @@
   "me": "fatty zhou",
   "team": "John Ball",
   "give": [
+   "Anthony Black"
+  ],
+  "get": [
+   "Josh Giddey"
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": 0.5,
+  "their_net": -0.6,
+  "their_view": 0.63,
+  "win": 57.1,
+  "win_after": 57.6,
+  "market": {
+   "give": 4.2,
+   "get": 22.5,
+   "diff_pct": 81.3,
+   "verdict": "they overpay 81%",
+   "sum": {
+    "give": 4.2,
+    "get": 22.5,
+    "diff_pct": 81.3,
+    "verdict": "they overpay 81%"
+   }
+  },
+  "accept": "Long shot",
+  "verdict": "accept",
+  "punt": [],
+  "id": "0b323d91",
+  "sent": "2026-11-25T13:42:08",
+  "outcome": null,
+  "yahoo": "478.l.231900.pt.235",
+  "open": true
+ },
+ {
+  "me": "fatty zhou",
+  "team": "John Ball",
+  "give": [
    "Brandon Ingram"
   ],
   "get": [
@@ -112,7 +149,7 @@
   "outcome": "yes",
   "by": "them",
   "yahoo": "478.l.231900.pt.232",
-  "open": true
+  "open": false
  },
  {
   "me": "fatty zhou",

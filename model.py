@@ -3979,11 +3979,11 @@ class League:
         return (d.replace(year=d.year - 1) if d > date.fromisoformat(self.today) + timedelta(1) else d).isoformat()
 
     def adds(self, team=None):
-        """Adds used this matchup week and left under settings' max_adds (Q11: 4 in Martin's league), None when the
-        league sets no cap (demo, Yahoo pull). used = the higher of the snapshot's count (`adds`, only while the
+        """Adds used this matchup week and left under settings' max_adds (Q11: 4 in Martin's league), None when
+        settings has no max_adds (the demo). used = the higher of the snapshot's count (`adds`, only while the
         snapshot was pulled this week: Yahoo's own for you, counted from the log for the rest) and the transaction
         log's adds and waiver claims dated this matchup week (trades and drops don't count), so it never shows an add
-        you don't have. ponytail: moves made after the snapshot aren't seen, and the log holds only the last 30."""
+        you don't have. ponytail: moves made after the snapshot aren't seen, and the log holds only the last 50."""
         cap = self.snap["settings"].get("max_adds")
         if cap is None:
             return None
