@@ -62,8 +62,8 @@
      "pre": 203,
      "cur": 160
     },
-    "owned": 22,
-    "owned_delta": 5,
+    "owned": 23,
+    "owned_delta": 6,
     "started": 22,
     "started_delta": 16
    },
@@ -326,8 +326,8 @@
      "pre": 284,
      "cur": 179
     },
-    "owned": 23,
-    "owned_delta": 20,
+    "owned": 24,
+    "owned_delta": 21,
     "started": 16,
     "started_delta": -4
    },
@@ -376,8 +376,8 @@
     },
     "owned": 83,
     "owned_delta": 0,
-    "started": 65,
-    "started_delta": -10
+    "started": 64,
+    "started_delta": -11
    },
    {
     "name": "Tyrese Maxey",
@@ -437,8 +437,8 @@
      "pre": 47,
      "cur": 64
     },
-    "owned": 97,
-    "owned_delta": 0,
+    "owned": 96,
+    "owned_delta": -1,
     "started": 58
    },
    {
@@ -534,8 +534,8 @@
      "pre": 314,
      "cur": 251
     },
-    "owned": 8,
-    "owned_delta": -3,
+    "owned": 7,
+    "owned_delta": -4,
     "started": 6,
     "started_delta": -2
    },
@@ -550,8 +550,8 @@
      "pre": 144,
      "cur": 176
     },
-    "owned": 48,
-    "owned_delta": -3,
+    "owned": 47,
+    "owned_delta": -4,
     "started": 35,
     "started_delta": -11
    },
@@ -584,8 +584,8 @@
     },
     "owned": 67,
     "owned_delta": 1,
-    "started": 56,
-    "started_delta": 26
+    "started": 57,
+    "started_delta": 27
    },
    {
     "name": "Tyrese Proctor",
@@ -1019,8 +1019,8 @@
     },
     "owned": 100,
     "owned_delta": 0,
-    "started": 97,
-    "started_delta": 34
+    "started": 98,
+    "started_delta": 35
    },
    {
     "name": "Walker Kessler",
@@ -1130,8 +1130,8 @@
     },
     "owned": 97,
     "owned_delta": -1,
-    "started": 43,
-    "started_delta": -7
+    "started": 42,
+    "started_delta": -8
    }
   ],
   "Mathmagicians": [
@@ -1146,8 +1146,8 @@
      "pre": 133,
      "cur": 190
     },
-    "owned": 53,
-    "owned_delta": 2,
+    "owned": 52,
+    "owned_delta": 1,
     "started": 41,
     "started_delta": -8
    },
@@ -1257,8 +1257,8 @@
      "pre": 372,
      "cur": 101
     },
-    "owned": 28,
-    "owned_delta": -4,
+    "owned": 27,
+    "owned_delta": -5,
     "started": 23,
     "started_delta": -6
    },
@@ -1357,8 +1357,8 @@
     },
     "owned": 100,
     "owned_delta": 0,
-    "started": 95,
-    "started_delta": 38
+    "started": 96,
+    "started_delta": 39
    },
    {
     "name": "Jeremiah Fears",
@@ -1599,8 +1599,8 @@
     },
     "owned": 79,
     "owned_delta": 1,
-    "started": 47,
-    "started_delta": -11
+    "started": 46,
+    "started_delta": -12
    },
    {
     "name": "Cooper Flagg",
@@ -1679,8 +1679,8 @@
     },
     "owned": 69,
     "owned_delta": 4,
-    "started": 53,
-    "started_delta": -11
+    "started": 52,
+    "started_delta": -12
    },
    {
     "name": "Naz Reid",
@@ -1838,8 +1838,8 @@
     },
     "owned": 98,
     "owned_delta": -1,
-    "started": 36,
-    "started_delta": -2
+    "started": 35,
+    "started_delta": -3
    }
   ],
   "John Ball": [
@@ -1911,7 +1911,7 @@
     "name": "P.J. Washington",
     "nba": "DAL",
     "pos": "PF,C",
-    "status": "GTD",
+    "status": "",
     "slot": "PF",
     "il": false,
     "rank": {
@@ -1920,8 +1920,8 @@
     },
     "owned": 63,
     "owned_delta": -4,
-    "started": 50,
-    "started_delta": 28
+    "started": 52,
+    "started_delta": 30
    },
    {
     "name": "Cedric Coward",
@@ -1998,10 +1998,10 @@
      "pre": 227,
      "cur": 155
     },
-    "owned": 36,
-    "owned_delta": 12,
-    "started": 24,
-    "started_delta": -7
+    "owned": 37,
+    "owned_delta": 13,
+    "started": 25,
+    "started_delta": -6
    },
    {
     "name": "Keyonte George",
@@ -2048,8 +2048,8 @@
     },
     "owned": 89,
     "owned_delta": 1,
-    "started": 32,
-    "started_delta": 1
+    "started": 33,
+    "started_delta": 2
    },
    {
     "name": "Victor Wembanyama",
@@ -2151,8 +2151,8 @@
      "pre": 122,
      "cur": 35
     },
-    "owned": 73,
-    "owned_delta": 8,
+    "owned": 74,
+    "owned_delta": 9,
     "started": 70,
     "started_delta": 43
    },
@@ -2279,8 +2279,8 @@
      "pre": 49,
      "cur": 96
     },
-    "owned": 95,
-    "owned_delta": 0,
+    "owned": 94,
+    "owned_delta": -1,
     "started": 43,
     "started_delta": -1
    },
@@ -2376,10 +2376,10 @@
      "pre": 167,
      "cur": 133
     },
-    "owned": 39,
-    "owned_delta": 10,
-    "started": 37,
-    "started_delta": 26
+    "owned": 40,
+    "owned_delta": 11,
+    "started": 38,
+    "started_delta": 27
    },
    {
     "name": "Zion Williamson",
@@ -2439,8 +2439,8 @@
      "pre": 118,
      "cur": 91
     },
-    "owned": 61,
-    "owned_delta": 4,
+    "owned": 60,
+    "owned_delta": 3,
     "started": 58,
     "started_delta": 35
    },
@@ -2864,8 +2864,8 @@
    },
    "owned": 48,
    "owned_delta": 3,
-   "started": 43,
-   "started_delta": 23,
+   "started": 44,
+   "started_delta": 24,
    "waiver": "Nov 26"
   },
   {
@@ -3157,8 +3157,8 @@
     "pre": 334,
     "cur": 158
    },
-   "owned": 11,
-   "owned_delta": 0,
+   "owned": 12,
+   "owned_delta": 1,
    "started": 12,
    "started_delta": 9
   },
@@ -3213,8 +3213,8 @@
     "pre": 300,
     "cur": 166
    },
-   "owned": 10,
-   "owned_delta": 5,
+   "owned": 11,
+   "owned_delta": 6,
    "started": 7,
    "started_delta": -1
   },
@@ -3229,8 +3229,8 @@
    },
    "owned": 24,
    "owned_delta": 15,
-   "started": 8,
-   "started_delta": 1
+   "started": 9,
+   "started_delta": 2
   },
   {
    "name": "Peyton Watson",
@@ -3311,10 +3311,10 @@
     "pre": 136,
     "cur": 180
    },
-   "owned": 41,
-   "owned_delta": 11,
-   "started": 28,
-   "started_delta": -5
+   "owned": 42,
+   "owned_delta": 12,
+   "started": 29,
+   "started_delta": -4
   },
   {
    "name": "Kentavious Caldwell-Pope",
@@ -3395,8 +3395,8 @@
     "pre": 145,
     "cur": 191
    },
-   "owned": 31,
-   "owned_delta": -2,
+   "owned": 30,
+   "owned_delta": -3,
    "started": 21,
    "started_delta": -4
   },
@@ -3548,8 +3548,8 @@
     "pre": 320,
     "cur": 212
    },
-   "owned": 13,
-   "owned_delta": 6,
+   "owned": 14,
+   "owned_delta": 7,
    "started": 9,
    "started_delta": -2
   },
@@ -3632,8 +3632,8 @@
     "pre": 193,
     "cur": 220
    },
-   "owned": 24,
-   "owned_delta": -2,
+   "owned": 25,
+   "owned_delta": -1,
    "started": 16,
    "started_delta": -5
   },
@@ -3864,8 +3864,8 @@
     "pre": 249,
     "cur": 243
    },
-   "owned": 11,
-   "owned_delta": -17,
+   "owned": 10,
+   "owned_delta": -18,
    "started": 9,
    "started_delta": -4
   },
@@ -3878,8 +3878,8 @@
     "pre": 225,
     "cur": 245
    },
-   "owned": 18,
-   "owned_delta": -4,
+   "owned": 17,
+   "owned_delta": -5,
    "started": 16,
    "started_delta": -5
   },
@@ -3905,8 +3905,8 @@
     "pre": 235,
     "cur": 248
    },
-   "owned": 8,
-   "owned_delta": 4,
+   "owned": 7,
+   "owned_delta": 3,
    "started": 6,
    "started_delta": -2
   },
@@ -4052,8 +4052,8 @@
     "pre": 168,
     "cur": 260
    },
-   "owned": 20,
-   "owned_delta": 8,
+   "owned": 21,
+   "owned_delta": 9,
    "started": 11,
    "started_delta": 1
   },
@@ -4337,8 +4337,8 @@
     "pre": 312,
     "cur": 282
    },
-   "owned": 11,
-   "owned_delta": 8,
+   "owned": 10,
+   "owned_delta": 7,
    "started": 10,
    "started_delta": -4
   },
@@ -4713,8 +4713,8 @@
    },
    "owned": 8,
    "owned_delta": 3,
-   "started": 7,
-   "started_delta": 5
+   "started": 8,
+   "started_delta": 6
   },
   {
    "name": "Nikola Vučević",
@@ -4948,7 +4948,9 @@
     "cur": 335
    },
    "owned": 1,
-   "owned_delta": 0
+   "owned_delta": 0,
+   "started": 1,
+   "started_delta": 1
   },
   {
    "name": "Baba Miller",
@@ -6842,7 +6844,7 @@
    23
   ]
  },
- "pulled": "2026-11-24T18:12:00-07:00",
+ "pulled": "2026-11-24T22:38:00-07:00",
  "records": {
   "John Ball": {
    "w": 30,
@@ -6925,46 +6927,46 @@
    ],
    "totals": {
     "Toronto blue jays": {
-     "FGM": 56.0,
-     "FGA": 96.0,
-     "FTM": 22.0,
-     "FTA": 25.0,
-     "FG3M": 19.0,
-     "PTS": 153.0,
-     "REB": 60.0,
-     "AST": 46.0,
-     "STL": 8.0,
-     "BLK": 6.0,
-     "TOV": 12.0
+     "FGM": 64.0,
+     "FGA": 110.0,
+     "FTM": 24.0,
+     "FTA": 29.0,
+     "FG3M": 20.0,
+     "PTS": 172.0,
+     "REB": 75.0,
+     "AST": 52.0,
+     "STL": 9.0,
+     "BLK": 9.0,
+     "TOV": 13.0
     },
     "fatty zhou": {
-     "FGM": 41.0,
-     "FGA": 108.0,
-     "FTM": 25.0,
-     "FTA": 33.0,
-     "FG3M": 8.0,
-     "PTS": 115.0,
-     "REB": 54.0,
-     "AST": 34.0,
-     "STL": 9.0,
-     "BLK": 12.0,
-     "TOV": 17.0
+     "FGM": 64.0,
+     "FGA": 154.0,
+     "FTM": 34.0,
+     "FTA": 43.0,
+     "FG3M": 18.0,
+     "PTS": 180.0,
+     "REB": 75.0,
+     "AST": 52.0,
+     "STL": 12.0,
+     "BLK": 13.0,
+     "TOV": 28.0
     }
    },
    "games": {
     "Toronto blue jays": {
-     "played": 10,
-     "left": 33
+     "played": 12,
+     "left": 31
     },
     "fatty zhou": {
-     "played": 10,
-     "left": 33
+     "played": 13,
+     "left": 30
     }
    },
    "status": "midevent",
    "won": {
-    "Toronto blue jays": 7,
-    "fatty zhou": 2
+    "Toronto blue jays": 4,
+    "fatty zhou": 3
    }
   },
   {
@@ -6974,46 +6976,46 @@
    ],
    "totals": {
     "Shanghai Sharks": {
-     "FGM": 38.0,
-     "FGA": 94.0,
-     "FTM": 20.0,
-     "FTA": 26.0,
-     "FG3M": 12.0,
-     "PTS": 108.0,
-     "REB": 46.0,
-     "AST": 26.0,
-     "STL": 4.0,
-     "BLK": 2.0,
-     "TOV": 22.0
+     "FGM": 54.0,
+     "FGA": 125.0,
+     "FTM": 29.0,
+     "FTA": 40.0,
+     "FG3M": 19.0,
+     "PTS": 156.0,
+     "REB": 54.0,
+     "AST": 34.0,
+     "STL": 5.0,
+     "BLK": 5.0,
+     "TOV": 25.0
     },
     "John Ball": {
-     "FGM": 38.0,
-     "FGA": 95.0,
-     "FTM": 14.0,
-     "FTA": 21.0,
-     "FG3M": 9.0,
-     "PTS": 99.0,
-     "REB": 44.0,
-     "AST": 32.0,
-     "STL": 10.0,
-     "BLK": 2.0,
-     "TOV": 14.0
+     "FGM": 71.0,
+     "FGA": 166.0,
+     "FTM": 29.0,
+     "FTA": 39.0,
+     "FG3M": 20.0,
+     "PTS": 191.0,
+     "REB": 78.0,
+     "AST": 39.0,
+     "STL": 17.0,
+     "BLK": 3.0,
+     "TOV": 19.0
     }
    },
    "games": {
     "Shanghai Sharks": {
-     "played": 8,
-     "left": 30
+     "played": 10,
+     "left": 28
     },
     "John Ball": {
-     "played": 8,
-     "left": 29
+     "played": 12,
+     "left": 25
     }
    },
    "status": "midevent",
    "won": {
-    "Shanghai Sharks": 5,
-    "John Ball": 3
+    "Shanghai Sharks": 2,
+    "John Ball": 7
    }
   },
   {
@@ -7023,27 +7025,27 @@
    ],
    "totals": {
     "Langangsters": {
-     "FGM": 48.0,
-     "FGA": 107.0,
-     "FTM": 32.0,
-     "FTA": 33.0,
+     "FGM": 57.0,
+     "FGA": 122.0,
+     "FTM": 35.0,
+     "FTA": 36.0,
      "FG3M": 15.0,
-     "PTS": 143.0,
-     "REB": 45.0,
-     "AST": 42.0,
-     "STL": 8.0,
-     "BLK": 3.0,
-     "TOV": 13.0
+     "PTS": 164.0,
+     "REB": 51.0,
+     "AST": 52.0,
+     "STL": 9.0,
+     "BLK": 5.0,
+     "TOV": 19.0
     },
     "Mathmagicians": {
-     "FGM": 42.0,
-     "FGA": 87.0,
+     "FGM": 45.0,
+     "FGA": 93.0,
      "FTM": 4.0,
      "FTA": 6.0,
-     "FG3M": 15.0,
-     "PTS": 103.0,
-     "REB": 34.0,
-     "AST": 16.0,
+     "FG3M": 16.0,
+     "PTS": 110.0,
+     "REB": 37.0,
+     "AST": 17.0,
      "STL": 2.0,
      "BLK": 5.0,
      "TOV": 10.0
@@ -7051,8 +7053,8 @@
    },
    "games": {
     "Langangsters": {
-     "played": 11,
-     "left": 22
+     "played": 13,
+     "left": 26
     },
     "Mathmagicians": {
      "played": 9,
@@ -7072,36 +7074,36 @@
    ],
    "totals": {
     "Wesburn incident": {
-     "FGM": 80.0,
-     "FGA": 150.0,
-     "FTM": 34.0,
-     "FTA": 42.0,
-     "FG3M": 21.0,
-     "PTS": 215.0,
-     "REB": 38.0,
-     "AST": 45.0,
-     "STL": 4.0,
+     "FGM": 90.0,
+     "FGA": 165.0,
+     "FTM": 36.0,
+     "FTA": 44.0,
+     "FG3M": 24.0,
+     "PTS": 240.0,
+     "REB": 44.0,
+     "AST": 51.0,
+     "STL": 6.0,
      "BLK": 9.0,
-     "TOV": 25.0
+     "TOV": 28.0
     },
     "Kerala blasters": {
-     "FGM": 47.0,
-     "FGA": 108.0,
-     "FTM": 19.0,
-     "FTA": 23.0,
-     "FG3M": 20.0,
-     "PTS": 133.0,
-     "REB": 50.0,
-     "AST": 30.0,
+     "FGM": 60.0,
+     "FGA": 129.0,
+     "FTM": 21.0,
+     "FTA": 25.0,
+     "FG3M": 24.0,
+     "PTS": 165.0,
+     "REB": 55.0,
+     "AST": 32.0,
      "STL": 4.0,
-     "BLK": 2.0,
-     "TOV": 14.0
+     "BLK": 3.0,
+     "TOV": 17.0
     }
    },
    "games": {
     "Wesburn incident": {
-     "played": 11,
-     "left": 30
+     "played": 12,
+     "left": 29
     },
     "Kerala blasters": {
      "played": 10,
@@ -7121,40 +7123,40 @@
    ],
    "totals": {
     "Mumbai Meteors": {
-     "FGM": 56.0,
-     "FGA": 114.0,
-     "FTM": 25.0,
-     "FTA": 35.0,
-     "FG3M": 12.0,
-     "PTS": 149.0,
-     "REB": 66.0,
-     "AST": 49.0,
+     "FGM": 62.0,
+     "FGA": 131.0,
+     "FTM": 31.0,
+     "FTA": 41.0,
+     "FG3M": 14.0,
+     "PTS": 169.0,
+     "REB": 68.0,
+     "AST": 52.0,
      "STL": 13.0,
-     "BLK": 7.0,
-     "TOV": 26.0
+     "BLK": 9.0,
+     "TOV": 28.0
     },
     "kobe colorado": {
-     "FGM": 54.0,
-     "FGA": 128.0,
-     "FTM": 25.0,
-     "FTA": 29.0,
-     "FG3M": 20.0,
-     "PTS": 153.0,
-     "REB": 43.0,
-     "AST": 31.0,
+     "FGM": 62.0,
+     "FGA": 145.0,
+     "FTM": 32.0,
+     "FTA": 38.0,
+     "FG3M": 21.0,
+     "PTS": 177.0,
+     "REB": 49.0,
+     "AST": 43.0,
      "STL": 8.0,
      "BLK": 10.0,
-     "TOV": 16.0
+     "TOV": 17.0
     }
    },
    "games": {
     "Mumbai Meteors": {
-     "played": 10,
-     "left": 30
+     "played": 11,
+     "left": 29
     },
     "kobe colorado": {
-     "played": 10,
-     "left": 26
+     "played": 11,
+     "left": 25
     }
    },
    "status": "midevent",
@@ -7170,46 +7172,46 @@
    ],
    "totals": {
     "Umbrella Corp": {
-     "FGM": 42.0,
-     "FGA": 77.0,
-     "FTM": 23.0,
-     "FTA": 29.0,
-     "FG3M": 15.0,
-     "PTS": 122.0,
-     "REB": 39.0,
-     "AST": 19.0,
-     "STL": 9.0,
-     "BLK": 3.0,
-     "TOV": 13.0
+     "FGM": 61.0,
+     "FGA": 132.0,
+     "FTM": 29.0,
+     "FTA": 36.0,
+     "FG3M": 23.0,
+     "PTS": 174.0,
+     "REB": 64.0,
+     "AST": 41.0,
+     "STL": 12.0,
+     "BLK": 5.0,
+     "TOV": 18.0
     },
     "Birds that I hate": {
-     "FGM": 37.0,
-     "FGA": 79.0,
-     "FTM": 16.0,
-     "FTA": 17.0,
-     "FG3M": 13.0,
-     "PTS": 103.0,
-     "REB": 31.0,
-     "AST": 21.0,
-     "STL": 7.0,
+     "FGM": 48.0,
+     "FGA": 108.0,
+     "FTM": 30.0,
+     "FTA": 35.0,
+     "FG3M": 18.0,
+     "PTS": 144.0,
+     "REB": 40.0,
+     "AST": 36.0,
+     "STL": 10.0,
      "BLK": 3.0,
-     "TOV": 17.0
+     "TOV": 20.0
     }
    },
    "games": {
     "Umbrella Corp": {
-     "played": 7,
-     "left": 32
+     "played": 11,
+     "left": 28
     },
     "Birds that I hate": {
-     "played": 8,
-     "left": 28
+     "played": 10,
+     "left": 26
     }
    },
    "status": "midevent",
    "won": {
-    "Umbrella Corp": 6,
-    "Birds that I hate": 2
+    "Umbrella Corp": 8,
+    "Birds that I hate": 1
    }
   }
  ],
@@ -12340,40 +12342,40 @@
   "week_end": "2026-11-29",
   "totals": {
    "fatty zhou": {
-    "FGM": 41.0,
-    "FGA": 108.0,
-    "FTM": 25.0,
-    "FTA": 33.0,
-    "FG3M": 8.0,
-    "PTS": 115.0,
-    "REB": 54.0,
-    "AST": 34.0,
-    "STL": 9.0,
-    "BLK": 12.0,
-    "TOV": 17.0
+    "FGM": 64.0,
+    "FGA": 154.0,
+    "FTM": 34.0,
+    "FTA": 43.0,
+    "FG3M": 18.0,
+    "PTS": 180.0,
+    "REB": 75.0,
+    "AST": 52.0,
+    "STL": 12.0,
+    "BLK": 13.0,
+    "TOV": 28.0
    },
    "Toronto blue jays": {
-    "FGM": 56.0,
-    "FGA": 96.0,
-    "FTM": 22.0,
-    "FTA": 25.0,
-    "FG3M": 19.0,
-    "PTS": 153.0,
-    "REB": 60.0,
-    "AST": 46.0,
-    "STL": 8.0,
-    "BLK": 6.0,
-    "TOV": 12.0
+    "FGM": 64.0,
+    "FGA": 110.0,
+    "FTM": 24.0,
+    "FTA": 29.0,
+    "FG3M": 20.0,
+    "PTS": 172.0,
+    "REB": 75.0,
+    "AST": 52.0,
+    "STL": 9.0,
+    "BLK": 9.0,
+    "TOV": 13.0
    }
   },
   "games": {
    "fatty zhou": {
-    "played": 10,
-    "left": 33
+    "played": 13,
+    "left": 30
    },
    "Toronto blue jays": {
-    "played": 10,
-    "left": 33
+    "played": 12,
+    "left": 31
    }
   },
   "from": "2026-11-24",
@@ -12381,11 +12383,13 @@
    "day": "2026-11-24",
    "teams": [
     "BOS",
+    "DAL",
+    "DEN",
     "DET",
     "ORL",
     "WAS"
    ]
   }
  },
- "fetched": "2026-11-24 18:12"
+ "fetched": "2026-11-24 22:38"
 }

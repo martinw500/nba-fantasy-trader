@@ -1568,7 +1568,11 @@ def test_all():
     assert b_tw["held"] == [{"name": "Twin C", "parked": True, "day": "2026-11-01", "for": pk.names(c)[0], "back": "2026-10-30",
                            "win": b_h["win"], "games": [1, 1], "plays": b_h["plays"]}] and b_tw["add_by"] == {"day": "2026-10-31", "player": "Twin C"}
     assert b_tw["back"]["you"] == {"in": [], "cut": [], "stream": []} and pk._week_side("Me") == (b_act, {}, {})
-    assert all(m["day"] <= "2026-10-31" for x in [*b_tw["paths"], b_tw["plan"] or {"moves": []}] for m in x["moves"])
+    # Q35: only a claim clearing in the block goes on a day in it (Yahoo checks it when it's put in), carrying the last
+    # day it can go in; every other add stays before the block
+    b_late = [m for x in [*b_tw["paths"], b_tw["plan"] or {"moves": []}] for m in x["moves"] if m["day"] > "2026-10-31"]
+    assert all(pk._clears(pk.find(m["add"])).get(pk.find(m["add"])) == m["day"] for m in b_late)
+    assert all(m["claim"] == "2026-11-01" and m["submit_by"] == "2026-10-31" for m in (b_tw["plan"] or {"moves": []})["moves"] if m in b_late)
     assert not any("Twin C" in d["start"] + d["sit"] for d in pk.start_sit()["days"]) and "Twin C" in [x["name"] for x in pk.planner()["il"]]
     b_note, b_po, b_s0 = pk.roster_check()["notes"][0], pk._their_week("Them")[2], float(pk._wscore(pk._their_week("Them")[2](pk.week_vec(b_act))))
     assert b_note["kind"] == "back" and "Leave him in his IL slot" in b_note["text"] and "adds by Saturday" in b_note["fix"]
@@ -1600,6 +1604,52 @@ def test_all():
     assert any(x.get("activate") for x in g_dw["paths"]) and g_dw["deep"] >= 0
     g_a = next(x["activate"] for x in g_dw["paths"] if x.get("activate"))  # Start / sit builds on the plan's base
     assert gw._plan_side({"activate": g_a}) == tuple(g_b[g_a.get("day", "parked")][:3])
+    # Q35 (Martin, Nov 24): Yahoo checks a claim when it's put in, not when it clears, so a claim clearing Friday (in the
+    # block) goes through when it's in by Thursday: _timed, the deep search and Try a move take that day, and the plan
+    # says when to put it in. Any other add on a blocked day still gives way to the last open day before it
+    q_sn = {**bsn, "free_agents": [{**x, "waiver": "Oct 30"} if x["name"] == "Player 120" else x for x in bsn["free_agents"]]}
+    qw = model.League(q_sn, pd.concat([base, tw]), pd.concat([cur, tw]), today=model.date(2026, 10, 26), sched=sl.sched,
+                      inj=iinj, what={"Twin C": {"health": "out", "until": "2026-10-30"}})
+    qw.gameday["twin c"], qw.DEEP = ("2026-10-30", 0.05), 60
+    q_bl, q_a = qw._week_mine()["block"], "player 120"
+    assert q_bl == {"2026-10-30", "2026-10-31"} and qw._clears(q_a) == {q_a: "2026-10-30"}
+    assert qw._submit_by("2026-10-30", q_bl) == qw._submit_by("2026-10-31", q_bl) == "2026-10-29"
+    assert qw._submit_by("2026-10-30", q_bl, "2026-10-30") is None and qw._claim_block(q_a, q_bl, "2026-10-30") == q_bl
+    assert qw._claim_block(q_a, q_bl) == {"2026-10-31"} and qw._claim_block("twin e", q_bl) == q_bl
+    q_all = frozenset(model.span("2026-10-26", "2026-10-29"))  # no day to put the claim in: the day it clears is shut too
+    assert qw._claim_block(q_a, q_all) == q_all | {"2026-10-30"} and qw._submit_by("2026-10-30", q_all) is None
+    assert qw._claim_note(q_a, q_bl) == {"claim": "2026-10-30", "submit_by": "2026-10-29"} and qw._claim_note(q_a, frozenset()) == {}
+    q_po = qw._their_week("Them")[2]
+    q_k, q_s, q_u = qw._week_side("Me")
+    q_g = qw._timed(q_k, q_a, ["player 150"], q_po, float(qw._wscore(q_po(qw.week_vec(q_k, q_s, q_u)))), q_s, q_u, q_u, q_bl)
+    assert q_g[0] > float("-inf") and "2026-10-30" in qw.game_days(q_a, qw.week_end)
+    q_d = qw.game_days(q_a, qw.week_end, "2026-10-30")  # his games from his claim: Friday is open to the claim alone
+    assert model.League._can_add(q_d, "2026-10-30", qw._claim_block(q_a, q_bl)) == ["2026-10-30", "2026-11-01"]
+    assert model.League._can_add(q_d, "2026-10-30", q_bl) == ["2026-11-01"]
+    assert qw._timed(q_k, "twin e", ["player 150"], q_po, 0.0, q_s, q_u, q_u, q_bl)[1] not in q_bl
+    assert qw.add_drop("Player 120", qw.names(c)[0], opp="Them", day="2026-10-30")["week"]["day"] == "2026-10-30"
+    # Q35: a pending claim (yahoo.py's `claims`) is on the roster as it will process: Player 120 from the day it clears,
+    # Player 150 until the day before, the same week as that move timed by hand; one that can't go through is left out
+    c_sn = {**snap, "matchup": {"opponent": "Them", "week_end": "2026-11-01"}, "settings": {**snap["settings"], "max_adds": 4},
+            "free_agents": [{**x, "waiver": "Oct 30"} if x["name"] == "Player 120" else x for x in snap["free_agents"]]}
+    c_ap = model.claimed({**c_sn, "claims": [{"add": "Player 120", "drop": "Player 150", "clears": "2026-10-30"},
+                                             {"add": "Twin E", "drop": "Nobody Here", "clears": "2026-10-30"}]})
+    assert c_ap["claims"] == [{"add": "Player 120", "drop": "Player 150", "clears": "2026-10-30"}] and "claims" not in snap
+    assert {"name": "Player 120", "slot": "BN", "claim": "2026-10-30"}.items() <= next(x for x in c_ap["teams"]["Me"] if x["name"] == "Player 120").items()
+    c0, c1 = mk(c_sn, {}), mk(c_ap, {})
+    assert c1._claims == {"player 120": ("player 150", "2026-10-30")} and "player 150" in c1.fa and "player 150" in c1._dropped()
+    assert c1.adds()["used"] == c0.adds()["used"] + 1
+    c_w, (k0, s0, u0) = c1._week_mine(), c0._week_side("Me")
+    assert c_w["start"]["player 120"] == "2026-10-30" and c_w["until"]["player 150"] == "2026-10-29" and "player 150" in c_w["keys"]
+    assert np.allclose(c1.week_vec(*c1._week_side("Me")), c0.week_vec(k0 + ["player 120"], {**s0, "player 120": "2026-10-30"},
+                                                                       {**u0, "player 150": "2026-10-29"}))
+    c_tw = c1.this_week()
+    assert all(x["name"] != "Player 150" for x in c_tw["streams"]) and c_tw["adds"]["left"] == c0.this_week()["adds"]["left"] - 1
+    q_dw = qw.this_week(deep=True)
+    for x in [*q_dw["paths"], q_dw["plan"] or {"moves": []}]:
+        a = x.get("activate")
+        bl = g_b[(a or {}).get("day", "parked" if a else None)][3]
+        assert all(m["day"] not in bl or (m["add"], m["day"]) == ("Player 120", "2026-10-30") for m in x["moves"])
     # each plan move's Gives chains: its odds before are the last one's after, and the last one's after are the plan's
     for g_pl in (g_w["plan"], g_dw["plan"]):  # the quick plan's and the deep one's
         g_ms = g_pl["moves"]
@@ -2841,6 +2891,12 @@ def test_yahoo_api():
             "<players>" + td("Deep Bench", "pending_trade", source_team_name="Rival", destination_team_name="Me")
             + td("Ivica Zubac", "pending_trade", source_team_name="Me", destination_team_name="Rival")
             + "</players></transaction></transactions></league>",
+        # Q35: your claims still pending: the day it clears on the claim, or else his own on the free-agent list
+        f"{L}/transactions;types=waiver;team_key=466.l.1.t.1": "<league><transactions><transaction><type>add/drop</type>"
+            "<status>pending</status><waiver_date>2026-11-25</waiver_date><waiver_priority>2</waiver_priority><players>"
+            + td("Sam Hauser", "add", source_type="waivers", destination_team_key="466.l.1.t.1")
+            + td("Ivica Zubac", "drop", source_team_key="466.l.1.t.1") + "</players></transaction>"
+            + tx(1763851950, "add", "pending", td("Sam Hauser", "add", source_type="waivers")) + "</transactions></league>",
         f"{L}/draftresults/players": "<league><draft_results><draft_result><pick>1</pick><round>1</round><players>"
             "<player><name><full>Ivica Zubac</full></name></player></players></draft_result><draft_result><pick>2</pick>"
             "</draft_result></draft_results></league>"}
@@ -2865,12 +2921,12 @@ def test_yahoo_api():
         assert ranks() == 20 and yahoo.TOOK[1] == len(calls) == len(set(calls)), calls  # each path once
         assert f"{L}/scoreboard;week=1" in calls and f"{L}/scoreboard;week=3" not in calls  # playoffs: no pairs yet
         # Y2: within the hour the rank pages come from RANKS (the same players), with last week's results and the
-        # season's pairings kept from league.json: 10 calls in place of 33; fresh (the Refresh button) asks Yahoo again
+        # season's pairings kept from league.json: 11 calls in place of 34 (Q35's pending claims one of them); fresh (the Refresh button) asks Yahoo again
         yahoo.OUT = model.Path(tmp.name) / "league.json"
         yahoo.OUT.write_text(model.json.dumps({k: got[k] for k in ("schedule", "results")}))
         calls.clear()
         again = yahoo.pull("1", get=get)
-        assert ranks() == 0 and len(calls) == 10 and again["free_agents"] == got["free_agents"] and again["results"] == got["results"], calls
+        assert ranks() == 0 and len(calls) == 11 and again["free_agents"] == got["free_agents"] and again["results"] == got["results"], calls
         assert again["teams"] == got["teams"] and again["schedule"] == got["schedule"]
         calls.clear()
         yahoo.pull("1", get=get, fresh=True)
@@ -2901,6 +2957,8 @@ def test_yahoo_api():
         {"key": "466.l.1.pt.9", "status": "proposed", "from": "Rival", "to": "Me", "give": ["Deep Bench"],
          "get": ["Ivica Zubac"], "ts": 1763851900}], got["trades"]
     assert got["draft"] == {"Ivica Zubac": 1}, got["draft"]
+    assert got["claims"] == [{"add": "Sam Hauser", "drop": "Ivica Zubac", "clears": "2026-11-25", "priority": 2},
+                             {"add": "Sam Hauser", "drop": None, "clears": "2026-11-25"}], got["claims"]
     # a close spelling keeps its first letter: Dane Goodwin isn't Jordan Goodwin (Nov 23), Jaylen still finds Jalen
     assert model.match("Dane Goodwin", ["jordan goodwin"]) is None and model.match("Jaylen Brunson", ["jalen brunson"]) == "jalen brunson"  # a pick with no player (not made yet) is left out
     # this week's matchup (week_of): the real opponent; one picked in the app stays all week with his own score, and a

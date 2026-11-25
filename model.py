@@ -1433,6 +1433,33 @@ def moved(snap, ms):
     return snap, out, gone_ids
 
 
+def claimed(snap):
+    """Q35: the snapshot with your pending waiver claims on it (yahoo.py's pull, `claims`: Yahoo shows them only to
+    their team), each as it will process: the add off the free agents onto your bench carrying the day it clears
+    (`claim`), the drop off your roster to the free agents. League reads them back (_claims): This week plays the add
+    from that day and the drop until the day before (_week_mine), adds() counts the claim in its week, and the drop is
+    never offered back (_dropped). One the pull already shows, or that can't go through any more (the add taken, the
+    drop gone), is left out, so `claims` keeps only the ones applied.
+    ponytail: every claim goes through (a team ahead in the waiver order can take him first)."""
+    if not snap.get("claims"):
+        return snap
+    snap = {**snap, "teams": {t: [dict(p) for p in ps] for t, ps in snap["teams"].items()},
+            "free_agents": [dict(p) for p in snap.get("free_agents", [])]}
+    mine, fa, kept = snap["teams"][snap["me"]], snap["free_agents"], []
+    at = lambda ps, n: next((p for p in ps if n and norm(p["name"]) == norm(n)), None)
+    for c in snap["claims"]:
+        a, d = at(fa, c["add"]), at(mine, c.get("drop"))
+        if not a or (c.get("drop") and not d) or d is a:
+            continue
+        fa.remove(a)
+        mine.append({**{k: v for k, v in a.items() if k != "slot"}, "slot": "BN", "claim": c["clears"]})
+        if d:
+            mine.remove(d)
+            fa.append({k: v for k, v in d.items() if k not in ("slot", "waiver")})
+        kept.append(c)
+    return {**snap, "claims": kept}
+
+
 class League:
     """A league snapshot (see yahoo.py) joined with NBA stats."""
 
@@ -2427,6 +2454,11 @@ class League:
         act, room = self._playing(self.rosters[me]), self._room(me)
         back = {k: g for k in self.il[me] if self.back.get(k, 0) > 0 and (g := self.game_days(k, self.week_end))}
         keys, start, until, pairs, held, by, blocks = list(act), {}, {}, {}, [], None, []
+        for a, (d, c) in self._claims.items():  # Q35: a pending claim plays from the day it clears, its drop until then
+            start[a] = c
+            if d and self.sched and d in self._ix:
+                keys.append(d)
+                until[d] = prev(c)
         # the cut plays until the day before; one locked today can't go before tomorrow (M18: _move_day)
         day = lambda c, d: max(prev(d), prev(self._move_day([c])))
         cut, ev = (self._il_cut(punt) or ((), ()))[1], self.effective(punt)
@@ -3922,7 +3954,8 @@ class League:
                       and re.search(r"add|claim", t.get("type", "")) and start <= self._txday(t["when"]) <= self.week_end)
         pulled = (self.snap.get("pulled") or "")[:10]
         listed = self.snap.get("adds", {}).get(team) if (start <= pulled <= self.week_end if pulled else not self.rolled) else None
-        used = max(counted, listed or 0)
+        # Q35: a pending claim spends an add in the week it clears (Yahoo counts it then); yours only
+        used = max(counted, listed or 0) + (sum(start <= c <= self.week_end for _, c in self._claims.values()) if team == self.me else 0)
         return {"used": used, "max": cap, "left": max(cap - used, 0), "counted": counted, "listed": listed,
                 "week_start": start, "resets": (date.fromisoformat(self.week_end) + timedelta(1)).isoformat()}
 
@@ -3941,6 +3974,32 @@ class League:
                 out.add(d)
         return sorted(out)
 
+    def _submit_by(self, c, block, frm=None):
+        """Q35: the last day from `frm` (today) before c, the day a's waiver claim clears, on which Yahoo takes the
+        claim (not in `block`), or None. Yahoo checks IL eligibility when a claim is submitted, not when it clears
+        (Martin, Nov 24; kobe colorado's Shead claim, Nov 14, went through with a healthy Miller in an IL slot)."""
+        d, frm = shift(c, -1), frm or self.today
+        while d >= frm and d in block:
+            d = shift(d, -1)
+        return d if d >= frm else None
+
+    def _claim_note(self, a, block):
+        """Q35, for a plan move or stream adding a: {claim: the day it clears, submit_by: the last day Yahoo takes it}
+        when a is on waivers and a block (one of yours healthy in an IL slot) starts by the day it clears; {} otherwise.
+        Put it in by then: once he's healthy in the slot no new claim goes in until he's moved."""
+        c = self._clears(a).get(a)
+        if not c or c <= self.today or not block or min(block) > c:
+            return {}
+        return {"claim": c, "submit_by": self._submit_by(c, block)}
+
+    def _claim_block(self, a, block, frm=None):
+        """Q35: `block` as it stands for adding a: the day his claim clears is open when the claim can go in before it
+        (_submit_by), so it clears inside the block all the same, and shut when it can't (every day before it blocked)."""
+        c = self._clears(a).get(a)
+        if not block or not c or c <= (frm or self.today):
+            return block
+        return block - {c} if self._submit_by(c, block, frm) else block | {c}
+
     def _timed(self, keys, a, drops, odds, s0, start=None, until=None, ends=None, block=()):
         """The best day this week to add a for drops (Q11): each of a's games left (from the day his claim clears, after
         any of drops was added himself, and from tomorrow when a drop's game today has tipped off: M18), or the day after a drop's last game this week (a move that only costs
@@ -3955,7 +4014,8 @@ class League:
         after = {(date.fromisoformat(g[-1]) + timedelta(1)).isoformat() for d in drops
                  if (g := self.game_days(d, min(self.week_end, (until or {}).get(d, "9999")), (start or {}).get(d)))}
         end = self.week_end
-        days = self._can_add(sorted(set(self.game_days(a, end, first)) | {x for x in after if first <= x <= end}) or [first], first, block)
+        days = self._can_add(sorted(set(self.game_days(a, end, first)) | {x for x in after if first <= x <= end}) or [first], first,
+                             self._claim_block(a, block))
         if first > end or not days:
             return float("-inf"), first, start or {}, until or {}
         best = None
@@ -3994,7 +4054,7 @@ class League:
                 for a in (a for a in cands if a not in keys):
                     for x in [*drops, *([k] if park and k not in drops else [])]:
                         f = max(d, self._clears(a).get(a, d), self._move_day([x]))
-                        while f in block:
+                        while f in self._claim_block(a, block, d):  # Q35: a claim put in on the news day clears in it
                             f = shift(f)
                         if f > self.week_end:
                             continue
@@ -4078,7 +4138,8 @@ class League:
             (ks, st, un), mw = lc._week_side(me, punt), lc._week_mine(punt)
             first = max(self.today, self.matchup.get("from", ""), self._clears(a).get(a, ""))
             best = None  # B20: not on a day lc's player back from an IL slot blocks adds (_week_mine)
-            for d in [x for x in self._can_add(self.game_days(a, self.week_end, first) or [first], first, mw["block"]) if x <= self.week_end]:
+            for d in [x for x in self._can_add(self.game_days(a, self.week_end, first) or [first], first,
+                                                self._claim_block(a, mw["block"])) if x <= self.week_end]:
                 side = (ks, {**st, **(on or {}), a: d}, un)
                 p = odds(lc.week_vec(*side))
                 if best is None or float(lc._wscore(p)) > best[0] + 1e-9:
@@ -4214,6 +4275,7 @@ class League:
             for g in G[a]:
                 gm[i, di[g]], C[i, di[g]] = True, plays(a, g) * ramp.get((a, g), 1.0) * row[a]
         fst = np.array([di.get(f := max(D0, clr[a]), nd if f > END else 0) for a in fas])
+        isc = np.array([clr[a] > today for a in fas], bool)  # on waivers: a claim
         kinds = sorted({pos[a] for a in fas})
         pa, bits = np.array([kinds.index(pos[a]) for a in fas], int), 1 << np.arange(nd)
 
@@ -4247,11 +4309,13 @@ class League:
                 Dx = np.cumsum(Dx[::-1], 0)[::-1]  # from day j through to
                 was, wnb, crowd = np.full(len(fas), -1), np.full(len(fas), -1), {}
                 for j in range(j0, tx + 1):
-                    if days[j] in bases[b][3]:
+                    # a blocked day takes only claims clearing on it that could go in before (Q35, _claim_block)
+                    sub = isc.any() and self._submit_by(days[j], bases[b][3]) is not None
+                    if (shut := days[j] in bases[b][3]) and not sub:
                         continue
                     ga = gm[:, j:tx + 1]
                     packed, nb = ga @ bits[j:tx + 1], sum(x < days[j] for x in dg)  # his games from j by date, not by offset
-                    ok = free & (fst <= j) & (packed > 0)
+                    ok = free & ((fst == j) & isc if shut else (fst <= j) & ~((fst == j) & isc & (not sub and bool(bases[b][3])))) & (packed > 0)
                     idx = np.flatnonzero(ok & ((packed != was) | (nb != wnb)))
                     was, wnb = np.where(ok, packed, was), np.where(ok, nb, wnb)
                     if not len(idx):
@@ -4406,6 +4470,7 @@ class League:
                     q = odds(self.week_vec(mine + [a], st, un)) if d else odds(fk[a]["lc"].week_vec(*fk[a]["side"]))
                     streams.append({**self.player(a, punt), **({"games": c[a], "kept": c[d] if d else 0} if self.sched else {}),
                                     "gain": round(g, 1), "drop": d and name(d), "day": s, "season": season([d] * bool(d), [a]),
+                                    **self._claim_note(a, block),  # Q35: put the claim in before he blocks it
                                     # Q32: what he gives, category by category (the odds now -> with him), and the real
                                     # chance to win after it, beside a gain that a lean or a goal weighs
                                     "win": round(100 * float(match_prob(q, self.cats, WEEK_LOAD)), 1),
@@ -4545,6 +4610,7 @@ class League:
                 g = self.starts(bases[pb][0] + [x["add"] for x in moves], st, un)
                 kept = [x["add"] for x in moves if x["add"] not in un]
                 plan = {"moves": [{**x, "add": name(x["add"]), "drop": name(x["drop"]), "gain": round(x["gain"], 1),
+                                   **self._claim_note(x["add"], bases[pb][3]),
                                    **({"games": g[x["add"]], "kept": g[x["drop"]]} if self.sched else {})} for x in moves],
                         "gain": round(sum(x["gain"] for x in moves), 1), "keep": [name(k) for k in kept],
                         "season": season([x["drop"] for x in moves if x["drop"] in drops], kept),
@@ -4594,6 +4660,7 @@ class League:
                 later = [{**x, "order": x["order"] + 1} for x in sp["moves"]]
                 out = next((x for x in later if x["drop"] == name(a)), None)  # a later stream takes his place
                 first = {**fm, "gain": round(fill["gain"], 1), "end": side[2].get(a), "order": 0, "then": fill["then"],
+                         **self._claim_note(a, block),
                          **({"games": out["kept"] if out else lc.starts(*side)[a], "kept": 0} if self.sched else {})}
                 plan = {"moves": [] if kept else sorted([first, *later], key=lambda x: x["day"]),
                         "gain": 0.0 if kept else round(fill["gain"] + sp["gain"], 1),
@@ -4665,6 +4732,11 @@ class League:
                 # B20: the days no add goes through, each while one of yours is healthy in an IL slot (parked, or until
                 # the day he's counted in)
                 "blocked": [{**b, "player": name(b["player"])} for b in mw["blocks"]],
+                # Q35: your claims still pending on Yahoo, counted as they'll process; one with no drop takes the open
+                # spot, so a player back from an IL slot (`returning`) comes in only with a drop until it clears
+                "claims": [{"add": name(a), "drop": d and name(d), "clears": c,
+                            **({"returning": [name(h["player"]) for h in mw["held"]]} if not d and mw["held"] else {})}
+                           for a, (d, c) in self._claims.items()],
                 # Nov 20: out in an active spot with an IL slot free, counted as moved there (_leaning): not done on Yahoo yet
                 **({"parks": self.names(self.parks)} if self.parks else {}),
                 # players back from IL slots this week (M21): from their first game, in place of who's cut after his last
@@ -5006,7 +5078,17 @@ class League:
         (_clears): Washington, dropped Nov 16, was a free agent again by Nov 20."""
         me = self.me
         return {k for m in self.moves if (m.get("me") or me) == me
-                for n in m.get("drop") or () if (k := self.find(n, strict=False))}
+                for n in m.get("drop") or () if (k := self.find(n, strict=False))} | {d for d, _ in self._claims.values() if d}
+
+    @functools.cached_property
+    def _claims(self):
+        """Q35: your pending waiver claims as claimed() put them on the snapshot: {add: (drop or None, the day it
+        clears)}, only ones clearing after today."""
+        out = {}
+        for c in self.snap.get("claims") or ():
+            if c["clears"] > self.today and (a := self.find(c["add"], strict=False)) in self.rosters.get(self.me, ()):
+                out[a] = (c.get("drop") and self.find(c["drop"], strict=False), c["clears"])
+        return out
 
     def _clears(self, k):
         """{k: the day his waiver claim clears} ("Jan 2" read on Dec 30 is next year), {} when he isn't on waivers:
@@ -5118,13 +5200,13 @@ class League:
                 until = {**{x: e for x, e in ends2.items() if x not in gone}, **stay}
             elif day:
                 when = max(day, self.today, self.matchup.get("from", ""), claim.get(k, ""), self._move_day(gone))
-                while when in (blk := lw._week_mine(punt)["block"]) and when < self.week_end:  # B20: the next day Yahoo takes it
+                while when in (blk := self._claim_block(k, lw._week_mine(punt)["block"])) and when < self.week_end:  # B20: the next day Yahoo takes it (Q35: a claim's own day once it can go in before)
                     when = shift(when)
                 blocked = when in blk
                 start, until = {**st0, k: when}, self._handoff(ends, ends, gone, k, when)
                 after = act + [k]
             else:  # its best day Yahoo takes an add on (B20); none left this week: its best day all the same, flagged
-                blk = lw._week_mine(punt)["block"]
+                blk = lw._week_mine(punt)["block"]  # _timed takes a claim's own day out of it (Q35)
                 g, when, start, until = lw._timed(act, k, gone, odds, float(self._wscore(p0)), st0, ends, ends, blk)
                 if blocked := g == float("-inf"):
                     _, when, start, until = lw._timed(act, k, gone, odds, float(self._wscore(p0)), st0, ends, ends)
@@ -5848,7 +5930,7 @@ def load(path=DATA / "league.json", refetch=(), what=None, made=None):
         hours = min(hours, 0.5)
         logs = gamelogs(CUR, hours)
     inj = injuries("injuries" in refetch)
-    snap, notes, shown = moved(positions(json.loads(Path(path).read_text(encoding="utf-8"))), made)
+    snap, notes, shown = moved(claimed(positions(json.loads(Path(path).read_text(encoding="utf-8")))), made)
     if shown:
         moves(undo=shown)
     lg = League(snap, cur=fetch(CUR, max_age_hours=hours), sched=schedule(), opps=opponents(),

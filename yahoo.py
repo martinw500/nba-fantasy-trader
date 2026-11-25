@@ -168,7 +168,7 @@ def _pull(league_id, ask, get, fresh):
                 **({"playoff_teams": _n(st, "num_playoff_teams"),
                     "playoff_weeks": list(range(first_po, end + 1))} if first_po <= end else {})}
     out = {"name": _x(lg, "name"), "settings": settings, "teams": {}, "records": {}, "adds": {}, "matchups": [],
-           "transactions": [], "free_agents": [], "schedule": [], "results": []}  # results: last week's final scores (Q33)
+           "transactions": [], "free_agents": [], "schedule": [], "results": [], "claims": []}  # results: last week's final scores (Q33)
     old = json.loads(OUT.read_text(encoding="utf-8")) if OUT.exists() else {}
     first = _n(lg, "start_week") or 1
     prev = _n(lg, "current_week") - 1  # last week: its final scores are fetched once, then kept from the last pull
@@ -219,12 +219,13 @@ def _pull(league_id, ask, get, fresh):
         if _x(t, "is_owned_by_current_login") == "1":
             out["me"], mine = name, _x(t, "team_key")
             ask(f"{L}/transactions;types=pending_trade;team_key={mine}")
+            ask(f"{L}/transactions;types=waiver;team_key={mine}")
     out["waiver_order"] = [n for _, n in sorted(order)]
     for t in get(f"{L}/standings").findall("league/standings/teams/team"):
         s = t.find("team_standings")
         out["records"][_x(t, "name")] = {"w": _n(s, "outcome_totals/wins"), "l": _n(s, "outcome_totals/losses"),
                                          "t": _n(s, "outcome_totals/ties"), "rank": _n(s, "rank")}
-    rostered = {_x(p, "player_key") for p in get(f"{L}/teams/roster").iter("player")}
+    rostered, fa_wait = {_x(p, "player_key") for p in get(f"{L}/teams/roster").iter("player")}, {}  # fa_wait: ISO claim dates
     # free agents and players on waivers, by Yahoo's rank: everyone on the pages nobody rosters now (an hour-old page:
     # not one added since, and one dropped since too, with his positions: Y3, so build() pads nobody)
     for k, (_, p) in ranked.items():
@@ -232,6 +233,7 @@ def _pull(league_id, ask, get, fresh):
             d = player(p)
             if w := _x(p, "ownership/waiver_date"):
                 d["waiver"] = f"{date.fromisoformat(w):%b} {date.fromisoformat(w).day}"  # "Nov 25", as parse_text's
+                fa_wait[d["name"]] = w
             out["free_agents"].append(d)
 
     def board(week=None):
@@ -313,6 +315,15 @@ def _pull(league_id, ask, get, fresh):
     # waiting (status "proposed"): app.sync_offers() logs and marks yours under Offers sent, the data M6 fits on
     out["trades"] = [trade(tx) for q in ("types=trade", f"types=pending_trade;team_key={mine}") if mine or q == "types=trade"
                      for tx in get(f"{L}/transactions;{q}").findall("league/transactions/transaction")]
+    # Q35: your waiver claims still pending (Yahoo shows them only to their team), each as it will process:
+    # {add, drop (or None), clears}. model.claimed() puts them on the roster before anything is computed
+    for tx in (get(f"{L}/transactions;types=waiver;team_key={mine}").findall("league/transactions/transaction") if mine else ()):
+        side = lambda kind: [_x(p, "name/full") for p in tx.findall("players/player") if _x(p, "transaction_data/type") == kind]
+        if (add := side("add")) and re.fullmatch(r"\d{4}-\d\d-\d\d", when := _x(tx, "waiver_date") or _x(tx, ".//waiver_date")):
+            out["claims"].append({"add": add[0], "drop": (side("drop") or [None])[0], "clears": when,
+                                  **({"priority": n} if (n := _n(tx, "waiver_priority")) else {})})
+        elif add and fa_wait.get(add[0]):  # no date on the claim: his own on the free-agent list
+            out["claims"].append({"add": add[0], "drop": (side("drop") or [None])[0], "clears": fa_wait[add[0]]})
     # where this league drafted each player: the market's starting price (League._market), not Yahoo's preseason rank
     out["draft"] = {n: _n(d, "pick") for d in get(f"{L}/draftresults/players").iter("draft_result")
                     if (n := _x(d, "players/player/name/full"))}
@@ -696,7 +707,7 @@ def build(got, me=None, text=None, write=True):
     if not me:
         raise SystemExit(f"No team called that. Teams: {', '.join(teams)}")
     line, val = _pool()
-    keep = ("pulled", "records", "matchups", "transactions", "projections", "adds", "waiver_order", "schedule", "rules",
+    keep = ("pulled", "records", "matchups", "transactions", "projections", "adds", "waiver_order", "schedule", "rules", "claims",
             "trades", "draft", "results")
     snap = {"name": got["name"] or (Path(text).stem if text else "Yahoo league"), "me": me, "teams": teams,
             **({"text": text} if text else {"source": "yahoo"}), "free_agents": [],
