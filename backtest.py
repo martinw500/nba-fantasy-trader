@@ -60,7 +60,7 @@ import pandas as pd
 import model
 
 ARGS = [a for a in sys.argv[1:]
-        if a not in ("replay", "teammates", "onoff", "minor", "backups", "usage", "bench", "rookies", "yahoo", "experts", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season", "league", "fill", "stream", "habits", "opponent",
+        if a not in ("replay", "teammates", "onoff", "minor", "backups", "usage", "bench", "rookies", "yahoo", "experts", "trend", "rates", "availability", "playoffs", "recency", "gameday", "news", "ahead", "lineups", "corr", "returns", "season", "league", "fill", "stream", "habits", "opponent", "offers", "replacement",
                      "base", "pos", "opp", "held", "beam", "adds")]
 SEASON = ARGS[0] if ARGS else "2025-26"
 PREV, PREV2 = (f"{int(SEASON[:4]) - n}-{int(SEASON[2:4]) - n + 1:02d}" for n in (1, 2))
@@ -1463,6 +1463,62 @@ def league():
               + ("; data/history.jsonl the same" if rec[k] == hist[k] else f"; data/history.jsonl DIFFERS: {hist[k]}"))
 
 
+OFFER_RUNS = {"shipped": {}, "no A9c": {"ROS_BACK": False}, "ROS_WEIGHT 0.25": {"ROS_WEIGHT": 0.25},
+              "ROS_WEIGHT 0": {"ROS_WEIGHT": 0}, "CHASE 5": {"CHASE": 5}, "CHASE 5, ROS_WEIGHT 0": {"CHASE": 5, "ROS_WEIGHT": 0}}
+
+
+def offers():
+    """A9c / M6: the trade market (League.market) against the league's real answers. Each one priced on the snapshot of
+    its day (model.replay(), today's draft put on text snapshots): an offer to Martin is a yes from the team that sent
+    it, one Martin sent that was turned down a no from the team he sent it to (pending ones are left out), and a trade
+    made or vetoed in the league a yes from both sides. A yes reads right when the market gap from the side saying it
+    is no worse than fair's -15%, a no when it is; a trade when |gap| <= 15. Plain packages (package()), no drops or
+    open spots, and no fit (accept()'s their_net), so it checks the market alone. ~10 s."""
+    import contextlib, io, json
+    from datetime import datetime
+    from pathlib import Path
+    snaps, league = Path("snapshots"), json.loads((model.DATA / "league.json").read_text(encoding="utf-8"))
+    ev = [(o["sent"][:10], o["team"], o["give"], o["get"], "yes" if o.get("by") == "them" else "no")
+          for o in json.loads((model.DATA / "offers.json").read_text(encoding="utf-8"))
+          if (o["outcome"] == "yes") == (o.get("by") == "them") and o["outcome"]]
+    ev += [(datetime.fromtimestamp(t["ts"]).date().isoformat(), t["to"], t["give"], t["get"], "both")
+           for t in league["trades"] if t["status"] in ("successful", "vetoed")]
+    files = sorted([*snaps.glob("mchc-fantasy-snapshot-*.txt"), *snaps.glob("yahoo-*.json")],
+                   key=lambda p: (p.stem[-10:], p.suffix == ".json"))
+    at = lambda day: ([p for p in files if p.stem[-10:] <= day] or files[:1])[-1]
+    lgs = {}
+    for p in {at(e[0]) for e in ev}:
+        with contextlib.redirect_stdout(io.StringIO()):
+            lgs[p] = model.replay(p)
+        lgs[p].snap["draft"] = league["draft"]  # the draft never changes; text snapshots don't carry it
+    def gaps(**kw):
+        old = {k: getattr(model, k) for k in kw}
+        vars(model).update(kw)
+        out = []
+        for day, _, gets, gives, _ in ev:
+            lg = lgs[at(day)]
+            lg.__dict__.pop("market", None)
+            a, b = (model.package([lg.market.value[lg.find(n)] for n in ns]) for ns in (gets, gives))
+            out.append(100 * (a - b) / max(a, b, 1))
+        vars(model).update(old)
+        for lg in lgs.values():
+            lg.__dict__.pop("market", None)
+        return out
+    G = {name: gaps(**kw) for name, kw in OFFER_RUNS.items()}
+    ok = lambda e, g: abs(g) <= -model.TIERS["fair"][2] if e[4] == "both" else (g >= -model.TIERS["fair"][3]) == (e[4] == "yes")
+    for name, gs in G.items():
+        r = [ok(e, g) for e, g in zip(ev, gs)]
+        part = lambda s: f"{sum(x for e, x in zip(ev, r) if e[4] == s)}/{sum(e[4] == s for e in ev)}"
+        both = sorted(abs(g) for e, g in zip(ev, gs) if e[4] == "both")
+        print(f"{name:22s} right {sum(r)}/{len(r)}: offers to Martin (yes) {part('yes')}, Martin's turned down (no) "
+              f"{part('no')}, league trades {part('both')}, their median |gap| {both[len(both) // 2]:.0f}%")
+    print("\nMarket gap (%) from the side answering:\n" + "day        said team           gets / gives".ljust(92)
+          + "".join(n[:11].rjust(12) for n in G))
+    for i, e in enumerate(ev):
+        print(f"{e[0]} {e[4]:4s} {e[1][:14]:14s} {', '.join(e[2])[:34]} / {', '.join(e[3])[:30]}".ljust(92)
+              + "".join(f"{G[n][i]:+12.0f}" for n in G))
+
+
 def habits():
     """Y5 (Nov 24; folds in M31): each team's habits on Yahoo's daily lineups (yahoo.lineups(): every team's slots on
     every past day, and the season's add / drop log) against the box scores, then This week's opponent side with and
@@ -1599,6 +1655,67 @@ def habits():
         print(out)
     by = pd.DataFrame({"week": [int(x.rsplit(" ", 1)[1]) for x in base["t"]], "d": np.array(got["habit"]["pts"]) - np.array(base["pts"])})
     print("  habit's |PTS| change by week left out: " + ", ".join(f"{w} {x:+.2f}" for w, x in by.groupby("week").d.mean().items()))
+
+
+def replacement(H=7, NS=(1, 3, 5, 10, 20)):
+    """A9d #3 (Nov 25): the waiver level (_waiver_level(): the 5 best healthy free agents by value, behind replacement(),
+    League.level and FILL's line) on the real league. Each day's last snapshot (model.replay()) with H days of box scores
+    after it: the best N healthy free agents' value (per-game z-sum on that day's pool) and week (League.week, avail and
+    GAMES_WEEK in) against what they really did over the next H days. Then every add in the league (yahoo_lineups.json's
+    moves) on the day before's last snapshot: his rank among those free agents, his value and his next H days (from the
+    day after the add) against the level then. Nov 25 (22 days, 53 adds): numbers in ROADMAP A9.
+    ponytail: overlapping H-day windows, a 7-day per-game z-sum is noisy; rerun as adds pile up"""
+    import contextlib, io, json
+    from datetime import date, datetime, timedelta
+    from zoneinfo import ZoneInfo
+    day = lambda d, n: (date.fromisoformat(d) + timedelta(n)).isoformat()
+    g = model.gamelogs(model.CUR)
+    g = g.assign(d=g.GAME_DATE.dt.strftime("%Y-%m-%d"))
+    last, snaps = g.d.max(), {}
+    for f in sorted([*model.snapshots(), *model.pulls()], key=lambda p: (p.stem[-10:], p.suffix == ".json")):
+        if (s := model.read_snap(f)).get("from"):
+            snaps[s["from"]] = f  # the day's last
+    ET = ZoneInfo("America/New_York")
+    adds = [(datetime.fromtimestamp(m["ts"], ET).date().isoformat(), m["team"], model.norm(m["add"]))
+            for m in json.loads(model.LINEUPS.read_text(encoding="utf-8"))["moves"] if m["add"]]
+    R, A = [], []
+    for d, f in sorted(snaps.items()):
+        if day(d, H - 1) > last:
+            continue
+        with contextlib.redirect_stdout(io.StringIO()):
+            lg = model.replay(f)
+        v = lg.value()
+        order = v.reindex([k for k in lg.fa if lg.meta.get(k, {}).get("status", "") not in model.OUT and k in v.index]).sort_values(ascending=False).index.tolist()
+        z = lambda pg: model.zscores(pg, lg.teams_n * lg.roster_n, ref=lg.p)[lg.cats].sum(axis=1)
+        real = lambda ks, d0: g[(g.d >= d0) & (g.d <= day(d0, H - 1)) & g.key.isin(ks)]
+        lvl = v[order[:5]].mean(), lg.week.reindex(order[:5])[model.RAW].mean().to_numpy(float)
+        for n in NS:
+            x = real(order[:n], d)
+            R.append({"d": d, "N": n, "pv": float(v[order[:n]].mean()), "rv": float(z(x.groupby("key")[["MIN"] + model.RAW].mean()).mean()),
+                      "pw": lg.week.reindex(order[:n])[model.RAW].mean().to_numpy(float), "games": len(x) / n,
+                      "rw": x.groupby("key")[model.RAW].sum().reindex(order[:n]).fillna(0).mean().to_numpy(float)})
+        for a, t, k in adds:
+            if d == max((x for x in snaps if x < a), default=None) and day(a, H) <= last and k in order:
+                x = real([k], day(a, 1))
+                A.append({"team": t, "rank": order.index(k) + 1, "pv": float(v[k]), "lv": float(lvl[0]), "lw": lvl[1], "games": len(x),
+                          "rv": float(z(x.groupby("key")[["MIN"] + model.RAW].mean()).iloc[0]) if len(x) else np.nan,
+                          "rw": x[model.RAW].sum().to_numpy(float)})
+    R, A = pd.DataFrame(R), pd.DataFrame(A)
+    C = [model.RAW.index(c) for c in ("PTS", "REB", "AST", "FG3M", "STL", "BLK", "TOV")]
+    ratio = lambda Q, P: " ".join(f"{model.RAW[i]} {Q[:, i].sum() / P[:, i].sum():.2f}" for i in C)
+    print(f"\n== the waiver level on the real league: {R.d.nunique()} days {R.d.min()} to {R.d.max()}, the next {H} days ==")
+    print("best N healthy free agents: value predicted / real (se by day), games, real / predicted week")
+    for n, x in R.groupby("N"):
+        e = (x.rv - x.pv).dropna()
+        print(f"  top {n:2}: {x.pv.mean():+.2f} / {x.rv.mean():+.2f} ({e.std() / np.sqrt(len(e)):.2f})  games {x.games.mean():.2f}  "
+              + ratio(np.vstack(x.rw), np.vstack(x.pw)))
+    r = A["rank"]
+    print(f"{len(A)} adds: rank among healthy free agents median {r.median():g} (quartiles {r.quantile(.25):g}-{r.quantile(.75):g}),"
+          f" top 5 {(r <= 5).mean():.0%}, top 20 {(r <= 20).mean():.0%}; value predicted {A.pv.mean():+.2f}, real {A.rv.mean():+.2f}"
+          f" (level then {A.lv.mean():+.2f}); games {A.games.mean():.2f}; real week / level's: " + ratio(np.vstack(A.rw), np.vstack(A.lw)))
+    for b, x in A.groupby(pd.cut(r, [0, 5, 20, 999], labels=["1-5", "6-20", "21+"]), observed=True):
+        print(f"  ranked {b:5} {len(x):3} adds: value predicted {x.pv.mean():+.2f}, real {x.rv.mean():+.2f}")
+    print("by team (adds, median rank): " + ", ".join(f"{t} {len(x)} / {x['rank'].median():g}" for t, x in A.groupby("team")))
 
 
 # 2026-27's season on 2025-26's NBA weeks: 20 matchups (weeks 7 and 17 run two NBA weeks, 6-7 and 16-17), then three
@@ -2128,8 +2245,12 @@ if __name__ == "__main__":
         lineups()
     elif "league" in sys.argv:
         league()
+    elif "offers" in sys.argv:
+        offers()
     elif "habits" in sys.argv:
         habits()
+    elif "replacement" in sys.argv:
+        replacement()
     elif "fill" in sys.argv:
         fill()
     elif "stream" in sys.argv:

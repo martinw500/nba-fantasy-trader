@@ -3,6 +3,43 @@
   "me": "fatty zhou",
   "team": "kobe colorado",
   "give": [
+   "Anthony Black"
+  ],
+  "get": [
+   "Brandon Miller"
+  ],
+  "text": "",
+  "unit": "win%",
+  "net": 1.0,
+  "their_net": -1.0,
+  "their_view": -0.07,
+  "win": 57.1,
+  "win_after": 58.2,
+  "market": {
+   "give": 4.2,
+   "get": 18.2,
+   "diff_pct": 76.8,
+   "verdict": "they overpay 77%",
+   "sum": {
+    "give": 4.2,
+    "get": 18.2,
+    "diff_pct": 76.8,
+    "verdict": "they overpay 77%"
+   }
+  },
+  "accept": "Long shot",
+  "verdict": "accept",
+  "punt": [],
+  "id": "a7156b1c",
+  "sent": "2026-11-25T16:28:57",
+  "outcome": null,
+  "yahoo": "478.l.231900.pt.238",
+  "open": true
+ },
+ {
+  "me": "fatty zhou",
+  "team": "kobe colorado",
+  "give": [
    "Kyle Kuzma",
    "LaMelo Ball",
    "Paul George",
@@ -78,7 +115,7 @@
   "outcome": "yes",
   "by": "them",
   "yahoo": "478.l.231900.pt.236",
-  "open": true
+  "open": false
  },
  {
   "me": "fatty zhou",

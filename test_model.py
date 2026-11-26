@@ -351,6 +351,20 @@ def test_all():
     pj = {**{cur.at[k, "PLAYER_NAME"]: cur.loc[k, ["MIN", *model.RAW]].to_dict() for k in cur.index}, "Player 170": top, "Player 171": top}
     ro = model.League({**mk.snap, "draft": {"Player 170": 80, "Player 174": 3}}, base, cur, proj=pj).market
     assert ro.at["player 170", "rank"] < dr.at["player 170", "rank"] and ro.at["player 171", "rank"] <= dr.at["player 171", "rank"] + 1
+    # A9c (Nov 25, Ingram drafted 97th while out): a drafted player who missed his team's first OUT_START games and is
+    # back starts from his ESPN rank, not his pick; 4 games missed, or still on the injury list, keeps the pick
+    bk = model.League({**mk.snap, "draft": {"Player 170": 80, "Player 174": 3}}, base, cur, proj=pj)
+    t, dd = bk.nba["player 170"], pd.date_range("2026-10-21", periods=8)
+    games = lambda missed: pd.DataFrame({"key": ["player 175"] * 8 + ["player 170"] * (8 - missed), "TEAM_ABBREVIATION": t,
+                                         "GAME_DATE": [*dd, *dd[missed:]]})
+    bk.logs = games(model.OUT_START)
+    assert bk.back_from_draft() >= {"player 170"} and "player 175" not in bk.back_from_draft()
+    bk.__dict__.pop("market")  # cached at load (League.spot)
+    assert bk.market.at["player 170", "rank"] < ro.at["player 170", "rank"]
+    bk.logs = games(model.OUT_START - 1)
+    assert "player 170" not in bk.back_from_draft()
+    bk.logs, bk.inj = games(model.OUT_START), {"player 170": {"status": "O"}}
+    assert "player 170" not in bk.back_from_draft()
     # out with a return date: the price drops by OUT_DISCOUNT x the share of his team's games he misses (Martin, Nov 23,
     # Edwards out to late January at #4), so out longer costs more and back tomorrow next to nothing
     days = [str(model.date(2026, 10, 26) + model.timedelta(3 * i)) for i in range(55)]
@@ -3193,7 +3207,44 @@ def test_habits():
         tmp.cleanup()
 
 
+def test_checks():
+    """A9a: the load checks pass on the synthetic league and each one fails when its rule breaks (Nov 25: a pending
+    claim made a 14th active player on 13 spots and nothing flagged it)."""
+    lg, base, cur = league()
+    got = lambda l, *a: {c["check"]: c["ok"] for c in l.checks(*a)}
+    assert set(got(lg).values()) <= {True, None} and not [p for p in lg.roster_check()["problems"] if p["kind"] == "data"]
+    s, day = lg.snap, model.date(2026, 11, 25)
+    me = [{**p, "slot": "BN"} for p in s["teams"]["Me"]]
+    bad = model.League({**s, "teams": {**s["teams"], "Me": me + [{"name": "Player 140", "slot": "BN"}]}}, base, cur)
+    assert got(bad) == {**got(lg), "roster": False}
+    assert any("14 active players for 13" in p["text"] for p in bad.roster_check()["problems"] if p["kind"] == "data")
+    assert got(model.League({**s, "teams": {**s["teams"], "Me": me[:12] + [{"name": "Player 151"}]}}, base, cur))["owners"] is False
+    assert got(model.League({**s, "teams": {**s["teams"], "Me": me + [{"name": "Nobody Atall"}]}}, base, cur))["found"] is False
+    tx = [{"when": "Nov 24 3:55am", "team": "Them", "type": "add", "player": f"Player {i}"} for i in (100, 101)]
+    adds = lambda n: got(model.League({**s, "transactions": tx, "settings": {**s["settings"], "max_adds": n}}, base, cur, today=day))
+    assert adds(2)["adds"] and adds(1)["adds"] is False
+    wk = lambda a, b: {"start": a, "end": b, "matchups": [["Me", "Them"]]}
+    rec = lambda w: got(model.League({**s, "schedule": [wk("2026-11-16", "2026-11-22"), wk("2026-11-23", "2026-11-29")],
+                                      "records": {"Me": {"w": w, "l": 3, "t": 0}, "Them": {"w": 3, "l": 6, "t": 0}}}, base, cur, today=day))
+    assert rec(6)["records"] and rec(5)["records"] is False
+    # games and totals, on a pull made Wednesday: Me's 13 play Tuesday (10 of them start, Yahoo's lineups), Thursday
+    # and Friday; Them's 13 too. Yahoo's games left: 10 a day for both
+    ks = [lg.find(p["name"]) for p in s["teams"]["Me"]]
+    logs = pd.DataFrame([{"key": k, "PLAYER_NAME": lg.p.at[k, "PLAYER_NAME"], "TEAM_ABBREVIATION": "XXX", "GAME_ID": 1,
+                          "GAME_DATE": pd.Timestamp("2026-11-24"), "MIN": 30, **dict.fromkeys(model.RAW, 2.0)} for k in ks])
+    days = {"2026-11-23": {"Me": [], "Them": []},
+            "2026-11-24": {"Me": [[p["name"], "XXX", "", "Util" if i < 10 else "BN"] for i, p in enumerate(s["teams"]["Me"])], "Them": []}}
+    def live(me_left=20, pts=20.0):
+        tot = {"Me": {**dict.fromkeys(model.RAW, 20.0), "PTS": pts}, "Them": dict.fromkeys(model.RAW, 0.0)}
+        snap = {**s, "matchup": {"opponent": "Them", "week_start": "2026-11-23", "week_end": "2026-11-29", "from": day.isoformat(), "totals": tot},
+                "matchups": [{"teams": ["Me", "Them"], "totals": tot, "games": {"Me": {"played": 10, "left": me_left}, "Them": {"played": 0, "left": 20}}}]}
+        return got(model.League(snap, base, cur, sched={"XXX": ["2026-11-24", "2026-11-26", "2026-11-27"]}, logs=logs, today=day), snap, days)
+    assert live() == {**live(), "games": True, "totals": True} and live(19)["games"]  # Yahoo's lineup can count fewer
+    assert live(21)["games"] is False and live(pts=23.0)["totals"] and live(pts=24.0)["totals"] is False  # PTS: within 3
+
+
 if __name__ == "__main__":
+    test_checks()
     test_all()
     test_habits()
     test_live()

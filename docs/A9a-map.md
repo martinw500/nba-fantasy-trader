@@ -1,5 +1,7 @@
 # A9a. Where each load check reads
 
+**Checked against the code Nov 25 (Claude Code), before A9a was built.** The line refs, the load flow, the synthetic league's gaps and where a failure shows all hold. Three readings were wrong: §6's comparison to `_so_far()` can't fail (it starts from Yahoo's totals), so the shipped check rebuilds the totals from Yahoo's lineups and the box scores; §7's "records vs standings" is circular (they are Yahoo's standings), so it checks W+L+T against the weeks played; §5's "different counts" was half right. Yahoo's games left = active players' games capped by the lineup each day, O-tagged players out, each day's lineup as set (9 of 12 teams equal), so it's checked as an upper bound. §1's last bullet (an Out player in an active spot fails check 1) is wrong too: he's one of the actives, and the count only fails above the spots. What shipped: `docs/MODEL.md` §5, "Load checks".
+
 Map for the checks in ROADMAP A9 part 1. No code. Line numbers are `model.py`, `yahoo.py`, `app.py`, `web/index.html`, and `test_model.py` as of Nov 25, 2026.
 
 Open AI GM notes: none.

@@ -72,9 +72,9 @@ Same order: silent first. The sidebar is `freshness()` → `state()["sources"]` 
 
 ## Top 10 to measure next
 
-1. The market and `accept()` (`MARKET`, `CHASE`, `ROS_WEIGHT`, `PACKAGE`, `OUT_DISCOUNT`, `UNRANKED`, `TIERS`) against `data/offers.json` and the league's trades. No mode exists. This is A9c.
-2. `GAMES_WEEK` 3.4. Trades, standings and Waivers' season gains still use the flat week. `backtest.py playoffs` already shows the real calendar beating that flat week for playoff odds and has not swept 3.4.
-3. The top-5 free-agent replacement (`replacement()`, `level`, other teams' open spots). It is inside every trade and every This week total.
+1. The market and `accept()` (`MARKET`, `CHASE`, `ROS_WEIGHT`, `PACKAGE`, `OUT_DISCOUNT`, `UNRANKED`, `TIERS`) against `data/offers.json` and the league's trades. This is A9c. **Done Nov 25:** `python backtest.py offers`, 5 of 19 answers right, nothing refitted (ROADMAP A9).
+2. `GAMES_WEEK` 3.4. Trades, standings and Waivers' season gains still use the flat week. `backtest.py playoffs` already shows the real calendar beating that flat week for playoff odds and has not swept 3.4. **Done Nov 25 (A9d):** swept 3.0–3.8, under 0.0016 log loss in every season, 0.2 win-% points on the real league; 3.4 kept (ROADMAP A9).
+3. The top-5 free-agent replacement (`replacement()`, `level`, other teams' open spots). It is inside every trade and every This week total. **Done Nov 25 (A9d):** `python backtest.py replacement`, the top 5 come true (−1.57 predicted, −1.81 real); managers add a median 18th; kept (ROADMAP A9).
 4. `_surplus()`: equal weight on every week left, playoffs included. Ten of 29 plans changed, and none of those weeks have been scored.
 5. Opponent factors and lineup habit on a playoff week and on `weeks_ahead()`. Both are measured for This week and left off everywhere a title trade looks.
 6. `OLDER_W`, `REGRESS`, and the 141–200 fringe. They sit under every line. `backtest.py replay` can sweep them.

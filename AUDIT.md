@@ -113,7 +113,7 @@ Martin asked for everything to be gone through, issues found and fixed, backtest
 
 **Nov 13, evening: controls, weeks ahead, the week's paths (ROADMAP Q27, Q28, M29).** One model finding on the way: the add plan's greedy first move blocked better weeks (vs Shanghai +3.4 → +6.0 from another opening); the plan now takes the best ending of 8 openings. Weeks ahead reuse the playoff odds' per-week arrays, nothing new fitted. Later the same evening (Martin): later weeks count the daily lineup limit (`_capped()`; 24 real team-weeks: 676 games started, 712 fit, 785 scheduled; totals' mean error 21.5% against 21.8% without) and a trade takes your own drop (`trade(drop=)`). What-ifs change inputs only (an injury entry, a player's line) and are read by the app and CLI alone; `test_model.py` and every backtest are untouched by a saved one.
 
-**Still guesses (no data to fit them here):** `GAMES_WEEK` (`FILL` measured Nov 16: #9), `MARKET`, `PACKAGE`, `CHASE`, `CHIP`, `TIERS`, `accept()` (M6: no offers marked yet).
+**Still guesses (no data to fit them here):** (`GAMES_WEEK` measured Nov 25, A9d: 3.4 kept, the odds barely move with it; `FILL` measured Nov 16: #9) `MARKET`, `PACKAGE`, `CHASE`, `CHIP`, `TIERS`, `accept()` (M6: no offers marked yet).
 
 ---
 

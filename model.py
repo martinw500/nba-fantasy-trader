@@ -170,7 +170,12 @@ SLOT_POS = {"G": {"PG", "SG"}, "F": {"SF", "PF"}, "Util": set(POS)}  # starting 
 # Matchup model. DISPERSION, SCHED_CV and PCT_NOISE are fitted to real weeks of 2025-26 box scores (backtest.py: 20
 # simulated leagues, predictions from what was known each Monday, injured regulars sitting until a rough return date as
 # with ESPN's); re-run it after changing how lines are projected.
-GAMES_WEEK = 3.4                                   # NBA games per team per week
+# NBA games per team in an average matchup week (the season numbers: trades, standings, Waivers' season gains). A9d,
+# Nov 25: mchc's 20 regular-season matchups average 3.435 (3.335 before the NBA Cup's 2 TBD games land in week 7; two
+# are 2-week matchups), Mon-Sun weeks 3.28 in 2022-23 to 2025-26. The odds barely care: backtest.py's flat-week mode,
+# 3.0 to 3.8, moves category log loss under 0.0016 in every season (3.4 within 0.0006 of each one's best) and the real
+# league's season win % by 0.2 points at most
+GAMES_WEEK = 3.4
 DISPERSION = {"FG3M": 1.75, "PTS": 3.0, "REB": 2.5, "AST": 3.0, "STL": 1.0, "BLK": 1.5, "TOV": 1.25}  # variance / mean
 SCHED_CV = 0.10                                    # week-to-week swing beyond box-score noise (schedule, rest, minutes,
                                                    # and projection error); 0.12 before N9, 0.17 before it knew who's out
@@ -320,6 +325,10 @@ OUT_DISCOUNT = 0.75
 # How far a drafted player's market rank moves toward his ESPN rest-of-season projection rank (geometric; League._market).
 # Nov 24: LaMelo (drafted 24, Cur 90, ESPN 20) 43 -> 30 and Amen Thompson (19, 79, 47) 29 -> 36. ponytail: a guess; M6.
 ROS_WEIGHT = 0.5
+# A9c: a player drafted while out (missed his NBA team's first OUT_START games) and back now (has played, off ESPN's
+# injury list) starts from his ESPN per-game rank instead of his draft pick, which carried the games he was expected to
+# miss, now past (Martin, Nov 25, on Ingram: drafted 97th while out, ESPN 80). ROS_BACK switches it (False: the pick).
+OUT_START, ROS_BACK = 5, True
 # Hot & cold ONLY, never trades (Martin, Nov 2: "a lot of ppl lean on yahoo current rank ... it should be a mix tho ...
 # only for hot and cold and not regular trading"): sell high and buy low price players with Yahoo's current rank
 # counting half after this many games instead of CHASE's, so a run moves the price (6 games in: 55% current, 45%
@@ -1492,6 +1501,7 @@ class League:
         self.me = snap["me"]
         self.free = {}  # {team: free moves already made on this copy} (after_free)
         self.moves = []  # Q30: the plan picks this snapshot carries (load(made=): moved()'s notes), for the banner
+        self.checked = None  # A9a: checks() as load() ran them (on the pull's rosters and Yahoo's lineups); None: ask
         self._dropc = {}  # drops() and _drop_pick() by punt: This week reads the pick on every call
         self.trades = []  # trades already made on this copy (after_trade)
         base = baseline(fetch(LAST), fetch(OLDER)) if base is None else base
@@ -2081,22 +2091,25 @@ class League:
         # #81). A snapshot alone (no draft): everyone at chase, on Yahoo's preseason rank.
         drafted = self.snap.get("draft") or {}
         draft = {k: p for n, p in drafted.items() if (k := self.find(n, strict=False)) in rank.index}
-        for k in {*yahoo, *draft}:
-            r = self.meta.get(k, {}).get("rank") or {}
-            c = chase if k in draft or not drafted else min(chase, HOT_CHASE)
-            w = self.p.at[k, "GP_CUR"] / (self.p.at[k, "GP_CUR"] + c)
-            rank[k] = (draft.get(k) or r["pre"]) ** (1 - w) * max(r.get("cur") or UNRANKED, 1) ** w
         # rest of the season (Martin, Nov 24: "shouldnt market value not only be based on preseason but also ros"): a
         # drafted player's price moves ROS_WEIGHT of the way (geometrically) to his rank on ESPN's projection, which
         # managers read too, never the model's own values (trades judge the other side on the market). Undrafted
         # pickups keep their form: ESPN lags breakouts (Nov 24: Anthony Black 153rd, Christian Braun 194th)
+        ros = pd.Series(dtype=float)
         if draft and self.espn and self.mode != "points":
             e = pd.DataFrame(self.espn).T.apply(pd.to_numeric, errors="coerce").dropna(subset=["MIN", *RAW])
             e.index = [self.find(n, strict=False) for n in e.index]
             e = e[e.index.notna() & ~e.index.duplicated()]
             ros = zscores(e, 156)[self.cats].sum(axis=1).rank(ascending=False)
-            for k in draft.keys() & set(ros.index):
-                rank[k] = rank[k] ** (1 - ROS_WEIGHT) * ros[k] ** ROS_WEIGHT
+        back = self.back_from_draft() & set(ros.index) & draft.keys() if ROS_BACK else set()
+        for k in {*yahoo, *draft}:
+            r = self.meta.get(k, {}).get("rank") or {}
+            c = chase if k in draft or not drafted else min(chase, HOT_CHASE)
+            w = self.p.at[k, "GP_CUR"] / (self.p.at[k, "GP_CUR"] + c)
+            start = ros[k] if k in back else draft.get(k) or r["pre"]  # A9c: back from a draft-day injury
+            rank[k] = start ** (1 - w) * max(r.get("cur") or UNRANKED, 1) ** w
+        for k in draft.keys() & set(ros.index):
+            rank[k] = rank[k] ** (1 - ROS_WEIGHT) * ros[k] ** ROS_WEIGHT
         yahoo = [*{*yahoo, *draft}]
         # out with a return date: his price cut by OUT_DISCOUNT x the share of his team's games left he misses, as the
         # same drop on the MARKET curve (Martin, Nov 23: "injured ppl should have a discount")
@@ -2108,6 +2121,17 @@ class League:
         rank = (rank + np.where(inside, 0, len(rank))).rank(method="first")
         return pd.DataFrame({"rank": rank.astype(int), "value": 100 * MARKET ** (rank - 1),
                              "yahoo": rank.index.isin(yahoo)})
+
+    def back_from_draft(self):
+        """A9c: players out at the draft (missed their NBA team's first OUT_START games in the box scores) who are back:
+        they've played and ESPN's injury feed no longer lists them. _market() leans their price on ESPN's rest of season."""
+        if self.logs is None or not len(self.logs):
+            return set()
+        T = "TEAM_ABBREVIATION"
+        first = self.logs.groupby("key").GAME_DATE.min()
+        days = self.logs.drop_duplicates([T, "GAME_DATE"]).groupby(T).GAME_DATE.apply(np.sort)
+        return {k for k, f in first.items() if k not in self.inj and self.nba.get(k) in days.index
+                and (days[self.nba[k]] < f).sum() >= OUT_START}
 
     def _tier(self, tier, you, them, mkt, max_overpay=None, cost=None):
         """Which deals clear a difficulty tier (TIERS): win-% gains for you and them, market gap in % (priced()).
@@ -4821,6 +4845,14 @@ class League:
             raise KeyError(f"Unknown opponent {opp}: pick one of {', '.join(others)}")
         return opp
 
+    def _box_since(self, f):
+        """Every box score line from day f through yesterday: the box scores, and the live ones for a game they don't
+        have yet (M18: last night's late games). _so_far() and checks() (A9a)."""
+        live, today = self.box[self.box.played], pd.Timestamp(self.today)
+        g = live.iloc[:0] if self.logs is None else self.logs
+        return pd.concat([g[(g.GAME_DATE >= f) & (g.GAME_DATE < today)],
+                          live[(live.GAME_DATE >= f) & (live.GAME_DATE < today) & ~live.GAME_ID.isin(g.GAME_ID)]])
+
     def _so_far(self):
         """{team: this week's totals so far}, from every pairing in the snapshot (an opponent picked in the app has
         them too), {} once the snapshot's week is over. A snapshot from an earlier day misses the days from its `from`
@@ -4837,10 +4869,7 @@ class League:
         f = self.matchup.get("from", self.today)
         if f > self.today:
             return tot
-        live, today = self.box[self.box.played], pd.Timestamp(self.today)
-        g = live.iloc[:0] if self.logs is None else self.logs
-        g = pd.concat([g[(g.GAME_DATE >= f) & (g.GAME_DATE < today)],
-                       live[(live.GAME_DATE >= f) & (live.GAME_DATE < today) & ~live.GAME_ID.isin(g.GAME_ID)]])
+        g, today = self._box_since(f), pd.Timestamp(self.today)
         if self.held and len(g):  # games the pull's totals already hold (its day, its teams that had tipped)
             g = g[[not (str(d.date()) == self.held_day and self.nba.get(k) in self.held) for k, d in zip(g.key, g.GAME_DATE)]]
         now = self.box[self.box.GAME_DATE == today].set_index("key")
@@ -5755,7 +5784,8 @@ class League:
         with the park made, as This week counts it); lineup: on the snapshot's own day (B8, slot_day), a starter who's out
         or an empty starting slot a benched player with a game today fits. notes (B17): nothing to fix now, each
         {kind: "back", players, text, fix}: one of yours due back from an IL slot this week, and whether This week leaves
-        him parked or activates him, on which day and for whom (_week_mine(); the cut depends on the build, so punt)."""
+        him parked or activates him, on which day and for whom (_week_mine(); the cut depends on the build, so punt).
+        data (A9a): a load check failed (checks(): a number may be off, not your roster); checks: all of them."""
         me, il, stuck = self.me, self.il[self.me], self._stuck()
         act = self._playing(self.rosters[me])
         said = lambda ks: (lambda ns: ", ".join(ns[:-1]) + " and " + ns[-1] if len(ns) > 1 else ns[0])(self.names(ks))
@@ -5816,7 +5846,107 @@ class League:
                 notes.append({"kind": "back", "players": [q, c],
                               "text": f"{due}Best this week: activate him {wd(h['day'])} for {c} ({h['win'][0]}% to win the "
                                       f"week, {h['win'][1]}% leaving him in his IL slot).", "fix": ""})
-        return {"active": len(act), "il": len(il), "spots": self.roster_n, "il_slots": self.il_n, "problems": out, "notes": notes}
+        # A9a: a load check that failed means a number on the page may be off, so it lights the nav dot too
+        checks = self.checked if self.checked is not None else self.checks()
+        out += [{"kind": "data", "players": [], "text": f"Data check failed ({c['check']}): {c['text']}",
+                 "fix": "Refresh. If it's still there, tell the AI GM so it writes it down: this is a bug, not your roster."}
+                for c in checks if c["ok"] is False]
+        return {"active": len(act), "il": len(il), "spots": self.roster_n, "il_slots": self.il_n, "problems": out, "notes": notes,
+                "checks": checks}
+
+    def checks(self, raw=None, days=None):
+        """A9a (Martin, Nov 25: "make its all very liek actually sturdy"): the league checked against itself and
+        Yahoo's own numbers, at every load (load(), `checked`); a failure goes in roster_check()'s problems (kind
+        data). Nov 25's pending claim made a 14th active player on 13 spots and nothing flagged it: check 1 does.
+        raw: the snapshot as pulled, before claimed() / moved() (Yahoo's numbers are on those rosters); days: Yahoo's
+        daily lineups (lineup_days()). -> [{check, ok, text}], ok None when it can't run here (why in text).
+        roster: each team's active players (any slot read but IL / IL+ / NA: a hand-typed row has none) <= spots,
+        IL / IL+ <= settings' il, after claims and plan picks. owners: nobody on two rosters, or on one and the free
+        agents. found: every rostered name matches a player (find()); projected: every rostered player has an expert
+        line (ESPN or Yahoo, experts()), when any loaded: yours only (another team's bench has a few with none, M26's
+        fringe line, and each card shows its source). adds: used <= max for every team. On a pull made today (its
+        `from`): games: each team's Yahoo games left (the scoreboard's remaining_games) <= its active players' games
+        from today, the most the lineup fits each day, today's under way at the pull left out. Only a bound: Yahoo
+        counts the lineups as set for each day, so a team that benched someone ahead is lower (Nov 25: 9 of 12 teams
+        equal with O-tagged players left out, 3 lower by 1-5); above it, our schedule or rosters are missing games.
+        totals: each team's Yahoo totals = its starters' box scores each day of the week before today
+        (Yahoo's lineups) plus today's live lines of its starters in games under way at the pull, within 1
+        a stat, 3 PTS (Yahoo can differ by a stat correction: Mumbai's STL, Nov 25; kobe colorado's PTS by 2, Nov 21
+        and 22). records: each team's W-L-T adds up to the categories of the weeks played (9 a week; 1 in One Win or
+        points), or a week fewer on a week's first day (Nov 22's 9 PM snapshot still had 4 weeks)."""
+        raw, s, out = raw or self.snap, self.snap["settings"], []
+        def res(check, bad, skip=None):
+            text = "; ".join(bad[:5]) + (f" (and {len(bad) - 5} more)" if len(bad) > 5 else "")
+            out.append({"check": check, "ok": None if skip else not bad, "text": skip or text})
+        name = lambda k: self.p.at[k, "PLAYER_NAME"]
+        teams = self.snap["teams"]
+        bad = []
+        for t, ps in teams.items():
+            act, il = sum(p.get("slot") not in (None, "", *IL_SLOTS) for p in ps), sum(p.get("slot") in ("IL", "IL+") for p in ps)
+            if act > self.roster_n:
+                bad.append(f"{t} has {act} active players for {self.roster_n} spots")
+            if s.get("il") is not None and il > s["il"]:
+                bad.append(f"{t} has {il} players in IL slots for {s['il']}")
+        res("roster", bad)
+        on = collections.defaultdict(list)
+        for t, ps in teams.items():
+            for p in ps:
+                on[self.find(p["name"], strict=False)].append(t)
+        fa = {self.find(p["name"], strict=False) for p in self.snap.get("free_agents", ())}
+        res("owners", [f"{name(k)} is on {' and '.join(ts + ['the free agents'] * (k in fa))}"
+                       for k, ts in on.items() if k and len(ts) + (k in fa) > 1])
+        res("found", [f"{p['name']} ({t})" for t, ps in teams.items() for p in ps if not self.find(p["name"], strict=False)])
+        res("projected", [name(k) for k in self.rosters[self.me] if k not in self.proj.index],
+            None if len(self.proj) else "no expert projections loaded")
+        cap = {t: self.adds(t) for t in self.rosters}
+        res("adds", [f"{t} has used {a['used']} adds of {a['max']}" for t, a in cap.items() if a and a["used"] > a["max"]],
+            None if s.get("max_adds") is not None else "no weekly add cap")
+        fresh = ("the snapshot's week is over" if self.rolled else "no NBA schedule" if not self.sched
+                 else "the snapshot isn't from today" if self.matchup.get("from") != self.today else None)
+        held = self.held if self.held_day == self.today else set()
+        here = lambda k, d: d in self.sched.get(self.nba.get(k), ()) and not (d == self.today and self.nba.get(k) in held)
+        left = pd.date_range(self.today, self.week_end).strftime("%Y-%m-%d")
+        keys = lambda t, slots: sorted({k for p in raw["teams"].get(t, ()) if p.get("slot") not in slots
+                                        and (k := self.find(p["name"], strict=False))}, key=lambda k: -self._value.get(k, 0))
+        bad = []
+        for pr in [] if fresh else raw.get("matchups", ()):
+            for t, g in pr.get("games", {}).items():
+                ks = keys(t, IL_SLOTS)
+                n = sum(len(self._lineup([k for k in ks if here(k, d)])) for d in left)
+                if g["left"] > n:
+                    bad.append(f"{t}: Yahoo has {g['left']} games left, its active players' games fill at most {n}")
+        res("games", bad, fresh or (None if any(pr.get("games") for pr in raw.get("matchups", ())) else "no Yahoo games left"))
+        past = [] if fresh else list(pd.date_range(self.matchup.get("week_start", self.today), self.today, inclusive="left").strftime("%Y-%m-%d"))
+        gone = [d for d in past if d not in (days or {})]
+        bad = []
+        if not fresh and not gone:
+            g, now = self._box_since(past[0]) if past else self.box.iloc[:0], self.box[self.box.GAME_DATE == pd.Timestamp(self.today)].set_index("key")
+            for pr in raw.get("matchups", ()):
+                for t, y in pr.get("totals", {}).items():
+                    if any(t not in days[d] for d in past):  # renamed since (Nov 12's "langangsters"): no lineups
+                        continue
+                    lo = collections.Counter()
+                    for d in past:
+                        st = [self.find(r[0], strict=False) for r in days[d].get(t, ()) if r[3] not in BENCH]
+                        lo.update(g[(g.GAME_DATE == pd.Timestamp(d)) & g.key.isin(st)][RAW].sum().to_dict())
+                    st = [k for k in keys(t, BENCH) if self.nba.get(k) in held]
+                    hi = now.reindex(st)[RAW].sum().to_dict() if set(st) <= set(now.index) else dict.fromkeys(RAW, np.inf)
+                    tol = lambda c: 3 if c == "PTS" else 1  # one stat correction: a basket is 2-3 points
+                    off = [f"{c} {y[c]:g} vs {lo[c]:g}" + (f"-{lo[c] + hi[c]:g}" if 0 < hi[c] < np.inf else " or more" if hi[c] else "") for c in RAW
+                           if c in y and not lo[c] - tol(c) <= y[c] <= lo[c] + hi[c] + tol(c)]
+                    if off:
+                        bad.append(f"{t}: Yahoo's {', '.join(off)} from the box scores")
+        res("totals", bad, fresh or (f"no Yahoo lineups for {gone[0]}" if gone else None))
+        rec, wk = self.snap.get("records") or {}, self.matchup.get("week_start", self.today)
+        done = sum(1 for w in self.snap.get("schedule", ()) if w.get("matchups") and w["end"] < wk)
+        per = len(self.cats) if self.scoring == "categories" and self.mode != "points" else 1
+        n = {t: sum(rec.get(t, {}).get(x, 0) for x in "wlt") for t in self.rosters}
+        ok = {per * done} | ({per * (done - 1)} if self.today == wk else set())  # Yahoo posts last week overnight
+        res("records", [f"{t}'s record adds up to {n[t]} results, {done} weeks played make {per * done}"
+                        for t in self.rosters if n[t] not in ok],
+            "no records" if not rec else "no season schedule" if not done and not self.snap.get("schedule") else
+            "the snapshot's week is over" if self.rolled else None)
+        return out
 
     def drops(self, punt=(), opp=None):
         """Who to drop (Q29, Martin Nov 16: "show who i should drop to like win this week or for like the season or like
@@ -5997,17 +6127,36 @@ def load(path=DATA / "league.json", refetch=(), what=None, made=None):
         hours = min(hours, 0.5)
         logs = gamelogs(CUR, hours)
     inj = injuries("injuries" in refetch)
-    snap, notes, shown = moved(claimed(positions(json.loads(Path(path).read_text(encoding="utf-8")))), made)
+    raw = positions(json.loads(Path(path).read_text(encoding="utf-8")))
+    snap, notes, shown = moved(claimed(raw), made)
+    days = lineup_days()
     if shown:
         moves(undo=shown)
     lg = League(snap, cur=fetch(CUR, max_age_hours=hours), sched=schedule(), opps=opponents(),
                 inj=inj, logs=logs, proj=espn(), news=news, live=live, inj_at=mtime(DATA / "injuries.json"), what=what,
-                habit=habits(lineup_days(), logs, snap["settings"].get("slots"), _keys_of(snap),
+                habit=habits(days, logs, snap["settings"].get("slots"), _keys_of(snap),
                              (date.today() - timedelta(1)).isoformat()))
     lg.moves = notes
+    lg.checked = lg.checks(raw, days)
+    log_checks(lg)
     news_index()  # news() reads it when a card or the News panel asks (My team, at once); fetch it now so its time shows
     lg.loaded = {name: mtime(DATA / name) for _, _, name, _, _ in SOURCES if name != "news_index.json"}
     return lg
+
+
+CHECKS = DATA / "checks.log"
+
+
+def log_checks(lg):
+    """A9a: each load check that failed, once a day per failure, in data/checks.log ("day check: text"), and on
+    stderr (the app's Terminal; the CLI's JSON stays clean)."""
+    seen = set(CHECKS.read_text(encoding="utf-8").splitlines()) if CHECKS.exists() else set()
+    new = [ln for c in lg.checked if c["ok"] is False and (ln := f"{lg.today} {c['check']}: {c['text']}") not in seen]
+    for ln in new:
+        print(f"Load check failed: {ln}", file=sys.stderr)
+    if new:
+        with CHECKS.open("a", encoding="utf-8") as f:
+            f.write("".join(ln + "\n" for ln in new))
 
 
 NOTES = DATA / "notes.md"
